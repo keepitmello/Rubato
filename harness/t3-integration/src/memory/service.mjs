@@ -488,6 +488,14 @@ export function createMemoryService(options = {}) {
     return cli(['view', '--json'], 60_000, 'memory');
   }
 
+  async function userRule({ path: record, blob, load }) {
+    if (typeof record !== 'string' || !/^(constraints|preferences|working-style)\//.test(record) ||
+        !record.endsWith('.md') || /[\x00-\x1f]/.test(record) || record.split('/').some(p => !p || p === '..' || p === '.') ||
+        typeof blob !== 'string' || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(blob) || typeof load !== 'boolean')
+      throw bad('That rule is not valid.');
+    return cli(['rule', load ? 'load' : 'remove', record, blob], 60_000, 'memory');
+  }
+
   async function askRunning() {
     let names = [];
     try { names = await readdir(path.join(userRuntime, 'asks')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -1038,6 +1046,7 @@ export function createMemoryService(options = {}) {
     self: () => readSelf(),
     'self-save': (input) => saveSelf(input),
     'user-view': () => userView(),
+    'user-rule': (input) => userRule(input),
     'user-ask': (input) => userAsk(input),
     'user-reforget': (input) => userReforget(input),
     activity: (input) => activity(input),

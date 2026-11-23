@@ -47,6 +47,7 @@ import {
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import type { PlacedLines } from "./RubatoMemoryPage.logic";
 import { ago } from "./RubatoMemoryParts";
+import { SessionRules } from "./RubatoSessionRules";
 
 // Settings > Memory > About you. What Rubato remembers about the person, read as a short summary by
 // topic, and a conversation with a model about it: ask why, correct, narrow, forget, or tell it
@@ -221,13 +222,17 @@ export function UserMemoryPanel({
   const topicIds = [...new Set([...view.topics.map((topic) => topic.id), ...forgottenHere.map((ask) => topicOf(ask.focus!.path))])];
   return (
     <>
+      <SessionRules topics={view.topics} save={async (rule, loadRule) => {
+        try { await rubatoMemory.userRule(environmentId, rule.path, rule.blob, loadRule); }
+        finally { await load(); }
+      }} />
       <SettingsSection id="memory-you" title="What Rubato remembers about you">
         <SettingsRow
           title={overviewLine(view)}
           description={
             view.count === 0
               ? "As you work, the daily dream notes lasting things about you, like how you like answers and how you decide, and keeps them here. You can also tell Rubato directly below."
-              : "Agents look these up when a question needs them. None of it is added to every conversation."
+              : "Agents can look up these memories when a question needs them."
           }
           status={<DreamState view={view} />}
         />

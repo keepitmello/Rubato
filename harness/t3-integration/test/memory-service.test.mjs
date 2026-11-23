@@ -258,6 +258,31 @@ exec /bin/sh "${launcher}" "$@"
   return ['/bin/sh', script];
 }
 
+test('Settings confirms one current rule and refuses to confirm unseen edits', async (t) => {
+  const f = await fixture(t);
+  const root = path.join(f.home, 'isolated-memory');
+  const service = createMemoryService({ env: { ...process.env, HOME: f.home, RUBATO_MEMORY_HOME: root }, rubato: await askingRubato(f.home) });
+  const repo = path.join(root, 'agents', USER_STORE, 'repo');
+  const record = 'preferences/length.md';
+  await mkdir(path.join(repo, 'preferences'), { recursive: true });
+  git(repo, 'init', '-q', '-b', 'main');
+  const line = 'Start brief so the decision is easy to find.';
+  const save = async (text) => { await writeFile(path.join(repo, record), `---\ndescription: ${text}\n---\n`); git(repo, 'add', '-A'); git(repo, 'commit', '-qm', 'curate'); };
+  const read = async () => (await service.handle('user-view', {})).topics[0].items[0].rule;
+  await save(line);
+  const rule = await read();
+  assert.equal(rule.state, 'off');
+  const choice = (load, blob = rule.blob) => service.handle('user-rule', { path: record, blob, load });
+  await choice(true);
+  assert.deepEqual(await read(), { ...rule, state: 'on' });
+  await save('For reviews, start with the decision.');
+  assert.equal((await read()).state, 'changed');
+  await assert.rejects(choice(true), /changed/);
+  await choice(false);
+  assert.equal((await read()).state, 'off');
+  await assert.rejects(service.handle('user-rule', { path: 'preferences/../background/x.md', blob: rule.blob, load: true }), /not valid/);
+});
+
 test('the user memory is read through rubato memory and changed by asking', { skip: !bunAvailable && 'bun is not installed' }, async (t) => {
   const f = await fixture(t);
   const service = createMemoryService({ env: { ...process.env, HOME: f.home, RUBATO_MEMORY_HOME: '' }, msearch: '/nonexistent/msearch', rubato: await askingRubato(f.home) });

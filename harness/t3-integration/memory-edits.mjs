@@ -22,6 +22,8 @@ export const memoryOverlays = [
   'apps/web/src/components/settings/RubatoMemorySettings.logic.test.ts',
   'apps/web/src/components/settings/RubatoMemoryIntro.tsx',
   'apps/web/src/components/settings/RubatoUserMemory.tsx',
+  'apps/web/src/components/settings/RubatoSessionRules.tsx',
+  'apps/web/src/components/settings/RubatoSessionRules.browser.test.tsx',
   'apps/web/src/components/settings/RubatoUserMemory.logic.ts',
   'apps/web/src/components/settings/RubatoUserMemory.logic.test.ts',
   'apps/web/src/routes/_chat.settings.memory.tsx',

@@ -233,6 +233,7 @@ export interface UserMemoryEvidence {
 }
 
 export interface UserMemoryItem {
+  readonly rule?: { readonly description: string | null; readonly blob: string; readonly state: "on" | "off" | "changed" } | null;
   readonly path: string;
   /** The line the user reads: the summary in their language, else the record's own conclusion. */
   readonly text: string;
@@ -416,6 +417,8 @@ export const rubatoMemory = {
     }),
   /** What Rubato remembers about the user, with the requests made about it and how they ended. */
   userView: (env: EnvironmentId | null) => call<UserMemoryView>(env, "user-view"),
+  userRule: (env: EnvironmentId | null, path: string, blob: string, load: boolean) =>
+    call<{ saved: boolean }>(env, "user-rule", { path, blob, load }),
   /** Records the forget of a landed request whose ledger write failed (problems: forget-unrecorded). */
   userReforget: (env: EnvironmentId | null, id: string) => call<UserMemoryAskResult>(env, "user-reforget", { id }),
   /** Hands a request to a model; follow it through userView until it is no longer working. */

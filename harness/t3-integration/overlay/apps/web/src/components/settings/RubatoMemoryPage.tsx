@@ -701,7 +701,7 @@ function MeView({
       <div className="flex flex-wrap gap-x-5 gap-y-1 px-1 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <Tag tone="all">All agents</Tag>
-          <span>Every lead, teammate and companion reads it</span>
+          <span>Any agent can look it up</span>
         </span>
         {segno ? (
           <span className="flex items-center gap-1.5">
