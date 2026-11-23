@@ -7,6 +7,40 @@ export const mobilePerfOverlays = ['apps/mobile/src/lib/rubatoThreadFeedReuse.te
 export const mobilePerfEdits = {
   'apps/mobile/src/lib/threadActivity.ts': [
     [
+      '  const foldedAnswerRunIdByMessageId = new Map<string, RunId | null>();',
+      '  const compactPromptRunIds = new Set<RunId>();\n  const compactedRunIds = new Set<RunId>();\n',
+    ],
+    [
+      '    if (item.type === "user_input_request" && item.questionAnswer) {',
+      `    // Collect the compaction pair in the existing pass over history. Avoid cloning every
+    // prompt each time a new fragment arrives on the last assistant row.
+    if (item.runId !== null) {
+      if (item.type === "user_message" && isCompactionCommandMessage({ role: "user", text: item.text, attachments: item.attachments })) {
+        compactPromptRunIds.add(item.runId);
+      } else if (item.type === "compaction") {
+        compactedRunIds.add(item.runId);
+      }
+    }
+`,
+    ],
+    [
+      `  // A stopped compaction's own row already says it stopped. A \`/compact\` run stopped
+  // before its provider started has no such row, so it keeps the interrupted one.
+  const compactPromptRunIds = new Set<RunId>();
+  const compactedRunIds = new Set<RunId>();
+  for (const { item } of visibleTurnItems) {
+    if (item.runId === null) continue;
+    if (item.type === "user_message" && isCompactionCommandMessage({ role: "user", ...item })) {
+      compactPromptRunIds.add(item.runId);
+    } else if (item.type === "compaction") {
+      compactedRunIds.add(item.runId);
+    }
+  }
+  for (let index = restart?.row ?? 0; index < visibleTurnItems.length; index += 1) {`,
+      '  for (let index = restart?.row ?? 0; index < visibleTurnItems.length; index += 1) {',
+      'replace',
+    ],
+    [
       '  readonly feed: ReadonlyArray<ThreadFeedEntry>;\n  /** Grouping is empty',
       '  readonly feed: ThreadFeedEntry[];\n  /** Grouping is empty',
       'replace',

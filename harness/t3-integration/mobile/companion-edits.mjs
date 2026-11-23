@@ -57,6 +57,8 @@ export const mobileCompanionOverlays = [
   `${companions}/roomPoll.ts`,
   `${companions}/roomPoll.test.ts`,
   `${companions}/roomThread.ts`,
+  `${companions}/listPreview.ts`,
+  `${companions}/listPreview.test.ts`,
   `${companions}/BubbleAttachments.tsx`,
   `${companions}/BubbleMarkdown.tsx`,
   `${companions}/BubbleFiles.tsx`,

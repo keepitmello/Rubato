@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { AppState, Platform } from "react-native";
 import { requireOptionalNativeModule } from "expo";
 import * as Notifications from "expo-notifications";
@@ -9,6 +9,7 @@ import { onLiveActivitySyncRequest, syncLiveActivities } from "./liveActivity";
 import { librarySounds } from "./soundFolder";
 import { syncNotificationSounds } from "./sounds";
 import { syncRubatoPush, type MacConnection } from "./sync";
+import { createPushSyncQueue } from "./syncQueue";
 
 // Mounted once in App.tsx. Keeps the relay and every paired Mac in line with this phone's push
 // tokens (sync.ts): at start, when a Mac is paired or removed, when iOS hands out a new token,
@@ -38,42 +39,28 @@ export function RubatoPushHost(): null {
   const { savedConnectionsById } = useSavedRemoteConnections();
   const connections = useRef<ReadonlyArray<MacConnection>>([]);
   const tokens = useRef<{ apns: string | null; voip: string | null }>({ apns: null, voip: null });
-  const running = useRef<Promise<void> | null>(null);
-  const again = useRef(false);
-
-  const sync = useRef(() => {
-    if (Platform.OS !== "ios") return;
-    if (running.current) {
-      again.current = true;
-      return;
+  const sync = useMemo(() => createPushSyncQueue(async () => {
+    try {
+      await syncRubatoPush(rubatoPushDeps(), {
+        apnsToken: tokens.current.apns,
+        voipToken: tokens.current.voip,
+        connections: connections.current,
+      });
+    } catch (error) {
+      console.warn("rubato push: sync failed", error);
     }
-    running.current = (async () => {
-      do {
-        again.current = false;
-        try {
-          await syncRubatoPush(rubatoPushDeps(), {
-            apnsToken: tokens.current.apns,
-            voipToken: tokens.current.voip,
-            connections: connections.current,
-          });
-        } catch (error) {
-          console.warn("rubato push: sync failed", error);
-        }
-        await syncNotificationSounds({ folder: librarySounds(), fetch: globalThis.fetch }, connections.current).catch(() => {});
-        // iOS starts a card only for an app in front.
-        if (AppState.currentState === "active" && liveActivitySupported()) {
-          await syncLiveActivities(liveActivityDeps(), connections.current).catch((error: unknown) =>
-            console.warn("rubato push: live activity sync failed", error),
-          );
-        }
-      } while (again.current);
-      running.current = null;
-    })();
-  }).current;
+    await syncNotificationSounds({ folder: librarySounds(), fetch: globalThis.fetch }, connections.current).catch(() => {});
+  }, async () => {
+    if (AppState.currentState === "active" && liveActivitySupported()) {
+      await syncLiveActivities(liveActivityDeps(), connections.current).catch((error: unknown) =>
+        console.warn("rubato push: live activity sync failed", error),
+      );
+    }
+  }), []);
 
   useEffect(() => {
     connections.current = macConnections(Object.values(savedConnectionsById));
-    sync();
+    if (Platform.OS === "ios") void sync("full");
   }, [savedConnectionsById, sync]);
 
   useEffect(() => {
@@ -82,20 +69,20 @@ export function RubatoPushHost(): null {
     void Promise.all([alertToken().catch(() => null), voipToken().catch(() => null)]).then(([apns, voip]) => {
       if (!live) return;
       tokens.current = { apns, voip };
-      sync();
+      void sync("full");
     });
     const apnsChanged = Notifications.addPushTokenListener((token) => {
       tokens.current = { ...tokens.current, apns: typeof token.data === "string" ? token.data : null };
-      sync();
+      void sync("full");
     });
     const voipChanged = rubatoCall?.addListener("voipToken", (event) => {
       tokens.current = { ...tokens.current, voip: event.token ?? null };
-      sync();
+      void sync("full");
     });
     const foreground = AppState.addEventListener("change", (next) => {
-      if (next === "active") sync();
+      if (next === "active") void sync("full");
     });
-    const workStarted = onLiveActivitySyncRequest(sync);
+    const workStarted = onLiveActivitySyncRequest(() => { void sync("card"); });
     return () => {
       live = false;
       workStarted();

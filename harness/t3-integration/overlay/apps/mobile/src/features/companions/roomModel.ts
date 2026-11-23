@@ -243,13 +243,17 @@ export function roomItems(
  * What the room shows at `clock`: a reply's next bubbles wait their typing time after the message,
  * and `next` is when the first still waiting shows (null: none waits).
  */
-export function typedSoFar(items: ReadonlyArray<RoomItem>, clock: number): { shown: RoomItem[]; next: number | null } {
+export function typedSoFar(items: ReadonlyArray<RoomItem>, clock: number): { shown: ReadonlyArray<RoomItem>; next: number | null } {
+  // roomItems already set every tail. A stream with nothing waiting needs no list copies.
+  const waiting = items.findIndex((item) => item.kind === "bubble" && item.typedAfter > 0 && item.at + item.typedAfter > clock);
+  if (waiting < 0) return { shown: items, next: null };
   let next: number | null = null;
-  const shown = items.filter((item) => {
-    if (item.kind !== "bubble" || item.typedAfter === 0 || item.at + item.typedAfter <= clock) return true;
-    next = Math.min(next ?? Number.POSITIVE_INFINITY, item.at + item.typedAfter);
-    return false;
-  });
+  const shown = items.slice(0, waiting);
+  for (let index = waiting; index < items.length; index++) {
+    const item = items[index]!;
+    if (item.kind !== "bubble" || item.typedAfter === 0 || item.at + item.typedAfter <= clock) shown.push(item);
+    else next = Math.min(next ?? Number.POSITIVE_INFINITY, item.at + item.typedAfter);
+  }
   // The newest bubble in sight carries its group's tail until the next one comes, as in Messages.
   const tailed = shown.map((item, index) => {
     if (item.kind !== "bubble" || item.groupEnd) return item;

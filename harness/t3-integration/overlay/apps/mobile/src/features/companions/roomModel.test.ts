@@ -26,6 +26,7 @@ describe("a companion room", () => {
     const b = message("b", "assistant", "one", 2);
     const c = message("c", "assistant", "two", 2.5);
     const first = roomItems([a, b], []);
+    expect(typedSoFar(first, Date.now()).shown).toBe(first);
     const second = roomItems([a, b, c], []);
     expect(second.find((r) => r.id === "a")).toBe(first.find((r) => r.id === "a"));
     expect(second.find((r) => r.id === "b")).toMatchObject({ groupEnd: false });

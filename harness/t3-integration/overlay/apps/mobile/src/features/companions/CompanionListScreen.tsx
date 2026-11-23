@@ -3,19 +3,18 @@
 // made from the small "+" in the header (useCreateCompanion.ts).
 import { CommonActions, useNavigation } from "@react-navigation/native";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { buildThreadFeed, createThreadFeedCache } from "../../lib/threadActivity";
 import { useAppForeground } from "../../lib/appState";
 import { useHomeRouteVisible } from "../home/home-route-visibility";
 import { CompanionAvatar } from "./CompanionAvatar";
 import { useCompanions, type CompanionEntry } from "./companionsStore";
 import { copy, dateFormat } from "./copy";
-import { feedRoomPreview } from "./roomModel";
+import { listPreview } from "./listPreview";
 import { useRoomTurnItems } from "./roomThread";
 
 
@@ -33,8 +32,7 @@ function CompanionRow(props: { readonly companion: CompanionEntry; readonly acti
     threadId: (companion.threadId ?? null) as ThreadId | null,
   };
   const visible = useRoomTurnItems(target);
-  const [cache] = useState(createThreadFeedCache);
-  const preview = useMemo(() => feedRoomPreview(buildThreadFeed(visible, { cache })), [visible, cache]);
+  const preview = useMemo(() => listPreview(visible), [visible]);
   return (
     <Pressable
       accessibilityRole="button"

@@ -10,7 +10,7 @@ import type { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
-import { Alert, Pressable, ScrollView, useWindowDimensions, View, type FlatList, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, useWindowDimensions, View, type FlatList, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   FadeInDown,
@@ -24,7 +24,7 @@ import Animated, {
   withSpring,
   type SharedValue,
 } from "react-native-reanimated";
-import { KeyboardAvoidingView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
+import { KeyboardAvoidingView, KeyboardController, KeyboardStickyView, useKeyboardHandler, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import { initialWindowMetrics, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 
@@ -738,10 +738,10 @@ function RoomBody(props: {
   const items = typed.shown;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a timer: the clock moves when the next typed bubble is due
   useEffect(() => {
-    if (typed.next === null) return;
+    if (!visible || typed.next === null) return;
     const timer = setTimeout(() => setClock(Date.now()), Math.max(0, typed.next - Date.now()));
     return () => clearTimeout(timer);
-  }, [typed.next]);
+  }, [typed.next, visible]);
   const personTurn = companionTyping(items, composer.activeThreadBusy);
   const writing = personTurn || typed.next !== null;
   // Thinking or working: the kind of work the companion's tool does right now, while the person's turn runs.
@@ -759,8 +759,8 @@ function RoomBody(props: {
       known.add(item.id);
       if (item.kind === "bubble" && item.side === "companion") received = true;
     }
-    if (received) hapticReceive();
-  }, [items]);
+    if (visible && received) hapticReceive();
+  }, [items, visible]);
   const threadKey = scopedThreadKey(props.environmentId, props.threadId);
   const editedId = useEditedMessageId(threadKey);
   // While a sent message is edited, it and everything after it go when the edit is sent.
@@ -899,6 +899,25 @@ function RoomBody(props: {
   );
 }
 
+// The iPhone route goes to the window bottom: overlap is the current keyboard height.
+// Follow actual movement, not the final height iOS announces at willShow. One handler
+// replaces the generic avoiding view's separate measurement and translation handlers.
+function IosRoomFrame({ children }: React.PropsWithChildren) {
+  const height = useSharedValue(KeyboardController.isVisible() ? KeyboardController.state().height : 0);
+  const follow = (event: { height: number }) => {
+    "worklet";
+    height.value = Math.max(0, event.height);
+  };
+  useKeyboardHandler({ onMove: follow, onInteractive: follow, onEnd: follow }, [height]);
+  const padding = useAnimatedStyle(() => ({ paddingBottom: height.value }));
+  return <Animated.View className="flex-1 bg-screen" style={padding}>{children}</Animated.View>;
+}
+
+function OtherRoomFrame({ children }: React.PropsWithChildren) {
+  return <KeyboardAvoidingView behavior="padding" className="flex-1 bg-screen">{children}</KeyboardAvoidingView>;
+}
+const RoomFrame = Platform.OS === "ios" ? IosRoomFrame : OtherRoomFrame;
+
 export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParams>) {
   const route = useRoute<RouteProp<Record<string, CompanionRoomParams>>>();
   const navigation = useNavigation();
@@ -941,7 +960,7 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
     void callActions.dial(environmentId as EnvironmentId, companionId, title);
   }, [callable, environmentId, companionId, title]);
   return (
-    <KeyboardAvoidingView behavior="padding" className="flex-1 bg-screen">
+    <RoomFrame>
       <NativeStackScreenOptions options={options} optionsVersion={[title]} />
       {environmentId && threadId ? (
         <RoomBody
@@ -977,6 +996,6 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
           onPress={call}
         />
       </Toolbar>
-    </KeyboardAvoidingView>
+    </RoomFrame>
   );
 }
