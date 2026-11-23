@@ -32,15 +32,18 @@ export async function signProviderToken({ teamId, keyId, privateKey, issuedAt })
 }
 
 /**
- * An alert on the lock screen. `data` lands at the top level (upstream's thread navigation reads it
- * there), `rubato` under its own key; `category` picks the app's notification category, and
+ * An alert on the lock screen. `data` and `rubato` go under `body`, which expo-notifications hands the
+ * app as a remote notification's `data` (it reads nothing else of userInfo; upstream's relay does the
+ * same): the app uses them to stay quiet for the room or thread on screen and to open it on a tap.
+ * Both stay at the top level too, where the service extension reads `rubato`. `category` picks the app's notification category, and
  * `mutableContent` lets the app's service extension redraw it (a companion message as a message).
  * `sound` is 'default' or a file the app keeps in Library/Sounds, the same chime the Mac plays.
  */
 export function alertPayload({ title, subtitle = null, body, threadId, data = {}, rubato = null, category = null, mutableContent = false, sound = 'default' }) {
+  const fields = { ...data, ...(rubato ? { rubato } : {}) };
   return {
-    ...data,
-    ...(rubato ? { rubato } : {}),
+    ...fields,
+    body: fields,
     aps: {
       alert: { title, ...(subtitle ? { subtitle } : {}), body },
       sound,

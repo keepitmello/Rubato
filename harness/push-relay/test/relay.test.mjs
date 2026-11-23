@@ -60,6 +60,8 @@ test('a thread alert reaches APNs as Apple specifies, signed with the relay key'
   assert.equal(headers['apns-priority'], '10');
   assert.deepEqual(request.payload, {
     environmentId: 'env', threadId: 'thread-1', deepLink: '/threads/env/thread-1',
+    // expo-notifications gives the app only userInfo.body as the notification's data.
+    body: { environmentId: 'env', threadId: 'thread-1', deepLink: '/threads/env/thread-1' },
     aps: { alert: { title: 'Fix the login bug', body: 'Completed: rubato' }, sound: 'default', 'thread-id': 'env/thread-1' },
   });
   // The provider token: ES256 over { alg, kid } . { iss, iat }, verifiable with the key's public half.
@@ -239,6 +241,7 @@ test('a companion message carries its category, its own fields and lets the serv
   assert.equal((await call('POST', '/v1/push', { auth: grant, body: message })).status, 200);
   assert.deepEqual(sent[0].payload, {
     rubato: { kind: 'companion-message', companionId: 'roo', threadId: 'thread-9' },
+    body: { rubato: { kind: 'companion-message', companionId: 'roo', threadId: 'thread-9' } },
     aps: { alert: { title: 'Roo', body: '첫 통화 끝 📞' }, sound: 'default', 'thread-id': 'companion:roo',
       category: 'rubato.companion.message', 'mutable-content': 1 },
   });
