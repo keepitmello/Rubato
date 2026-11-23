@@ -181,12 +181,61 @@ export async function currentEvidence(store: UserStore, records: readonly UserRe
       const paths = targets.get(key(entry.at.slice(0, 10), entry.project, foldText(entry.quote)))
       if (!paths || blockingTombstone(`${entry.claim}\n${entry.quote}\n${entry.situation ?? ""}`, entry.at, ledger)) continue
       for (const path of paths) {
-        const line = JSON.stringify({ path, said: entry.quote, when: entry.at, situation: entry.situation })
+        const line = JSON.stringify({ path, project: entry.project, said: entry.quote, when: entry.at, situation: entry.situation })
         found.set(line, { at: entry.at, line })
       }
     }
   }
   return [...found.values()].sort((a, b) => b.at.localeCompare(a.at)).map(row => row.line).join("\n")
+}
+
+/** Put potential within-day conflicts beside the incoming claims. A separate archive link alone
+ * lets a curator that sees "nothing new" skip checking the ordering in the affected record. */
+export function dayConflicts(evidence: string, incoming: readonly Observation[]): string {
+  const days = new Set(incoming.filter(e => e.project && e.at).map(e => `${e.project}:${e.at!.slice(0, 10)}`))
+  const groups = new Map<string, string[]>()
+  for (const row of evidence.split("\n").filter(Boolean)) {
+    const { path, when, project } = JSON.parse(row) as { path: string; when: string; project: string }
+    const key = `${path}\0${project}:${when.slice(0, 10)}`
+    groups.set(key, [...(groups.get(key) ?? []), row])
+  }
+  const rows = [...groups].flatMap(([key, items]) => items.length > 1 || days.has(key.split("\0")[1]!) ? items : [])
+  return rows.length === 0 ? "" : [
+    "\n## Existing records with evidence from the same day",
+    "Check these conclusions against the user's words in timestamp order (newest first). A later delivery is not a later decision. Keep separate responsibilities separate.",
+    ...rows, "",
+  ].join("\n")
+}
+
+/** In a changed record, an older observation cannot take the front of the evidence list from a
+ * verified later statement. Unknown or ambiguous timestamps do not establish an ordering. */
+export function evidenceOrderProblem(records: readonly UserRecord[], existing: string, incoming: readonly Observation[]): string | undefined {
+  const times = new Map<string, Set<string>>()
+  const key = (project: string, date: string, quote: string) => JSON.stringify([project, date, foldText(quote)])
+  const add = (project: string, when: string, said: string) => {
+    const id = key(project, when.slice(0, 10), said)
+    const group = times.get(id) ?? new Set()
+    group.add(when)
+    times.set(id, group)
+  }
+  for (const row of existing.split("\n").filter(Boolean)) {
+    const { project, when, said } = JSON.parse(row)
+    add(project, when, said)
+  }
+  for (const observation of incoming) if (observation.project && observation.at && observation.quote) add(observation.project, observation.at, observation.quote)
+  for (const record of records) {
+    let prior = Infinity
+    for (const line of record.evidence) {
+      if (!line.date || !line.quote || !line.where?.startsWith("project ")) continue
+      const at = times.get(key(line.where.slice("project ".length), line.date, line.quote))
+      if (at?.size !== 1) continue
+      const ms = Date.parse([...at][0]!)
+      if (!Number.isFinite(ms)) continue
+      if (ms > prior) return `${record.path} places an older observation ahead of newer user evidence`
+      prior = ms
+    }
+  }
+  return undefined
 }
 
 /** Everything a user dream has not taken yet, across every project store. */

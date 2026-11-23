@@ -209,7 +209,7 @@ describe("user facts are noticed in every project and curated into one shared st
     const review = await userDream(w.memoryRoot, curatingChild(), { force: true })
     const existing = readFileSync(join(w.user.paths.runtime, "dream/runs", review.runId, "inputs/existing-evidence.jsonl"), "utf8")
     expect(existing.split("\n").map(line => JSON.parse(line))).toContainEqual({
-      path: "preferences/prefers-short-answers.md", said: "claim: Prefers short answers | 짧게 말해줘",
+      path: "preferences/prefers-short-answers.md", project: "alpha", said: "claim: Prefers short answers | 짧게 말해줘",
       when: "2026-09-28T01:00:00.000Z", situation: "choosing the format for a single report",
     })
     expect(userFiles(w.memoryRoot)).toEqual(["preferences/prefers-short-answers.md", "preferences/works-on-macos.md"])
@@ -236,6 +236,34 @@ describe("user facts are noticed in every project and curated into one shared st
     const saved = JSON.parse(readFileSync(join(buildIdentityPaths(w.memoryRoot, "alpha").runtime, "dream", "runs", runs[0]!, "user-observations.json"), "utf8"))
     expect(saved).toEqual([expect.objectContaining({ claim: "Invented", quote: "never said", session: "sa", project: "alpha" })])
     expect(saved[0].at).toBeUndefined()
+  })
+
+  test("a late project run cannot publish an older same-day instruction ahead of the verified correction", async () => {
+    const w = world()
+    w.project("alpha")
+    const latest = "claim: Launch policy | Free inside approved teams; report each launch."
+    const older = "claim: Launch policy | Ask once for the estimate."
+    await projectDream(w.memoryRoot, "alpha", [sessionFile(join(w.root, "alpha"), "late", [["2026-09-28T19:51:00.000Z", latest]])])
+    expect((await userDream(w.memoryRoot)).status).toBe("merged")
+    const path = "preferences/launch-policy.md"
+    const initial = git(w.user.paths.repo, "rev-parse", "HEAD").trim()
+    const inbox = join(w.user.paths.runtime, "inbox")
+    mkdirSync(inbox, { recursive: true })
+    writeFileSync(join(inbox, "late-delivery.json"), JSON.stringify([{
+      claim: "An estimate needs approval", quote: older, project: "alpha", at: "2026-09-28T19:48:00.000Z", kind: "session",
+    }]))
+    const result = await userDream(w.memoryRoot, async ({ cwd, env }) => {
+      const inputs = readFileSync(join(env.INPUTS_DIR!, "observations.md"), "utf8")
+      expect(inputs).toContain("19:51:00.000Z")
+      expect(inputs).toContain("19:48:00.000Z")
+      writeFileSync(join(cwd, path), `---\ndescription: Ask once.\n---\n## Conclusion\n- Ask once.\n## Evidence\n- 2026-09-28 · project \`alpha\` · "${older}"\n- 2026-09-28 · project \`alpha\` · "${latest}"\n`)
+      writeFileSync(join(env.OUT_DIR!, "report.md"), "Changed the rule")
+      return { code: 0 }
+    })
+    expect(result.status).toBe("failed")
+    expect(result.reason).toContain("older observation")
+    expect(git(w.user.paths.repo, "rev-parse", "HEAD").trim()).toBe(initial)
+    expect(readFileSync(join(w.user.paths.repo, path), "utf8")).toContain(latest)
   })
 
   test("two user dreams at once: one lands, the other finds the lock and leaves the rest for later", async () => {

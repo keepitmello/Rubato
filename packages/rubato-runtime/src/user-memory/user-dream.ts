@@ -33,7 +33,7 @@ import {
 import { resurrections } from "./guard"
 import { consolidationGuide } from "../dream/consolidation"
 import { blockingTombstone, readLedger, type Ledger } from "./ledger"
-import { collectPending, consumeInputs, currentEvidence, hasPending, readInputsLedger, recordFailure, type Correction, type Observation, type PendingInputs } from "./observations"
+import { collectPending, consumeInputs, currentEvidence, dayConflicts, evidenceOrderProblem, hasPending, readInputsLedger, recordFailure, type Correction, type Observation, type PendingInputs } from "./observations"
 import { listRecords } from "./records"
 import { isRulePath, reconcileRuleChoices } from "./rule-choices"
 import { ensureUserStore, readJsonFile, userStore, writeJsonFile, type UserStore } from "./store"
@@ -126,7 +126,6 @@ async function dreamLocked(options: RunUserDreamOptions, store: UserStore, now: 
   if (options.ladder.length === 0) return finish("failed", { reason: "no model configured in memory.dream.models" })
 
   const summaryBefore = await readSummary(store)
-  await writeFile(join(inputsDir, "observations.md"), renderObservations(kept), "utf8")
   await writeFile(join(inputsDir, "forgotten.md"), renderForgotten(ledger), "utf8")
   await writeFile(join(inputsDir, "dictation-corrections.md"), renderCorrections(pending.corrections), "utf8")
   if (pending.legacyProfile !== undefined) await writeFile(join(inputsDir, "legacy-profile.md"), `${pending.legacyProfile.text}\n`, "utf8")
@@ -138,8 +137,10 @@ async function dreamLocked(options: RunUserDreamOptions, store: UserStore, now: 
   const repo = new GitMemoryRepo({ dir: store.paths.repo, agentId: store.id, exec })
   await underWriterLock(store.paths, store.id, "user dream adopt", () => repo.adoptStrayEdits())
   const baseRevision = (await git(store.paths.repo, ["rev-parse", "--verify", "HEAD^{commit}"])).stdout.trim()
-  await writeFile(join(inputsDir, "existing-evidence.jsonl"),
-    await currentEvidence(store, await listRecords(git, store.paths.repo, baseRevision), ledger))
+  const before = await listRecords(git, store.paths.repo, baseRevision)
+  const existing = await currentEvidence(store, before, ledger)
+  await writeFile(join(inputsDir, "existing-evidence.jsonl"), existing)
+  await writeFile(join(inputsDir, "observations.md"), renderObservations(kept) + dayConflicts(existing, kept), "utf8")
   const branch = `dream/${runId}`
   const worktree = join(store.paths.worktrees, runId)
   await mkdir(store.paths.worktrees, { recursive: true })
@@ -210,6 +211,14 @@ async function dreamLocked(options: RunUserDreamOptions, store: UserStore, now: 
   }
 
   const produced = (await git(store.paths.repo, ["rev-parse", branch])).stdout.trim()
+  // Dictation is a list of terms with per-term evidence, not a rule's chronological evidence list.
+  const priorBlobs = new Map(before.map(record => [record.path, record.blob]))
+  const changes = (await listRecords(git, store.paths.repo, produced)).filter(record => isRulePath(record.path) && priorBlobs.get(record.path) !== record.blob)
+  const wrongOrder = evidenceOrderProblem(changes, existing, kept)
+  if (wrongOrder) {
+    await deleteBranch(git, store.paths.repo, branch)
+    return finish("failed", { ...modelField, commits, reason: `${wrongOrder}; nothing published` })
+  }
   const landed = await landGuarded({ store, git, repo, branch, outDir, subject: `merge(dream): ${runId}`, ledgerFor: () => readLedger(store), newerEvidence: evidenceOf(kept) })
   await deleteBranch(git, store.paths.repo, branch)
   if (landed !== true) return finish("failed", { ...modelField, commits, baseRevision, reason: `${landed}; its observations stay for the next run` })
