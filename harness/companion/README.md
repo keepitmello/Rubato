@@ -123,6 +123,10 @@ guarded record writeback paths. A linked path out of the home is never a write
 destination. The generic coding-memory dream excludes all registered companion
 homes and memory agents.
 
+The dream's document upkeep (`dream/docs.mjs`) reads Rubato's own `dream/docs.md` for
+every companion, registered or not, and tends only the roots in that companion's
+settings (`dream.docs`); none by default.
+
 `skillDirs` contains native `SKILL.md` catalogues for this companion only. Additional
 profiles use native home records rather than creating a second generic coding-memory
 repository. Their archive's project instructions for coding agents are not injected

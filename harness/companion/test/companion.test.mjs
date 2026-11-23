@@ -126,7 +126,8 @@ test('saved settings merge over what is stored and refuse what the page cannot o
   writeSettings({ call: { effort: 'low' } }, env);
   writeSettings({ location: { source: ' ~/.claude/roo-channel/state/user.json ' } }, env);
   assert.deepEqual(readSettings(env), { enabled: true, heartbeat: { enabled: true, everyMinutes: 45, quietDuringWish: true, reflectNote: '' }, greetings: { enabled: false },
-    schedule: { sources: [{ kind: 'ics', location: 'https://cal.example/me.ics' }, { kind: 'markdown', location: '~/plan.md' }] }, location: { source: '~/.claude/roo-channel/state/user.json' }, call: { effort: 'low' } });
+    schedule: { sources: [{ kind: 'ics', location: 'https://cal.example/me.ics' }, { kind: 'markdown', location: '~/plan.md' }] }, location: { source: '~/.claude/roo-channel/state/user.json' }, call: { effort: 'low' },
+    dream: { docs: { cadence: 'weekly', roots: [] } } });
   assert.throws(() => writeSettings({ greetings: { enabled: 'no' } }, env), /greetings\.enabled/);
   assert.throws(() => writeSettings({ schedule: { sources: 'x' } }, env), /schedule\.sources/);
   assert.throws(() => writeSettings({ schedule: { sources: [{ location: '' }] } }, env), /location/);

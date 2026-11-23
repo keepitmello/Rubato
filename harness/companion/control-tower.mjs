@@ -34,6 +34,8 @@
 // - The user's place (heartbeat-tick.sh loc=, which the control tower put in the main heartbeat): a
 //   LOCATION line under the tick, from the location file set in Segno's settings (location.source),
 //   with when it was updated and how long ago, marked stale past six hours. No file, no line.
+// - The dream's docs report (dream/docs.mjs): after a document upkeep run, one DOCS_REPORT line under
+//   the next tick that goes, naming the report file, once per run.
 // - The greetings (cron-prompts/night.md and morning.md, launchd at 00:07 and 09:07, dispatch
 //   windows 00–04 and 09–14). The night greeting writes the day's diary first and talks in that
 //   temperature; the morning greeting carries what the daily report used to (user item 4c0b0f00).
@@ -64,6 +66,7 @@ import { COMPANION_TITLE, ONBOARDING_ITEMS, clearPersonaReviewRequest, onboardin
 import { capabilityActive, companionActivityAt, clearWakeWish, ensureHomeRepo, ensureSegnoHome, readMood, readWakeWish, segnoPaths, wakeWishState } from './home.mjs';
 import { expandHome, scheduleNudges } from './schedule.mjs';
 import { INBOX_WAKE_STALE_MS, INBOX_WAKE_WINDOW_MS, inboxWakePath, readInboxWakes } from './inbox.mjs';
+import { docsReportLine } from './dream/docs.mjs';
 import { companionDefaultsDir } from '../rubato-pi/src/system-prompt.mjs';
 import { usesProductTexts } from './registry.mjs';
 
@@ -126,11 +129,11 @@ export function localIso(at) {
  * The tick as Roo receives it: `HEARTBEAT tick=N now="…"`, then `action=` when there is one and
  * `reason=wake_wish` when a wish came due, with a WAKE_WISH line under it. The LOCATION line
  * (`location`) comes next when there is one, then the SCHEDULE_ lines (Roo's career_nudge_lines
- * after the heartbeat line), and a greeting catch-up carries the greeting's
+ * after the heartbeat line), the DOCS_REPORT line (`docs`) after them, and a greeting catch-up carries the greeting's
  * text after a blank line, where Roo's heartbeat skill sends Roo to open cron-prompts/<slot>.md. A
  * reflect tick carries the companion's reflect note the same way (`note`).
  */
-export function heartbeatText({ tick, at, action = 'none', wish, location = '', schedule = [], greeting = '', note = '' }) {
+export function heartbeatText({ tick, at, action = 'none', wish, location = '', schedule = [], docs = '', greeting = '', note = '' }) {
   const parts = ['HEARTBEAT', `tick=${tick}`, `now="${timeLabel(at)}"`];
   if (action !== 'none') parts.push(`action=${action}`);
   if (wish) parts.push('reason=wake_wish');
@@ -138,6 +141,7 @@ export function heartbeatText({ tick, at, action = 'none', wish, location = '', 
   if (wish) lines.push(`WAKE_WISH at=${localIso(wish.effectiveAt)} clamped=${wish.clamped ? 1 : 0} reason=${wish.reason}`);
   if (location) lines.push(location);
   lines.push(...schedule);
+  if (docs) lines.push(docs);
   const body = [greeting, note].filter(Boolean).join('\n\n');
   return body ? `${lines.join('\n')}\n\n${body}` : lines.join('\n');
 }
@@ -730,10 +734,12 @@ export function startControlTower({ connect, notify, env = process.env, onError 
       clearWakeWish(env);
     }
     const location = locationLine(readUserLocation(settings.location.source, env), at);
-    await notify(sessionId, heartbeatText({ tick, at, action, wish, location, schedule, greeting: missed ? greetingText(missed, defaultsDir, env) : '',
+    const docs = docsReportLine(env, state.docsReportSeen);
+    await notify(sessionId, heartbeatText({ tick, at, action, wish, location, schedule, docs: docs?.line ?? '', greeting: missed ? greetingText(missed, defaultsDir, env) : '',
       note: action === 'reflect' ? settings.heartbeat.reflectNote : '' }), 'heartbeat');
     // Marked once it went, as Roo marks cron-last-run after the greeting: a failed send is caught up later.
     if (missed) writeState({ greeted: { ...readState(env).greeted, [missed]: localDate(at) } }, env);
+    if (docs) writeState({ docsReportSeen: docs.runId }, env);
   }
 
   /** When the user last wrote to the companion, from its session file; undefined when unknown. */

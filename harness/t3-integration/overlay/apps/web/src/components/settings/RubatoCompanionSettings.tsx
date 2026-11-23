@@ -43,6 +43,8 @@ import {
   type CompanionPieceId,
   type CompanionSettingsPatch,
   type CompanionSummaries,
+  type DocsCadence,
+  type DocsRoot,
   type TelegramHeldMessage,
   type TelegramStatus,
 } from "../../state/rubatoCompanion";
@@ -85,6 +87,19 @@ const CALL_EFFORT_LABELS: Record<CallEffort, string> = {
   low: "Low",
   medium: "Medium",
   high: "High",
+};
+
+const DOCS_CADENCE_LABELS: Record<DocsCadence, string> = {
+  off: "Off",
+  daily: "Every day",
+  weekly: "Every week",
+  monthly: "Every month",
+};
+
+const DOCS_MODE_LABELS: Record<DocsRoot["mode"], string> = {
+  edit: "edits directly",
+  branch: "review branch",
+  report: "reads only",
 };
 
 /** The summary cards' row names (contract `summaries` keys); the text in them is the companion's. */
@@ -1022,6 +1037,44 @@ function CompanionDetail({ companion }: { companion: CompanionChoice }) {
               )
             }
           />
+          {settings.dream ? (
+            <CardRow
+              id="rubato-companion-docs"
+              title="Tidying documents"
+              description={
+                settings.dream.docs.roots.length === 0 ? (
+                  "Nothing to tend yet. Tell it which folders to keep tidy."
+                ) : (
+                  <span className="flex flex-col">
+                    {settings.dream.docs.roots.map((root) => (
+                      <span key={root.path}>
+                        <span translate="no">{root.path}</span> · <span>{DOCS_MODE_LABELS[root.mode]}</span>
+                      </span>
+                    ))}
+                  </span>
+                )
+              }
+              control={
+                <Select
+                  value={settings.dream.docs.cadence}
+                  onValueChange={(next) => {
+                    if (typeof next === "string") void save({ dream: { docs: { cadence: next as DocsCadence } } });
+                  }}
+                >
+                  <SelectTrigger size="sm" className="w-auto min-w-36" aria-label="How often documents are tidied" disabled={busy}>
+                    <SelectValue>{DOCS_CADENCE_LABELS[settings.dream.docs.cadence]}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    {(Object.keys(DOCS_CADENCE_LABELS) as DocsCadence[]).map((cadence) => (
+                      <SelectItem key={cadence} value={cadence}>
+                        {DOCS_CADENCE_LABELS[cadence]}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              }
+            />
+          ) : null}
           {companion.calls ? (
             <CardRow
               id="rubato-companion-call-effort"
