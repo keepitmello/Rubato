@@ -12,6 +12,7 @@ export const PROJECT_CONTEXT_ENTRY_TYPE = "rubato.project-context";
 export const PROJECT_RULES_ENTRY_TYPE = "rubato.project-rules";
 
 export const OPENING_TURN_ENTRY_TYPE = "rubato.opening-turn";
+export const USER_RULES_ENTRY_TYPE = "rubato.confirmed-user-rules";
 
 // The always-on companion's role (harness/companion COMPANION_ROLE; that module is not staged
 // with these runtime files).
@@ -52,7 +53,7 @@ export function createRolePromptExtension({ env = process.env } = {}) {
     const promptHref = env.RUBATO_ROLE_PROMPT_MODULE;
     const roleHref = env.RUBATO_ROLE_CONTRACT_MODULE;
     if (!promptHref || !roleHref) return;
-    const [{ loadRolePrompt, promptForAgentStart, skillsListingOf, loadOpeningTurn, codaLast }, { resolveRole }] = await Promise.all([
+    const [{ loadRolePrompt, promptForAgentStart, skillsListingOf, loadOpeningTurn, loadConfirmedRules, codaLast }, { resolveRole }] = await Promise.all([
       import(promptHref),
       import(roleHref),
     ]);
@@ -64,10 +65,26 @@ export function createRolePromptExtension({ env = process.env } = {}) {
     if (typeof skillsListingOf === "function") sections.push({ type: SKILLS_LISTING_ENTRY_TYPE, of: skillsListingOf });
     const pinned = new Map();
     const repin = new Set();
+    // A choice belongs to future sessions. Even /reload keeps this pin. A pre-feature
+    // conversation that already has history started without rules; pin that absence too.
+    const rules = new Map();
+    const sessionRules = (id, ctx) => {
+      if (role === COMPANION_ROLE || !loadConfirmedRules) return "";
+      if (rules.has(id)) return rules.get(id);
+      let text = recordedEntry(ctx, USER_RULES_ENTRY_TYPE);
+      if (text === undefined) {
+        const started = ctx.sessionManager?.getBranch?.()?.some((entry) => entry.type === "message" && entry.message?.role === "assistant");
+        text = started ? "" : loadConfirmedRules({ env, cwd: ctx.cwd });
+        pi.appendEntry?.(USER_RULES_ENTRY_TYPE, { value: text });
+      }
+      rules.set(id, text);
+      return text;
+    };
     pi.on("session_start", (event, ctx) => {
       const id = sessionIdOf(ctx);
       if (id === undefined) return;
       pinned.delete(id);
+      sessionRules(id, ctx);
       if (event?.reason === "reload") repin.add(id);
     });
     // The pinned value of one entry type for this session; `live` supplies it the first time.
@@ -121,6 +138,8 @@ export function createRolePromptExtension({ env = process.env } = {}) {
           if (live !== undefined && live !== value) composed = value === "" ? without(composed, live) : composed.replace(live, () => value);
         }
         repin.delete(id);
+        const block = sessionRules(id, ctx);
+        if (block) composed = `${composed}\n\n${block}`;
       }
       // The companion's closing piece is the last thing in the prompt, after the additions too
       // (Roo build.sh: "마지막 토큰 슬롯을 루 목소리로 점유").

@@ -15,10 +15,12 @@ import { collectPending, readInputsLedger } from "./observations"
 import { listRecords, plainLine, type EvidenceLine } from "./records"
 import { readJsonFile, userStore, type UserStore } from "./store"
 import { readSummary } from "./summary"
+import { readRuleChoices, sessionRule } from "./rule-choices"
 
 const ASKS_SHOWN = 20
 
 export interface UserMemoryItem {
+  readonly rule: ReturnType<typeof sessionRule>
   readonly path: string
   readonly text: string
   /** False when the line is the record's own (English) conclusion because no summary line matches this version yet. */
@@ -72,6 +74,7 @@ export async function composeUserView(memoryRoot: string, options: { readonly no
   const exec = createNodeGitExec()
   const git: Git = async (cwd, argv) => exec.run(argv, { cwd, timeoutMs: 30_000 })
   const records = exists ? await listRecords(git, store.paths.repo, "HEAD") : []
+  const choices = await readRuleChoices(store)
   const summary = await readSummary(store)
   const revision = exists ? (await git(store.paths.repo, ["rev-parse", "--verify", "-q", "HEAD"])).stdout.trim() || null : null
   const updatedAt = exists ? (await git(store.paths.repo, ["log", "-1", "--format=%cI"])).stdout.trim() || null : null
@@ -83,6 +86,7 @@ export async function composeUserView(memoryRoot: string, options: { readonly no
     const summarized = line !== undefined && line.blob === record.blob
     const list = byTopic.get(record.topic) ?? []
     list.push({
+      rule: sessionRule(record, choices),
       path: record.path,
       text: summarized ? line.text : plainLine(record),
       summarized,

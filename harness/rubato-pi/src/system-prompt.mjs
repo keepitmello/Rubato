@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { skillsSection, SKILL_DIRS } from "./skills-section.mjs";
 import { resolveRole } from "./role-contract.mjs";
@@ -9,6 +9,20 @@ import { codaLast, composeCompanionPrompt, COMPANION_ROLE } from "../../companio
 
 // The companion's closing piece goes to the very end of the system prompt (companion.mjs codaLast).
 export { codaLast };
+
+// The role extension is shared by leads and lightweight children. Resolve the selected records
+// through the memory runtime, without loading all the lead's memory tools into a child.
+export function loadConfirmedRules({ env, cwd = process.cwd() }) {
+  const root = env.RUBATO_MEMORY_HOME?.trim() ? resolve(cwd, env.RUBATO_MEMORY_HOME) : join(homedir(), ".rubato", "memory");
+  if (!existsSync(join(root, "agents/user.shared/runtime/rule-choices.json"))) return "";
+  const cli = fileURLToPath(new URL("../../../packages/rubato-runtime/src/user-memory/cli.ts", import.meta.url));
+  const result = spawnSync("bun", [cli, "rule-block"], { cwd, env: { ...process.env, ...env, RUBATO_MEMORY_HOME: root }, encoding: "utf8", timeout: 15_000 });
+  if (result.status !== 0) {
+    console.warn("Rubato could not load confirmed memory rules:", result.error?.message ?? result.stderr.trim());
+    return "";
+  }
+  return result.stdout;
+}
 
 const SKILLS_SECTION = "The following skills provide specialized instructions";
 const BUNDLED_DISPATCHED_SKILL = join(dirname(fileURLToPath(import.meta.url)), "../../skills/dispatched/SKILL.md");

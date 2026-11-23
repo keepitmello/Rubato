@@ -21,6 +21,7 @@ import { resolveLaunch } from "../dream/launch"
 import { liveMemoryVerdict } from "../dream/live-guard"
 import { ASK_ID, recordForgetsAgain, runUserAsk } from "./ask"
 import { composeUserView } from "./view"
+import { confirmedRuleLines, setRuleChoice } from "./rule-choices"
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -28,6 +29,20 @@ async function main(argv: readonly string[]): Promise<number> {
   const env = process.env
   const [command, id] = argv.filter((arg) => !arg.startsWith("--"))
   const memoryRoot = resolveMemoryRoot(env, homedir())
+  if (command === "rule-block") {
+    const lines = await confirmedRuleLines(memoryRoot)
+    if (lines.length) process.stdout.write(`<confirmed_user_rules>\n${lines.map((line) => `- ${line}`).join("\n")}\n</confirmed_user_rules>`)
+    return 0
+  }
+  if (command === "rule") {
+    const [, action, path, blob] = argv
+    if ((action !== "load" && action !== "remove") || !path || !blob) throw new Error("usage: rubato memory rule load|remove PATH BLOB")
+    const verdict = liveMemoryVerdict({ env, home: homedir(), cliPath: join(here, "..", "dream", "cli.ts") })
+    if (!verdict.allowed) throw new Error(`${verdict.reason}; nothing ran`)
+    await setRuleChoice(memoryRoot, path, blob, action === "load")
+    process.stdout.write('{"saved":true}\n')
+    return 0
+  }
   if (command === "view") {
     process.stdout.write(`${JSON.stringify(await composeUserView(memoryRoot), null, 2)}\n`)
     return 0
