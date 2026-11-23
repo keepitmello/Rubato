@@ -720,7 +720,7 @@ export function takeLock(file, at) {
 /** Lets go of the lock this process took for the run that started at `at`, and of no one else's. */
 export function releaseLock(file, at) {
   const held = readJson(file);
-  if (held === undefined || (held.pid === process.pid && held.at === at)) rmSync(file, { force: true });
+  if (held?.pid === process.pid && held.at === at) rmSync(file, { force: true });
 }
 
 /** The child's argv: a print-mode engine run with file tools only and no extensions (Rubato's dream childArgs). */

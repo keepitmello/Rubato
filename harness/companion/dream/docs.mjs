@@ -28,7 +28,7 @@
 // next heartbeat tick (docsReportLine), so the companion reads it when it wakes and tells the user.
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { companionDefaultsDir } from '../../rubato-pi/src/system-prompt.mjs';
 import { docsRootPath, docsRootProblem, memoryPiecePath } from '../companion.mjs';
@@ -105,8 +105,8 @@ function filesUnder(dir) {
 }
 
 /**
- * Files under `target` (a folder or one file) that the immutable flag protects: flagged themselves or
- * inside a flagged folder. macOS and the BSDs keep it as chflags uchg/schg, which find reads; elsewhere
+ * Paths under `target` (a folder or one file) that the immutable flag protects: flagged files and
+ * folders, and the files inside a flagged folder. macOS and the BSDs keep it as chflags uchg/schg, which find reads; elsewhere
  * there is no such flag and nothing is locked. A find that cannot read some folders still reports what
  * it found; one that fails outright stops the run rather than going on as if nothing were locked.
  */
@@ -123,10 +123,10 @@ export function immutableFiles(target, platform = process.platform) {
   }
   const found = new Set();
   for (const file of out.split('\0').filter(Boolean)) {
+    found.add(file);
     let stat;
     try { stat = lstatSync(file); } catch { continue; }
     if (stat.isDirectory()) for (const inner of filesUnder(file)) found.add(inner);
-    else found.add(file);
   }
   return [...found].sort();
 }
@@ -136,10 +136,17 @@ function setLocked(file, locked) {
   try { execFileSync('chflags', ['-h', locked ? 'uchg' : 'nouchg', file], { stdio: 'ignore' }); return true; } catch { return false; }
 }
 
-/** Each listed path's kind, size and time, so a rewrite of an already-changed file still shows. */
+/** Files up to this size are compared by their bytes; larger ones by size and time. */
+const STAMP_CONTENT_BYTES = 4 * 1024 * 1024;
+
+/** Each listed path's kind and contents (or size and time when large), so any rewrite of it shows. */
 function pathStamps(root, rels) {
   return rels.map((rel) => {
-    try { const stat = lstatSync(path.join(root, rel)); return `${rel}:${stat.mode}:${stat.size}:${stat.mtimeMs}`; } catch { return `${rel}:gone`; }
+    const full = path.join(root, rel);
+    let stat;
+    try { stat = lstatSync(full); } catch { return `${rel}:gone`; }
+    if (stat.isFile() && stat.size <= STAMP_CONTENT_BYTES) { try { return `${rel}:${stat.mode}:${hash(readFileSync(full))}`; } catch { /* below */ } }
+    return `${rel}:${stat.mode}:${stat.size}:${stat.mtimeMs}`;
   }).join('\n');
 }
 
@@ -169,7 +176,18 @@ function folderFingerprint(target) {
  */
 export function resolveDocsRoots(roots, env = process.env) {
   const home = real(segnoPaths(env).home) ?? segnoPaths(env).home;
-  return (Array.isArray(roots) ? roots : []).map((root) => {
+  const places = new Map();
+  return (Array.isArray(roots) ? roots : []).map((root) => resolveOne(root, env, home)).map((root) => {
+    if (root.status !== 'ready') return root;
+    const earlier = places.get(root.resolved);
+    if (earlier) return { path: root.path, mode: root.mode, status: 'skipped', reason: `it is the same place as ${earlier}` };
+    places.set(root.resolved, root.path);
+    return root;
+  });
+}
+
+function resolveOne(root, env, home) {
+  {
     const named = { path: root?.path, mode: root?.mode };
     const problem = docsRootProblem(root, env);
     if (problem) return { ...named, status: 'skipped', reason: problem };
@@ -192,7 +210,7 @@ export function resolveDocsRoots(roots, env = process.env) {
     if (!rel.startsWith('..') && !path.isAbsolute(rel)) return { ...named, status: 'skipped', reason: "it resolves inside the companion's home" };
     if (!git(repo, ['rev-parse', '--verify', '-q', 'HEAD'], { allowFail: true })) return { ...named, status: 'skipped', reason: 'the repository has no commit yet' };
     return { ...named, status: 'ready', resolved: full, repo, scope: posix(path.relative(repo, full)) };
-  });
+  }
 }
 
 /** A branch name no ref has yet: dream/docs-YYYYMMDD, then -2, -3… */
@@ -208,16 +226,18 @@ function freeBranch(repo, date) {
  * One repository's detached worktree at its current commit, with its locked files locked there too.
  * The repository's own state is read first, so the run's own worktree is not part of what it saw.
  */
-function openWorktree(repo, scopes, runDir) {
+function openWorktree(repo, scopes, runDir, opened) {
   const before = repoFingerprint(repo);
   const base = git(repo, ['rev-parse', 'HEAD']).trim();
   const locked = [...new Set(scopes.flatMap((scope) => immutableFiles(path.join(repo, scope))))]
     .map((file) => posix(path.relative(repo, file))).filter((rel) => !rel.startsWith('..')).sort();
   const worktree = path.join(runDir, 'worktrees', `${path.basename(repo)}-${hash(repo).slice(0, 8)}`);
   mkdirSync(path.dirname(worktree), { recursive: true, mode: 0o700 });
-  git(repo, ['worktree', 'add', '--detach', '--quiet', worktree, base]);
-  const open = { repo, base, worktree, scopes, locked, lockedHere: [], before, closed: false,
-    admin: git(worktree, ['rev-parse', '--absolute-git-dir']).trim() };
+  // Every file of the commit, whatever sparse checkout the user's own worktree keeps.
+  git(repo, ['-c', 'core.sparseCheckout=false', '-c', 'core.sparseCheckoutCone=false', 'worktree', 'add', '--detach', '--quiet', worktree, base]);
+  const open = { repo, base, worktree, scopes, locked, lockedHere: [], before, closed: false, admin: undefined };
+  opened.push(open);
+  open.admin = git(worktree, ['rev-parse', '--absolute-git-dir']).trim();
   open.lockedHere = locked.filter((rel) => existsSync(path.join(worktree, rel)) && setLocked(path.join(worktree, rel), true));
   return open;
 }
@@ -234,91 +254,81 @@ function closeWorktree(open) {
     if (BSD.has(process.platform)) try { execFileSync('chflags', ['-R', '-h', 'nouchg', open.worktree], { stdio: 'ignore' }); } catch {}
     rmSync(open.worktree, { recursive: true, force: true });
     const common = git(open.repo, ['rev-parse', '--path-format=absolute', '--git-common-dir'], { allowFail: true })?.trim();
-    if (common && path.dirname(open.admin) === path.join(common, 'worktrees')) rmSync(open.admin, { recursive: true, force: true });
+    if (common && open.admin && path.dirname(open.admin) === path.join(common, 'worktrees')) rmSync(open.admin, { recursive: true, force: true });
+    else git(open.repo, ['worktree', 'remove', '--force', '--force', open.worktree], { allowFail: true });
   }
   open.closed = true;
 }
 
-/**
- * What the child changed under the roots, judged from the worktree's files against the base commit,
- * whatever the child did to the worktree's index or HEAD: `{ path, mode, oid }` per changed path
- * (`oid` null when it is gone). Changes outside the roots are named for the report only.
- */
-function worktreeChanges(open) {
-  const { worktree, base, scopes } = open;
-  const baseEntries = new Map();
-  for (const line of git(worktree, ['ls-tree', '-r', '-z', base, '--', ...scopes.map((scope) => scope || '.')]).split('\0').filter(Boolean)) {
-    const [meta, rel] = line.split('\t');
-    const [mode, , oid] = meta.split(' ');
-    baseEntries.set(rel, { mode, oid });
+/** `git diff-index`/`diff-tree --raw -z` as `{ path, oldMode, newMode }`, whatever bytes the names hold. */
+function rawChanges(text) {
+  const tokens = text.split('\0');
+  const out = [];
+  for (let index = 0; index + 1 < tokens.length; index += 2) {
+    if (!tokens[index].startsWith(':')) break;
+    const [oldMode, newMode] = tokens[index].slice(1).split(' ');
+    out.push({ path: tokens[index + 1], oldMode, newMode });
   }
-  const listed = git(worktree, ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', ...scopes.map((scope) => scope || '.')])
-    .split('\0').filter(Boolean);
-  const candidates = [...new Set([...baseEntries.keys(), ...listed])].filter((rel) => inScope(rel, scopes)).sort();
-  const present = [];
-  const changes = [];
-  const refused = [];
-  for (const rel of candidates) {
-    let stat;
-    try { stat = lstatSync(path.join(worktree, rel)); } catch { stat = undefined; }
-    if (!stat) { if (baseEntries.has(rel)) changes.push({ path: rel, mode: '0', oid: null }); continue; }
-    if (stat.isSymbolicLink()) {
-      // A link the child made or moved could carry a write anywhere; links are left as the base had them.
-      const was = baseEntries.get(rel);
-      if (!was || was.mode !== '120000' || git(worktree, ['hash-object', '--stdin'], { input: readlinkSync(path.join(worktree, rel)) }).trim() !== was.oid)
-        refused.push({ path: rel, reason: 'link' });
-      continue;
-    }
-    if (!stat.isFile() || rel.includes('\n')) continue;
-    present.push({ rel, mode: stat.mode & 0o111 ? '100755' : '100644' });
-  }
-  const oids = present.length ? git(worktree, ['hash-object', '-w', '--no-filters', '--stdin-paths'], { input: present.map((item) => item.rel).join('\n') + '\n' })
-    .trim().split('\n') : [];
-  present.forEach((item, index) => {
-    const was = baseEntries.get(item.rel);
-    if (!was || was.oid !== oids[index] || was.mode !== item.mode) changes.push({ path: item.rel, mode: item.mode, oid: oids[index] });
-  });
-  // Against the base too, so a change the child committed itself is still named.
-  const outside = [...(git(worktree, ['diff', '--name-only', '-z', '--no-renames', base], { allowFail: true }) ?? '').split('\0'),
-    ...(git(worktree, ['ls-files', '-z', '--others', '--exclude-standard'], { allowFail: true }) ?? '').split('\0')]
-    .filter((rel) => rel && !inScope(rel, scopes));
-  return { changes, refused, outside };
+  return out;
 }
 
 /**
- * After the child: Rubato builds the commit itself, from the base commit plus the changes under the
- * roots that touch no locked file, in an index of its own, and names it as a new branch; nothing of
- * the worktree's index, HEAD or any existing branch is used or moved, and no hook runs. Then the
- * worktree goes. Returns what happened.
+ * After the child: Rubato builds the commit itself. It starts an index of its own from the base
+ * commit and lets git take in the worktree's files under the roots (`add -A`, with the repository's
+ * own filters and link rules), so nothing of the worktree's index, HEAD or branches is used. A change
+ * outside the roots, to or around a locked path, or to a symbolic link is put back to the base. The
+ * finished tree is checked once more against the same rules, and a tree that still breaks one is
+ * not published. The commit gets a new branch that did not exist; no existing branch moves and no
+ * hook runs. Then the worktree goes. Returns what happened.
  */
 function finishWorktree(open, { date, message, runDir }) {
   for (const rel of open.lockedHere) setLocked(path.join(open.worktree, rel), false);
   open.lockedHere = [];
-  const lockedSet = new Set(open.locked);
-  const { changes, refused, outside } = worktreeChanges(open);
-  const kept = changes.filter((change) => !lockedSet.has(change.path));
-  const reverted = [...changes.filter((change) => lockedSet.has(change.path)).map((change) => ({ path: change.path, reason: 'locked' })),
-    ...refused, ...[...new Set(outside)].map((rel) => ({ path: rel, reason: 'outside the roots' }))];
+  const { worktree, base, scopes, locked } = open;
+  const guarded = (rel) => locked.some((item) => rel === item || rel.startsWith(`${item}/`) || item.startsWith(`${rel}/`));
+  const problem = (change) => !inScope(change.path, scopes) ? 'outside the roots' : guarded(change.path) ? 'locked'
+    : change.oldMode === '120000' || change.newMode === '120000' ? 'link' : undefined;
+  const indexFile = path.join(runDir, `index-${hash(open.repo).slice(0, 8)}`);
+  const index = { GIT_INDEX_FILE: indexFile };
+  const reverted = new Map();
   let branch = null;
   let commit = null;
-  if (kept.length) {
-    const index = { GIT_INDEX_FILE: path.join(runDir, `index-${hash(open.repo).slice(0, 8)}`) };
-    git(open.worktree, ['read-tree', open.base], { env: index });
-    git(open.worktree, ['update-index', '-z', '--index-info'], { env: index,
-      input: kept.map((change) => `${change.mode} ${change.oid ?? '0'.repeat(open.base.length)}\t${change.path}\0`).join('') });
-    const tree = git(open.worktree, ['write-tree'], { env: index }).trim();
-    const named = git(open.worktree, ['config', 'user.email'], { allowFail: true })?.trim() ? {}
-      : { GIT_AUTHOR_NAME: 'Rubato dream', GIT_AUTHOR_EMAIL: 'dream@rubato.local', GIT_COMMITTER_NAME: 'Rubato dream', GIT_COMMITTER_EMAIL: 'dream@rubato.local' };
-    const sha = git(open.worktree, ['commit-tree', tree, '-p', open.base, '-m', message], { env: named }).trim();
-    branch = freeBranch(open.repo, date);
-    // An empty old value: the ref is created only if no branch of that name appeared meanwhile.
-    git(open.repo, ['update-ref', `refs/heads/${branch}`, sha, '']);
-    commit = sha.slice(0, 9);
-  }
+  let files = [];
+  try {
+    git(worktree, ['read-tree', base], { env: index });
+    git(worktree, ['add', '-A', '--', ...scopes.map((scope) => scope || '.')], { env: index });
+    for (let round = 0; round < 4; round += 1) {
+      const bad = rawChanges(git(worktree, ['diff-index', '--cached', '-z', '--no-renames', '--raw', base], { env: index }))
+        .filter((change) => problem(change));
+      if (!bad.length) break;
+      for (const change of bad) reverted.set(change.path, problem(change));
+      git(worktree, ['reset', '--quiet', base, '--', ...bad.map((change) => change.path)], { env: index });
+    }
+    const tree = git(worktree, ['write-tree'], { env: index }).trim();
+    const changes = rawChanges(git(worktree, ['diff-tree', '-r', '-z', '--no-renames', '--raw', base, tree]));
+    const breaking = changes.filter((change) => problem(change));
+    if (breaking.length) throw new Error(`the review branch would still change ${breaking.map((change) => change.path).join(', ')}; nothing was published`);
+    files = changes.map((change) => change.path);
+    if (files.length) {
+      const named = git(worktree, ['config', 'user.email'], { allowFail: true })?.trim() ? {}
+        : { GIT_AUTHOR_NAME: 'Rubato dream', GIT_AUTHOR_EMAIL: 'dream@rubato.local', GIT_COMMITTER_NAME: 'Rubato dream', GIT_COMMITTER_EMAIL: 'dream@rubato.local' };
+      const sha = git(worktree, ['commit-tree', tree, '-p', base, '-m', message], { env: named }).trim();
+      branch = freeBranch(open.repo, date);
+      // An empty old value: the ref is created only if no branch of that name appeared meanwhile.
+      git(open.repo, ['update-ref', `refs/heads/${branch}`, sha, '']);
+      commit = sha.slice(0, 9);
+    }
+  } finally { rmSync(indexFile, { force: true }); }
+  // Outside the roots the child's changes are named for the report; they were never taken in.
+  const outside = [...(git(worktree, ['diff', '--name-only', '-z', '--no-renames', base], { allowFail: true }) ?? '').split('\0'),
+    ...(git(worktree, ['ls-files', '-z', '--others', '--exclude-standard'], { allowFail: true }) ?? '').split('\0')]
+    .filter((rel) => rel && !inScope(rel, scopes));
+  for (const rel of outside) if (!reverted.has(rel)) reverted.set(rel, 'outside the roots');
   closeWorktree(open);
   const after = repoFingerprint(open.repo);
   const sourceChanged = after.refs !== open.before.refs || after.tree !== open.before.tree;
-  return { repo: open.repo, base: open.base.slice(0, 12), branch, commit, files: kept.map((change) => change.path), reverted, locked: open.locked, sourceChanged };
+  return { repo: open.repo, base: base.slice(0, 12), branch, commit, files, reverted: [...reverted].map(([rel, reason]) => ({ path: rel, reason })).sort((a, b) => a.path.localeCompare(b.path)),
+    locked, sourceChanged };
 }
 
 /** The report's part Rubato writes from what it checked, under the companion's own report. */
@@ -359,24 +369,57 @@ export async function runDocsDream({ env = process.env, settings, launch, spawnC
   const due = docsDue({ at, state, settings, manual });
   if (!due.due) return { status: 'not-due', reason: due.reason };
   const runDate = localDate(at);
-  const reportFile = path.join(docsReportDir(env), `${runDate}.md`);
+  const tag = randomBytes(3).toString('hex');
+  const runId = `docs-${localIso(at).replace(/[:+]/g, '-')}-${tag}`;
+  // Each run's report is a file of its own, created new: nothing is appended to a file already there.
+  const reportFile = path.join(docsReportDir(env), `${runDate}-${tag}.md`);
   // Everything the run writes for itself stays inside the home: a link anywhere on those paths runs nothing.
   const outward = [paths.state, paths.lock, path.join(paths.runs, 'run'), reportFile].find((target) => !landsInside(home, target));
   if (outward) return { status: 'failed', reason: `${outward} leads outside the companion's home through a link` };
   if (!takeLock(paths.lock, at)) return { status: 'busy', reason: 'another dream is running' };
-  const runId = `docs-${localIso(at).replace(/[:+]/g, '-')}-${randomBytes(3).toString('hex')}`;
   const runDir = path.join(paths.runs, runId);
   const outDir = path.join(runDir, 'out');
   const base = { runId, startedAt: localIso(at), manual };
   const opened = [];
+  const repos = [];
+  let reports = [];
+  let skipped = [];
   const workHome = path.join(runDir, 'home');
   let homeLockedHere = [];
   let record;
+  const writeReport = (text) => {
+    if (!landsInside(home, reportFile)) throw new Error(`${reportFile} leads outside the companion's home through a link`);
+    mkdirSync(path.dirname(reportFile), { recursive: true, mode: 0o700 });
+    writeFileSync(reportFile, `${text}\n`, { flag: 'wx', mode: 0o600 });
+  };
+  /** What a run that stopped part way still owes: its worktrees closed and compared, its branches named. */
+  const settleAfterFailure = (reason) => {
+    for (const open of opened) {
+      if (open.closed) continue;
+      try { closeWorktree(open); } catch { /* the folder goes in finally */ }
+      const after = repoFingerprint(open.repo);
+      repos.push({ repo: open.repo, branch: null, commit: null, files: [], reverted: [], locked: open.locked,
+        sourceChanged: after.refs !== open.before.refs || after.tree !== open.before.tree });
+    }
+    for (const item of reports) {
+      const after = item.repo ? repoFingerprint(item.repo) : folderFingerprint(item.resolved);
+      item.sourceChanged = after.tree !== item.before.tree || after.refs !== item.before.refs;
+    }
+    const branches = repos.filter((item) => item.branch).map((item) => ({ repo: item.repo, branch: item.branch, commit: item.commit }));
+    const sourceChanged = [...repos.filter((item) => item.sourceChanged).map((item) => item.repo), ...reports.filter((item) => item.sourceChanged).map((item) => item.resolved)];
+    if (branches.length || sourceChanged.length) {
+      try {
+        writeReport([`# 문서 정리 (${localIso(at)})`, factsSection({ repos, reports, skipped, failed: reason })].join('\n\n'));
+        writeJson(paths.state, { ...readDreamState(env), docsReport: { runId, report: reportFile, branches: branches.length, decide: 0 } });
+      } catch { /* the run record still says what happened */ }
+    }
+    return { branches, sourceChanged };
+  };
   try {
     mkdirSync(outDir, { recursive: true, mode: 0o700 });
     const roots = resolveDocsRoots(settings.dream.docs.roots, env);
     const ready = roots.filter((root) => root.status === 'ready');
-    const skipped = roots.filter((root) => root.status === 'skipped');
+    skipped = roots.filter((root) => root.status === 'skipped');
     if (!ready.length) {
       record = { ...base, status: 'failed', reason: 'no root could be opened', skipped };
       return record;
@@ -391,8 +434,8 @@ export async function runDocsDream({ env = process.env, settings, launch, spawnC
 
     const byRepo = new Map();
     for (const root of ready.filter((item) => item.mode === 'branch')) byRepo.set(root.repo, [...(byRepo.get(root.repo) ?? []), root.scope]);
-    for (const [repo, scopes] of byRepo) opened.push(openWorktree(repo, scopes, runDir));
-    const reports = ready.filter((root) => root.mode === 'report')
+    for (const [repo, scopes] of byRepo) openWorktree(repo, scopes, runDir, opened);
+    reports = ready.filter((root) => root.mode === 'report')
       .map((root) => ({ ...root, before: root.repo ? repoFingerprint(root.repo) : folderFingerprint(root.resolved) }));
 
     const plan = {
@@ -451,7 +494,6 @@ export async function runDocsDream({ env = process.env, settings, launch, spawnC
       if (moved.applied.length && reindex) try { reindex(env); } catch { /* search catches up on its next index */ }
       homeOutcome = { ...moved, commit: commit?.commit ?? null };
     }
-    const repos = [];
     for (const open of opened) {
       if (ok) { repos.push(finishWorktree(open, { date: runDate, message, runDir })); continue; }
       closeWorktree(open);
@@ -467,8 +509,7 @@ export async function runDocsDream({ env = process.env, settings, launch, spawnC
     const decide = Number.isInteger(result.decide) && result.decide >= 0 ? result.decide : 0;
     const report = [`# 문서 정리 (${localIso(at)})`, readText(plan.out.report) || (ok ? '(꿈이 보고를 안 남김)' : ''),
       factsSection({ repos, home: homeOutcome, reports, skipped, failed })].filter(Boolean).join('\n\n');
-    mkdirSync(path.dirname(reportFile), { recursive: true, mode: 0o700 });
-    appendFileSync(reportFile, `${existsSync(reportFile) ? '\n---\n\n' : ''}${report}\n`, { mode: 0o600 });
+    writeReport(report);
     const branches = repos.filter((item) => item.branch).map((item) => ({ repo: item.repo, branch: item.branch, commit: item.commit }));
     const sourceChanged = repos.some((item) => item.sourceChanged) || reports.some((item) => item.sourceChanged);
     const attention = sourceChanged || skipped.length > 0 || repos.some((item) => item.reverted.length)
@@ -486,7 +527,8 @@ export async function runDocsDream({ env = process.env, settings, launch, spawnC
       skipped: skipped.map(({ path: rootPath, reason }) => ({ path: rootPath, reason })) };
     return record;
   } catch (error) {
-    record = { ...base, status: 'failed', reason: String(error?.message ?? error) };
+    const reason = String(error?.message ?? error);
+    record = { ...base, status: 'failed', reason, ...settleAfterFailure(reason) };
     return record;
   } finally {
     try {

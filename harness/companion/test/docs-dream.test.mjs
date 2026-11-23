@@ -407,3 +407,80 @@ test('the ladder honours the [senpi] section, drops an unknown reasoning level, 
   assert.equal(await resolveModels(env, (error) => errors.push(error)), DREAM_MODELS);
   assert.match(errors[0].message, /does not parse/);
 });
+
+/** A one-root branch run with `work` as the child's hands; returns the record and the repository. */
+async function branchRun(t, { setup, work, roots = (repo) => [{ path: path.join(repo, 'docs'), mode: 'branch' }] } = {}) {
+  const { dir, env } = sandbox(t);
+  const fixture = userRepo(dir);
+  setup?.({ ...fixture, dir });
+  writeSettings({ dream: { docs: { roots: roots(fixture.repo, dir) } } }, env);
+  const record = await runDocsDream({ env, settings: readSettings(env), launch, now: () => at(21, 4, 30), defaultsDir,
+    spawnChild: fakeTender({ work: (args) => work?.({ ...args, ...fixture, dir, worktree: path.dirname(args.plan.roots[0]?.work ?? '') }) }).spawnChild });
+  return { record, ...fixture, dir, env };
+}
+
+test('a sparse checkout\'s absent files and a line-ending filter are not changes: a run that edits nothing makes no branch', async (t) => {
+  const sparse = await branchRun(t, { setup({ repo }) {
+    put(path.join(repo, 'docs', 'private', 'guide.md'), 'kept in the commit, not in the checkout\n');
+    git(repo, 'add', '.');
+    git(repo, 'commit', '--quiet', '-m', 'private guide');
+    git(repo, 'sparse-checkout', 'set', '--no-cone', '/*', '!/docs/private/');
+  } });
+  assert.equal(sparse.record.status, 'done', JSON.stringify(sparse.record));
+  assert.deepEqual(sparse.record.branches, []);
+  assert.equal(existsSync(path.join(sparse.repo, 'docs', 'private', 'guide.md')), false, 'the user\'s sparse checkout is as it was');
+
+  const crlf = await branchRun(t, { setup({ repo }) {
+    put(path.join(repo, '.gitattributes'), 'docs/*.md text eol=crlf\n');
+    git(repo, 'add', '.');
+    git(repo, 'commit', '--quiet', '-m', 'crlf');
+  } });
+  assert.deepEqual(crlf.record.branches, [], JSON.stringify(crlf.record));
+});
+
+test('the finished tree never changes a locked file, not through its folder and not through a link to outside', { skip: !darwin }, async (t) => {
+  const { record, repo } = await branchRun(t, {
+    setup({ repo }) {
+      put(path.join(repo, 'docs', 'internal', 'locked.md'), '# locked\n');
+      git(repo, 'add', '.');
+      git(repo, 'commit', '--quiet', '-m', 'internal');
+      execFileSync('chflags', ['uchg', path.join(repo, 'docs', 'internal', 'locked.md')]);
+    },
+    work({ worktree, dir }) {
+      // The child lifts the lock and turns the folder into a file, and points another folder outside.
+      execFileSync('chflags', ['-R', 'nouchg', path.join(worktree, 'docs', 'internal')]);
+      rmSync(path.join(worktree, 'docs', 'internal'), { recursive: true });
+      writeFileSync(path.join(worktree, 'docs', 'internal'), 'a file now\n');
+      put(path.join(dir, 'outside', 'runbook.md'), 'bytes from outside\n');
+      rmSync(path.join(worktree, 'docs', 'runbook.md'));
+      symlinkSync(path.join(dir, 'outside', 'runbook.md'), path.join(worktree, 'docs', 'runbook.md'));
+      writeFileSync(path.join(worktree, 'docs', 'copy.md'), 'See runbook.\n');
+    },
+  });
+  const branch = record.branches[0].branch;
+  assert.deepEqual(git(repo, 'show', '--name-only', '--format=', branch).trim().split('\n'), ['docs/copy.md']);
+  assert.equal(git(repo, 'show', `${branch}:docs/internal/locked.md`), '# locked\n');
+  assert.equal(git(repo, 'show', `${branch}:docs/runbook.md`), '# Runbook\nDeploy with make ship.\n');
+  assert.deepEqual(record.reverted.map((item) => `${item.path}:${item.reason}`),
+    ['docs/internal:locked', 'docs/internal/locked.md:locked', 'docs/runbook.md:link']);
+});
+
+test('names with tabs are committed as they are, and the run leaves no index of its own behind', async (t) => {
+  const { record, repo, env } = await branchRun(t, {
+    setup({ repo }) { put(path.join(repo, 'docs', 'a\tb.md'), 'tab\n'); git(repo, 'add', '.'); git(repo, 'commit', '--quiet', '-m', 'tab'); },
+    work({ worktree }) { writeFileSync(path.join(worktree, 'docs', 'a\tb.md'), 'tab, tidied\n'); },
+  });
+  const branch = record.branches[0].branch;
+  assert.equal(git(repo, 'show', `${branch}:docs/a\tb.md`), 'tab, tidied\n');
+  const runDir = path.join(dreamPaths(env).runs, record.runId);
+  assert.deepEqual(execFileSync('ls', [runDir], { encoding: 'utf8' }).split('\n').filter((name) => name.startsWith('index-')), []);
+});
+
+test('two roots that are the same place keep the first and name the second as skipped', async (t) => {
+  const { record } = await branchRun(t, {
+    setup({ repo, dir }) { symlinkSync(path.join(repo, 'docs'), path.join(dir, 'docs-link')); },
+    roots: (repo, dir) => [{ path: path.join(repo, 'docs'), mode: 'branch' }, { path: path.join(dir, 'docs-link'), mode: 'report' }],
+  });
+  assert.equal(record.status, 'partial');
+  assert.match(record.skipped[0].reason, /same place/);
+});
