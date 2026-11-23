@@ -94,6 +94,33 @@ export const CALL_EFFORTS = Object.freeze(['conversation', 'low', 'medium', 'hig
 export const DOCS_CADENCES = Object.freeze(['off', 'daily', 'weekly', 'monthly']);
 export const DOCS_ROOT_MODES = Object.freeze(['edit', 'branch', 'report']);
 export const DOCS_ROOT_LIMIT = 20;
+/**
+ * `dream.models` is this companion's own dream ladder: the models its memory dream and its docs job
+ * run on, in fallback order, each `{ model: "<provider>/<id>", reasoning? }` as in the global
+ * `memory.dream.models`. Empty (the default) means the global ladder, then dream.mjs DREAM_MODELS
+ * (dream/service.mjs resolveModels).
+ */
+export const DREAM_MODEL_LIMIT = 8;
+/** The reasoning levels a rung may name: config-core REASONING_LEVELS (a test keeps the two the same). */
+export const DREAM_REASONING_LEVELS = Object.freeze(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+const DREAM_MODEL_ID = /^[A-Za-z0-9][\w.-]*\/[^\s]{1,200}$/;
+
+/** One rung as stored, `{ model, reasoning? }`, from a string or an object; undefined when it is not one. */
+function dreamRung(entry) {
+  const value = typeof entry === 'string' ? { model: entry } : entry;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  if (Object.keys(value).some((key) => key !== 'model' && key !== 'reasoning')) return undefined;
+  const model = typeof value.model === 'string' ? value.model.trim() : '';
+  if (!DREAM_MODEL_ID.test(model)) return undefined;
+  if (value.reasoning !== undefined && !DREAM_REASONING_LEVELS.includes(value.reasoning)) return undefined;
+  return value.reasoning === undefined ? { model } : { model, reasoning: value.reasoning };
+}
+
+function normalizeDreamModels(value) {
+  const seen = new Set();
+  return (Array.isArray(value) ? value : []).map(dreamRung)
+    .filter((rung) => rung && !seen.has(rung.model) && seen.add(rung.model)).slice(0, DREAM_MODEL_LIMIT);
+}
 export const DEFAULT_SETTINGS = Object.freeze({
   enabled: false,
   heartbeat: Object.freeze({ enabled: true, everyMinutes: 30, quietDuringWish: true, reflectNote: '' }),
@@ -101,7 +128,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   schedule: Object.freeze({ sources: Object.freeze([]) }),
   location: Object.freeze({ source: '' }),
   call: Object.freeze({ effort: 'medium' }),
-  dream: Object.freeze({ docs: Object.freeze({ cadence: 'weekly', roots: Object.freeze([]) }) }),
+  dream: Object.freeze({ models: Object.freeze([]), docs: Object.freeze({ cadence: 'weekly', roots: Object.freeze([]) }) }),
 });
 /** A location source longer than this is not a path. */
 const LOCATION_SOURCE_LIMIT = 2048;
@@ -199,7 +226,7 @@ export function normalizeSettings(value, env = process.env) {
     location: { source: typeof location.source === 'string' && location.source.trim().length <= LOCATION_SOURCE_LIMIT
       ? location.source.trim() : DEFAULT_SETTINGS.location.source },
     call: { effort: CALL_EFFORTS.includes(call.effort) ? call.effort : DEFAULT_SETTINGS.call.effort },
-    dream: { docs: normalizeDocs(input.dream?.docs, env) },
+    dream: { models: normalizeDreamModels(input.dream?.models), docs: normalizeDocs(input.dream?.docs, env) },
   };
 }
 
@@ -255,6 +282,17 @@ export function writeSettings(patch, env = process.env) {
   const dream = patch.dream;
   if (dream !== undefined) {
     if (!dream || typeof dream !== 'object' || Array.isArray(dream)) throw new TypeError('dream must be an object');
+    if (dream.models !== undefined) {
+      if (!Array.isArray(dream.models)) throw new TypeError('dream.models must be a list');
+      if (dream.models.length > DREAM_MODEL_LIMIT) throw new TypeError(`dream.models holds at most ${DREAM_MODEL_LIMIT} models`);
+      const seen = new Set();
+      for (const entry of dream.models) {
+        const rung = dreamRung(entry);
+        if (!rung) throw new TypeError(`each dream model is "<provider>/<id>" or { model, reasoning } with reasoning one of ${DREAM_REASONING_LEVELS.join(', ')}`);
+        if (seen.has(rung.model)) throw new TypeError(`dream.models names ${rung.model} twice`);
+        seen.add(rung.model);
+      }
+    }
     const docs = dream.docs;
     if (docs !== undefined) {
       if (!docs || typeof docs !== 'object' || Array.isArray(docs)) throw new TypeError('dream.docs must be an object');

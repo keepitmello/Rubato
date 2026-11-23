@@ -41,6 +41,7 @@ import {
   type CompanionChoice,
   type CompanionPiece,
   type CompanionPieceId,
+  type CompanionDreamModel,
   type CompanionSettingsPatch,
   type CompanionSummaries,
   type DocsCadence,
@@ -59,6 +60,7 @@ import { RubatoCompanionFace, useOpenCompanionRoom } from "../chat/RubatoCompani
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { DreamModelsEditor } from "./RubatoMemorySettings";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
@@ -416,6 +418,46 @@ function CardRow({ id, title, description, control }: { id?: string; title: Reac
         {description ? <span className="text-muted-foreground text-xs">{description}</span> : null}
       </div>
       {control ? <div className="flex shrink-0 items-center gap-2">{control}</div> : null}
+    </div>
+  );
+}
+
+/**
+ * This companion's own dream ladder (companion.mjs dream.models), with Settings › Memory's editor.
+ * Empty means the user's dream models for all of Rubato, then Rubato's own; the companion can set
+ * the same list in conversation.
+ */
+function CompanionDreamModels({
+  models,
+  busy,
+  save,
+}: {
+  models: readonly CompanionDreamModel[];
+  busy: boolean;
+  save: (patch: CompanionSettingsPatch) => Promise<boolean>;
+}) {
+  const store = (next: readonly { readonly model: string; readonly reasoning: CompanionDreamModel["reasoning"] | null }[]) =>
+    save({ dream: { models: next.map(({ model, reasoning }) => (reasoning ? { model, reasoning } : { model })) } });
+  return (
+    <div data-rubato-companion-dream-models="">
+      <DreamModelsEditor
+        models={models.map(({ model, reasoning }) => ({ model, reasoning: reasoning ?? null }))}
+        onChange={(next) => void store(next)}
+        title="Dream models"
+        subject="its dream"
+        description={
+          models.length === 0
+            ? "Uses the dream models in Settings › Memory. Add one to give this companion its own."
+            : "Its memory dream and document upkeep try these in order and use the first one that answers."
+        }
+      />
+      {models.length > 0 ? (
+        <div className="flex justify-end pb-2">
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void store([])}>
+            Use the models in Settings › Memory
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1141,7 +1183,6 @@ function CompanionDetail({ companion }: { companion: CompanionChoice }) {
               )
             }
           />
-          {settings.dream ? <DocsUpkeep docs={settings.dream.docs} busy={busy} save={save} /> : null}
           {companion.calls ? (
             <CardRow
               id="rubato-companion-call-effort"
@@ -1171,6 +1212,13 @@ function CompanionDetail({ companion }: { companion: CompanionChoice }) {
         </Card>
 
         <ConnectionsCard companion={companion} title={name} />
+
+        {settings.dream ? (
+          <Card id="rubato-companion-dream" title="Dream">
+            <CompanionDreamModels models={settings.dream.models ?? []} busy={busy} save={save} />
+            <DocsUpkeep docs={settings.dream.docs} busy={busy} save={save} />
+          </Card>
+        ) : null}
       </div>
 
       <section data-rubato-companion-advanced="" className="rounded-2xl border border-border">

@@ -10,8 +10,8 @@
 // item bfe3d27d).
 //
 // A night's dream is two jobs in turn: the memory dream (dream.mjs), then, when its cadence has come
-// and the companion has roots to tend, document upkeep (docs.mjs). Both run on the dream ladder the
-// user set (memory.dream.models), else on dream.mjs DREAM_MODELS.
+// and the companion has roots to tend, document upkeep (docs.mjs). Both run on one ladder: the
+// companion's own dream.models, else the user's memory.dream.models, else dream.mjs DREAM_MODELS.
 import { existsSync } from 'node:fs';
 import { open, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -33,22 +33,30 @@ async function resolveLaunch(env) {
 }
 
 /**
- * The dream ladder from the user's config file (dream.mjs companionDreamModels), read the way
- * Settings › Memory reads it (t3-integration memory/service.mjs): rubato.jsonc, else rubato.json.
- * DREAM_MODELS when there is no file; a file that cannot be read or parsed is reported and falls back too.
+ * The dream ladder for this companion, first found of: its own `dream.models` (companion settings,
+ * set by talking to it or on Settings › Companion), the user's `memory.dream.models` in
+ * ~/.rubato/rubato.jsonc (else rubato.json), read the way Settings › Memory reads it
+ * (t3-integration memory/service.mjs), and dream.mjs DREAM_MODELS. The global file is only read; the
+ * user-memory and project dreams read it themselves. A global file that cannot be read or parsed is
+ * reported and falls back to DREAM_MODELS.
  */
 export async function resolveModels(env, onError = () => {}) {
   try {
+    const [{ dreamLadder }, { REASONING_LEVELS }] = await Promise.all([
+      import(path.join(repoRoot, 'packages', 'rubato-runtime', 'src', 'dream', 'ladder.ts')),
+      import(path.join(repoRoot, 'packages', 'rubato-config-core', 'src', 'schema', 'reasoning-vocabulary.ts')),
+    ]);
+    const own = readSettings(env).dream.models;
+    if (own.length) {
+      const rungs = companionDreamModels({ memory: { dream: { models: own } } }, dreamLadder, REASONING_LEVELS);
+      if (rungs !== DREAM_MODELS) return rungs;
+    }
     const home = env.HOME || homedir();
     const jsonc = path.join(home, '.rubato', 'rubato.jsonc');
     const json = path.join(home, '.rubato', 'rubato.json');
     const file = !existsSync(jsonc) && existsSync(json) ? json : jsonc;
     if (!existsSync(file)) return DREAM_MODELS;
     const { parse } = createRequire(path.join(repoRoot, 'packages', 'rubato-config-core', 'package.json'))('jsonc-parser');
-    const [{ dreamLadder }, { REASONING_LEVELS }] = await Promise.all([
-      import(path.join(repoRoot, 'packages', 'rubato-runtime', 'src', 'dream', 'ladder.ts')),
-      import(path.join(repoRoot, 'packages', 'rubato-config-core', 'src', 'schema', 'reasoning-vocabulary.ts')),
-    ]);
     const errors = [];
     const config = parse(await readFile(file, 'utf8'), errors, { allowTrailingComma: true });
     // A file that does not parse is not the user's ladder; half of one could name the wrong model.

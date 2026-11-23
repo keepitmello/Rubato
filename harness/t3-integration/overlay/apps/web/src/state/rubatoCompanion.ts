@@ -29,11 +29,21 @@ export interface CompanionSettings {
   /** The companion conversation's effort while a voice call is open; `conversation` keeps its own level. */
   readonly call: { readonly effort: CallEffort };
   /** The dream's document upkeep: how often, and which places it tends (set by talking to the companion). */
-  readonly dream?: { readonly docs: { readonly cadence: DocsCadence; readonly roots: readonly DocsRoot[] } };
+  readonly dream?: {
+    /** Its own dream ladder; empty means the user's memory.dream.models, then Rubato's own. */
+    readonly models?: readonly CompanionDreamModel[];
+    readonly docs: { readonly cadence: DocsCadence; readonly roots: readonly DocsRoot[] };
+  };
 }
 
 /** harness/companion/companion.mjs CALL_EFFORTS. */
 export type CallEffort = "conversation" | "low" | "medium" | "high";
+
+/** One rung of a companion's own dream ladder (companion.mjs dream.models): no reasoning means the model's own. */
+export interface CompanionDreamModel {
+  readonly model: string;
+  readonly reasoning?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+}
 
 /** harness/companion/companion.mjs DOCS_CADENCES. */
 export type DocsCadence = "off" | "daily" | "weekly" | "monthly";
@@ -193,7 +203,10 @@ export interface CompanionSettingsPatch {
   readonly greetings?: Partial<CompanionSettings["greetings"]>;
   readonly schedule?: Partial<CompanionSettings["schedule"]>;
   readonly call?: Partial<CompanionSettings["call"]>;
-  readonly dream?: { readonly docs?: { readonly cadence?: DocsCadence; readonly roots?: readonly DocsRoot[] } };
+  readonly dream?: {
+    readonly models?: readonly CompanionDreamModel[];
+    readonly docs?: { readonly cadence?: DocsCadence; readonly roots?: readonly DocsRoot[] };
+  };
 }
 
 /** A conversation Segno handed work to and follows until that work ends (engine panel.json). */

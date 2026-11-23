@@ -8,7 +8,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createCompanionService } from '../../t3-integration/src/companion/service.mjs';
-import { DEFAULT_SETTINGS, readSettings, writeSettings, writeState } from '../companion.mjs';
+import { DEFAULT_SETTINGS, DREAM_REASONING_LEVELS, readSettings, writeSettings, writeState } from '../companion.mjs';
+import { REASONING_LEVELS } from '../../../packages/rubato-config-core/src/schema/reasoning-vocabulary.ts';
 import { heartbeatText } from '../control-tower.mjs';
 import { DOCS_CADENCE_HOURS, docsDue, docsReportLine, immutableFiles, runDocsDream } from '../dream/docs.mjs';
 import { DREAM_MODELS, companionDreamModels, dreamPaths, readDreamState, releaseLock, runCompanionDream, takeLock } from '../dream/dream.mjs';
@@ -100,7 +101,7 @@ test('the user sets the docs job by talking to the companion, and the Settings p
   const call = (request) => companionSettings({ sessionId: 'S1', sessionsDir, env, service, request, telegram: false });
 
   const shown = await call({ action: 'show' });
-  assert.deepEqual(shown.settings.companion.dream, { docs: { cadence: 'weekly', roots: [] } });
+  assert.deepEqual(shown.settings.companion.dream, { models: [], docs: { cadence: 'weekly', roots: [] } });
   const roots = [{ path: path.join(home, 'memory'), mode: 'edit' }, { path: '~/work/project/docs', mode: 'branch' }, { path: '/srv/money', mode: 'report' }];
   const answer = await call({ action: 'change', change: { companion: { dream: { docs: { roots, cadence: 'daily' } } } } });
   assert.deepEqual(answer.settings.companion.dream.docs, { cadence: 'daily', roots });
@@ -615,4 +616,49 @@ test('a locked file under node_modules is locked like any other', { skip: !darwi
   assert.deepEqual(record.branches, []);
   assert.deepEqual(record.reverted.map((item) => `${item.path}:${item.reason}`), ['docs/node_modules/guide.md:locked']);
   execFileSync('chflags', ['nouchg', path.join(repo, 'docs', 'node_modules', 'guide.md')]);
+});
+
+test('a companion\'s own dream models come first, then the user\'s memory.dream.models, then Rubato\'s own; the global file is only read', async (t) => {
+  const { dir, env } = sandbox(t);
+  const configFile = put(path.join(dir, '.rubato', 'rubato.jsonc'), '{ "memory": { "dream": { "models": [ { "model": "xai/grok-4.7", "reasoning": "medium" } ] } } }\n');
+  const before = readFileSync(configFile, 'utf8');
+  assert.deepEqual(await resolveModels(env), [{ model: 'xai/grok-4.7', thinking: 'medium' }], 'no own models: the global ladder');
+  writeSettings({ dream: { models: [{ model: 'anthropic/claude-opus-5-5', reasoning: 'high' }, 'opengateway/deepseek/deepseek-v4.1-flash-eco'] } }, env);
+  assert.deepEqual(await resolveModels(env), [{ model: 'anthropic/claude-opus-5-5', thinking: 'high' }, { model: 'opengateway/deepseek/deepseek-v4.1-flash-eco' }]);
+  // Its own ladder stands even when the global file is broken: that file is not read then.
+  writeFileSync(configFile, '{ "memory": ');
+  const errors = [];
+  assert.equal((await resolveModels(env, (error) => errors.push(error)))[0].model, 'anthropic/claude-opus-5-5');
+  assert.deepEqual(errors, []);
+  writeSettings({ dream: { models: [] } }, env);
+  assert.equal(await resolveModels(env, () => {}), DREAM_MODELS, 'none of its own and a broken global file: Rubato\'s own');
+  writeFileSync(configFile, before);
+  assert.equal(readFileSync(configFile, 'utf8'), before, 'the global config is untouched');
+  // Another companion's home has its own settings: one companion's ladder is not another's.
+  const other = { ...env, RUBATO_COMPANION_HOME: path.join(dir, 'other-companion') };
+  writeSettings({ dream: { models: ['anthropic/claude-sonnet-5-5'] } }, other);
+  assert.deepEqual(await resolveModels(env), [{ model: 'xai/grok-4.7', thinking: 'medium' }]);
+  assert.deepEqual(await resolveModels(other), [{ model: 'anthropic/claude-sonnet-5-5' }]);
+});
+
+test('the companion\'s dream models are set by talking or on the Settings page, through the same checks', async (t) => {
+  const { dir, env } = sandbox(t);
+  const sessionsDir = path.join(dir, 'sessions');
+  mkdirSync(sessionsDir, { recursive: true });
+  writeState({ sessionId: 'S1' }, env);
+  writeFileSync(path.join(sessionsDir, '2026-10-20T00-00-00-000Z_S1.jsonl'), `${JSON.stringify(appEntry('u1', '꿈 모델은 오퍼스 먼저, 안 되면 그록'))}\n`);
+  const service = createCompanionService({ env, defaultsDir, telegram: false });
+  const call = (request) => companionSettings({ sessionId: 'S1', sessionsDir, env, service, request, telegram: false });
+  const models = [{ model: 'anthropic/claude-opus-5-5', reasoning: 'high' }, { model: 'xai/grok-4.7' }];
+  const answer = await call({ action: 'change', change: { companion: { dream: { models } } } });
+  assert.deepEqual(answer.settings.companion.dream.models, models);
+  assert.deepEqual((await service.handle('status', {})).settings.dream.models, models, 'the page shows what the talk set');
+  await service.handle('save-settings', { patch: { dream: { models: [...models].reverse() } } });
+  assert.deepEqual((await call({ action: 'show' })).settings.companion.dream.models, [...models].reverse(), 'the companion sees the page\'s order');
+  assert.deepEqual(readSettings(env).dream.docs, DEFAULT_SETTINGS.dream.docs, 'its docs settings stay as they were');
+  for (const bad of [['opus'], [{ model: 'xai/grok-4.7', reasoning: 'loud' }], ['xai/grok-4.7', 'xai/grok-4.7'], [{ model: 'xai/grok-4.7', temperature: 1 }],
+    Array.from({ length: 9 }, (_, index) => `xai/m${index}`)]) {
+    await assert.rejects(call({ action: 'change', change: { companion: { dream: { models: bad } } } }), (error) => error.code === 'invalid', JSON.stringify(bad));
+  }
+  assert.deepEqual(DREAM_REASONING_LEVELS, [...REASONING_LEVELS], 'the levels a companion may name are config-core\'s');
 });

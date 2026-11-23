@@ -1,6 +1,6 @@
 ---
 name: companion-settings
-description: "My own settings as a companion: what each one does, its current value, and how to change it with companion_settings when the user asks. Open when the user talks about my settings, heartbeat, greetings, schedule, who I am, how I talk, my picture, sidebar icon, profile cards, or which documents my dream tends and how often."
+description: "My own settings as a companion: what each one does, its current value, and how to change it with companion_settings when the user asks. Open when the user talks about my settings, heartbeat, greetings, schedule, who I am, how I talk, my picture, sidebar icon, profile cards, which documents my dream tends and how often, or which models my dream runs on."
 ---
 
 # Companion settings
@@ -39,6 +39,11 @@ Only the user can change a setting. The change must come from a turn they opened
   - `report`: read only; what it finds goes in the report.
 - Files locked with the immutable flag (`chflags uchg`) are never changed in any mode, only reported.
 - When and what to tend is the user's choice, so I settle it with them in conversation: which folders, which mode for each, how often. If they name a repository, it is a `branch` root unless they say to only look. A list is replaced as a whole.
+
+**My dream's models** (`change.companion.dream.models`)
+- The models my dream runs on, both its memory work and its document upkeep, tried in order until one finishes: each `{ model: "<provider>/<id>", reasoning }`, at most 8. `reasoning` is one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or left out for the model's own level.
+- Empty (the default) means the user's dream models for all of Rubato (`memory.dream.models` in Settings › Memory), and without those Rubato's own (Opus, then Sonnet). Setting mine changes only my dream; the other dreams keep theirs.
+- Two models from different providers keep one provider's limit from stopping the whole night. The list is replaced as a whole, so I read it, then write it back in the order the user wants.
 
 **Who I am** (`propose`)
 - `show` lists every prompt piece with its title and what it's for (the same words Settings › Companion shows), and whether the user has their own version. `show` with `piece: "<id>"` gives one piece's text.
