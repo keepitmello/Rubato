@@ -73,13 +73,15 @@ function handle(
 ) {
   return Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
-    const remoteRestart =
-      spec.route === "/rubato/app" &&
-      Option.exists(HttpServerRequest.toURL(request), (url) =>
-        url.pathname.split("/").filter(Boolean).at(-1) === "restart-app",
-      );
-    const scope = remoteRestart ? AuthEnvironmentMaintainScope : AuthOrchestrationOperateScope;
-    if (!(yield* authorized(auth, request, scope))) return HttpServerResponse.empty({ status: 401 });
+    const action = spec.route === "/rubato/app"
+      ? Option.getOrUndefined(HttpServerRequest.toURL(request))?.pathname.split("/").filter(Boolean).at(-1)
+      : undefined;
+    const scopes = action === "restart-app"
+      ? [AuthEnvironmentMaintainScope]
+      : action === "restart-status" || action === "restart-now"
+        ? [AuthEnvironmentMaintainScope, AuthOrchestrationOperateScope]
+        : [AuthOrchestrationOperateScope];
+    if (!(yield* authorized(auth, request, scopes))) return HttpServerResponse.empty({ status: 401 });
     return yield* answerFromService(spec, serverSettings, path, request);
   });
 }
@@ -88,11 +90,12 @@ function handle(
 export function authorized(
   auth: EnvironmentAuth["Service"],
   request: HttpServerRequest.HttpServerRequest,
-  scope: AuthEnvironmentScope = AuthOrchestrationOperateScope,
+  scopes: ReadonlyArray<AuthEnvironmentScope> = [AuthOrchestrationOperateScope],
 ) {
   return auth.authenticateHttpRequest(request).pipe(
     Effect.option,
-    Effect.map((session) => Option.isSome(session) && session.value.scopes.includes(scope)),
+    Effect.map((session) => Option.isSome(session) &&
+      scopes.some((scope) => session.value.scopes.includes(scope))),
   );
 }
 
