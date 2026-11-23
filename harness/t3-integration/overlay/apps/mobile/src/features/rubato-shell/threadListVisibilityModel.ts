@@ -18,8 +18,3 @@ export function toggleProjectVisibility(previous: readonly string[], keys: reado
   }
   return [...next];
 }
-
-export function isCompanionLaunchThread(threadId: string, sessionIds: ReadonlySet<string>): boolean {
-  const index = threadId.lastIndexOf(":");
-  return threadId.startsWith("import:") && index > "import".length && sessionIds.has(threadId.slice(index + 1));
-}

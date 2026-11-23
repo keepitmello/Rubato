@@ -15,6 +15,18 @@ export const aboutOverlays = [
 ];
 
 export const aboutEdits = {
+  'apps/web/src/components/settings/settingsSearch.ts': [
+    ['  {\n    id: "in-app-notifications",\n',
+      [
+        '  {',
+        '    id: "rubato-companion-thread-notifications",',
+        '    title: "Companion-created thread notifications",',
+        '    to: "/settings/general",',
+        '    searchTerms: ["companion work completion failure alerts 알림 컴패니언 작업 완료 실패"],',
+        '  },',
+        '',
+      ].join('\n')],
+  ],
   'apps/web/src/components/settings/SettingsPanels.tsx': [
     ['import { useDesktopUpdateState } from "../../state/desktopUpdate";\n',
       'import { RubatoAboutSection } from "./RubatoAboutSection";\n'

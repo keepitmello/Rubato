@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { withoutCompanionWorkThreads } from "@t3tools/shared/rubatoCompanionWorkThreads";
 import { AsyncResult } from "effect/reactivity";
 import { useGT } from "gt-react-native";
 import { useEffect, useMemo, useState } from "react";
@@ -14,7 +15,7 @@ import { startRoomPoll } from "../companions/roomPoll";
 import { ListFilterMenu } from "../layout/workspace/ListFilterMenu";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { SettingsSwitchRow } from "../settings/components/SettingsSwitchRow";
-import { isCompanionLaunchThread, projectKey, toggleProjectVisibility, visibleProjects } from "./threadListVisibilityModel";
+import { projectKey, toggleProjectVisibility, visibleProjects } from "./threadListVisibilityModel";
 
 const NO_PROJECTS: readonly string[] = [];
 const NO_LAUNCHES: ReadonlySet<string> = new Set();
@@ -114,9 +115,7 @@ export function useThreadListVisibility(visible: boolean) {
       return visibleProjects(items, hidden);
     },
     filterThreads<T extends ProjectRef & { readonly id: string }>(items: readonly T[]) {
-      const projects = visibleProjects(items, hidden);
-      return showLeads || launches.size === 0 ? projects : projects.filter((thread) =>
-        !isCompanionLaunchThread(thread.id, launches.get(thread.environmentId) ?? NO_LAUNCHES));
+      return withoutCompanionWorkThreads(visibleProjects(items, hidden), launches, showLeads);
     },
   };
 }

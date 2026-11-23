@@ -16,6 +16,8 @@ export const companionOverlays = [
   'apps/server/src/RubatoCompanionModel.ts',
   'apps/web/src/state/rubatoCompanion.ts',
   'apps/web/src/state/rubatoCompanion.test.tsx',
+  'apps/web/src/state/rubatoSidebarCompanionWork.ts',
+  'apps/web/src/state/rubatoSidebarCompanionWork.test.tsx',
   // What the companion pages draw, without React: word diff, crop, list line, chips, drafts.
   'apps/web/src/state/rubatoCompanionModel.ts',
   'apps/web/src/state/rubatoCompanionModel.test.ts',
@@ -59,10 +61,20 @@ export const companionOverlays = [
   // Which models the Add Companion flow offers, for the settings page and the phone's "+".
   'packages/shared/src/rubatoCompanionModelChoice.ts',
   'packages/shared/src/rubatoCompanionModelChoice.test.ts',
+  'packages/shared/src/rubatoCompanionWorkThreads.ts',
+  'packages/shared/src/rubatoCompanionWorkThreads.test.ts',
 ];
 
 export const companionEdits = {
+  'packages/contracts/src/settings.ts': [
+    ['  sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(\n',
+      '  rubatoShowCompanionLeads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),\n'],
+    ['  sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),\n',
+      '  rubatoShowCompanionLeads: Schema.optionalKey(Schema.Boolean),\n'],
+  ],
   'packages/shared/package.json': [
+    ['    "./delimitedPreview": {\n',
+      '    "./rubatoCompanionWorkThreads": {\n      "types": "./src/rubatoCompanionWorkThreads.ts",\n      "import": "./src/rubatoCompanionWorkThreads.ts"\n    },\n'],
     ['    "./delimitedPreview": {\n',
       '    "./rubatoReplyBubbles": {\n      "types": "./src/rubatoReplyBubbles.ts",\n      "import": "./src/rubatoReplyBubbles.ts"\n    },\n    "./rubatoRoomPoll": {\n      "types": "./src/rubatoRoomPoll.ts",\n      "import": "./src/rubatoRoomPoll.ts"\n    },\n    "./rubatoCompanionModelChoice": {\n      "types": "./src/rubatoCompanionModelChoice.ts",\n      "import": "./src/rubatoCompanionModelChoice.ts"\n    },\n'],
   ],
@@ -71,6 +83,16 @@ export const companionEdits = {
     ['    DeviceHubProxy.layer,\n', '    rubatoCompanionRouteLayer,\n    rubatoCompanionModelRouteLayer,\n    rubatoCompanionRewindRouteLayer,\n'],
   ],
   'apps/web/src/components/settings/settingsSearch.ts': [
+    ['  {\n    id: "project-grouping",\n',
+      [
+        '  {',
+        '    id: "rubato-show-companion-leads",',
+        '    title: "Show companion-created threads",',
+        '    to: "/settings/general",',
+        '    searchTerms: ["sidebar visibility hide companion work 사이드바 숨기기 컴패니언 작업"],',
+        '  },',
+        '',
+      ].join('\n')],
     ['  | "/settings/chat"\n', '  | "/settings/companion"\n'],
     ['  "/settings/chat": msg("Chat"),\n', '  "/settings/companion": msg("Companion"),\n'],
     ['  "/settings/chat": null,\n', '  "/settings/companion": null,\n'],
@@ -399,11 +421,12 @@ export const companionEdits = {
   // The thread list every sidebar section is laid out from.
   'apps/web/src/components/Sidebar.tsx': [
     ['  const threads = useQuietThreadShells();\n',
-      '  // Rubato: Segno\'s conversation opens from the rail, not the list (companion-edits.mjs).\n'
-        + '  const threads = useWithoutCompanionThread(useQuietThreadShells());\n',
+      '  // Companion rooms and, by default, the work they start stay out of the sidebar.\n'
+        + '  const threads = useSidebarCompanionWork(useQuietThreadShells());\n',
       'replace'],
     ['import { environmentPresentations } from "../state/presentation";\n',
-      'import { isCompanionThread, useWithoutCompanionThread } from "../state/rubatoCompanion";\n'],
+      'import { isCompanionThread } from "../state/rubatoCompanion";\n'
+        + 'import { useSidebarCompanionWork } from "../state/rubatoSidebarCompanionWork";\n'],
     ['        activeThread: newThreadContext.activeThread ?? undefined,\n',
       '        activeThread:\n'
         + '          newThreadContext.activeThread && !isCompanionThread(newThreadContext.activeThread.id)\n'

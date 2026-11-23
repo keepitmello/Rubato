@@ -692,25 +692,6 @@ export function segnoNotice(
   return { title, body };
 }
 
-/**
- * The thread list without any companion's conversations: the current one opens from the rail
- * (companion-edits.mjs), and one a companion moved on from is no thread of the person's.
- */
-export function useWithoutCompanionThread<T extends { readonly id: string }>(
-  threads: ReadonlyArray<T>,
-): ReadonlyArray<T> {
-  const { companions } = useRubatoCompanion();
-  const threadIds = useMemo(() => new Set(companions.flatMap(item =>
-    [item.threadId, ...(item.conversationThreadIds ?? [])]).filter(Boolean)), [companions]);
-  return useMemo(
-    () =>
-      !threads.some((thread) => threadIds.has(thread.id))
-        ? threads
-        : threads.filter((thread) => !threadIds.has(thread.id)),
-    [threadIds, threads],
-  );
-}
-
 /** `projects` without Segno's own folder: no list offers it as a place to start work. */
 export function useWithoutCompanionProjects<A extends ReadonlyArray<{ readonly workspaceRoot: string }>>(projects: A): A {
   const { companions } = useRubatoCompanion();
