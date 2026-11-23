@@ -204,19 +204,6 @@ if [ "$MODE" = check ]; then
   exit 10
 fi
 
-if [ "${RUBATO_GUI_UPDATE-}" = 1 ] && [ "$AHEAD" -gt 0 ]; then
-  # 커밋 번호로 세면 원격 이력이 다시 쓰였을 때 같은 내용의 커밋이 전부 "로컬에만
-  # 있는 커밋"으로 잡힌다(2026-10-11: 930개가 그렇게 잡혀 앱 업데이트가 계속 멈췄다).
-  # 내용 기준(git cherry)으로 원격에 없는 커밋만 센다. 하나도 없으면 아래 백업·reset
-  # 길로 간다 — 그 길은 로컬 커밋을 백업 브랜치에 남긴다.
-  UNIQUE_LIST="$(git cherry -v "origin/$BRANCH" HEAD 2>/dev/null | grep '^+' || true)"
-  UNIQUE="$(printf '%s' "$UNIQUE_LIST" | grep -c '^+' || true)"
-  if [ "${UNIQUE:-0}" -gt 0 ]; then
-    printf '%s\n' "$UNIQUE_LIST" | head -5 | cut -c3- | sed 's/^/    /' >&2
-    fail "원격에 없는 로컬 커밋 ${UNIQUE}개가 업데이트와 갈라져 있어 멈췄습니다. 로컬 커밋은 그대로입니다. 터미널에서 \`rubato update\` 를 실행하면 로컬 커밋을 백업 브랜치에 남기고 원격에 맞춥니다."
-  fi
-fi
-
 # 무엇이 바뀌는지 보여준다.
 printf '\n%s== 새 커밋 %s개 ==%s\n' "$BOLD" "$BEHIND" "$RST"
 git log --oneline --no-decorate "HEAD..origin/$BRANCH" | sed 's/^/  /'
@@ -372,13 +359,25 @@ restore_stash() {
     ok "작업하던 수정을 되돌렸습니다"
     return 0
   fi
-  # pop 이 충돌하면 워킹트리는 unmerged 이고 stash 는 스택에 남는다.
-  # 그 상태에서 다시 pop 하면 같은 패치를 한 번 더 얹는다. 고친 뒤 drop 한다.
-  warn "수정을 되돌리는 중 충돌이 났습니다. 지금 워킹트리에서 정리하세요."
-  printf '    git status\n' >&2
-  printf '    git add -u\n' >&2
-  printf '    git stash drop %s          %s%s / %s%s\n' "$REF" "$DIM" "$STASH_TAG" "$STASH_SHA" "$RST" >&2
-  return 1
+  # pop 이 충돌하면 stash 는 스택에 남는다. 겹친 파일은 받은 쪽으로 두고 나머지
+  # 수정은 그대로 둔다 — 충돌 표시가 남은 트리로는 엔진도 앱도 빌드되지 않는다.
+  # 겹친 파일의 로컬 판은 stash 와 refs/rubato/update-kept/ 에 그대로 있다.
+  CONFLICTED="$(git diff --name-only --diff-filter=U 2>/dev/null || true)"
+  printf '%s\n' "$CONFLICTED" | while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    if git cat-file -e "HEAD:$file" 2>/dev/null; then
+      git checkout -q HEAD -- "$file" 2>/dev/null || true
+    else
+      git rm -q -f -- "$file" >/dev/null 2>&1 || true
+    fi
+  done
+  git reset -q >/dev/null 2>&1 || true
+  KEPT_REF="refs/rubato/update-kept/$(date +%Y%m%d%H%M%S)-$$"
+  git update-ref "$KEPT_REF" "$STASH_SHA" 2>/dev/null || true
+  warn "받은 커밋과 겹친 로컬 수정은 받은 쪽으로 맞추고 따로 남겼습니다:"
+  printf '%s\n' "$CONFLICTED" | sed '/^$/d; s/^/    /' >&2
+  printf '    git stash show -p %s   %s남긴 수정 (%s)%s\n' "$STASH_SHA" "$DIM" "$KEPT_REF" "$RST" >&2
+  return 0
 }
 # 중단 신호를 받으면 치운 것을 되돌리고 **거기서 멈춘다**. 복원만 하고
 # 리턴하면 사용자가 Ctrl-C 를 눌렀는데도 머지와 빌드가 그대로 굴러간다.
@@ -407,11 +406,9 @@ printf '\n%s== 받는 중 ==%s\n' "$BOLD" "$RST"
 # 사람 작업은 손도 대지 않은 채 남는다 — 치웠다 되돌리는 것보다 안전하다.
 # 겹쳐서 거부당할 때만 잠시 치운다.
 if [ -n "$DIRTY" ] && ! git merge --ff-only "origin/$BRANCH" >/dev/null 2>&1; then
-  # GUI에는 충돌을 해결할 터미널이 없다. 겹치는 수정은 치우지 않고 앱을 끄기
-  # 전에 멈춘다. 겹치지 않는 수정은 위 fast-forward 가 그대로 두고 지나간다 —
-  # 여러 세션이 같이 쓰는 이 레포는 거의 늘 dirty 라서, 수정이 있다는 것만으로
-  # 멈추면 앱 업데이트는 한 번도 끝나지 않았다.
-  [ "${RUBATO_GUI_UPDATE-}" != 1 ] || fail "로컬 수정과 업데이트가 겹칩니다. 수정을 치우지 않고 멈췄습니다."
+  # 겹치는 수정은 잠시 치우고 받은 뒤 되돌린다. 앱의 업데이트도 같은 길이다 —
+  # 로컬에 무엇이 있든 업데이트는 끝나야 한다(사용자). 되돌리다 겹친 파일은
+  # restore_stash 가 받은 쪽으로 두고 수정은 stash 와 ref 에 남긴다.
   # pathspec 을 주지 않는다. `git stash push -- <경로>` 는 이미 스테이징된
   # 변경을 제대로 집지 못해서, 치운 줄 알았는데 실제로는 그대로 남고
   # 다음 merge 가 똑같이 거부당한다. 이 레포는 여러 세션이 같이 쓰고

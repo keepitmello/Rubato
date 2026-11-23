@@ -221,16 +221,20 @@ function runUpdate(fixture, { path = process.env.PATH, args = ["--yes"], env = {
   });
 }
 
-test("GUI update refuses overlapping local work without stash, reset, or rebuild", () => {
+// Whatever is local, the app's update finishes (user, 2026-11-24). The overlapping file takes the
+// update; its local version stays in the stash and under refs/rubato/update-kept/.
+test("GUI update finishes over overlapping local work and keeps that work", () => {
   const fixture = setupFixture({ dirty: true, conflict: true, localCommit: false });
-  const before = git(fixture.local, ["rev-parse", "HEAD"]).stdout;
   const result = runUpdate(fixture, { env: { RUBATO_GUI_UPDATE: "1" } });
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /로컬 수정/);
-  assert.equal(git(fixture.local, ["rev-parse", "HEAD"]).stdout, before);
-  assert.equal(git(fixture.local, ["stash", "list"]).stdout, "");
-  assert.equal(readFileSync(join(fixture.local, "note.txt"), "utf8"), "local-wip\n");
-  assert.equal(existsSync(fixture.trace), false);
+  const out = `${result.stdout}\n${result.stderr}`;
+  assert.equal(result.status, 0, out);
+  assert.equal(git(fixture.local, ["rev-parse", "HEAD"]).stdout, git(fixture.local, ["rev-parse", "origin/rubato/base"]).stdout);
+  assert.equal(readFileSync(join(fixture.local, "note.txt"), "utf8"), "remote\n");
+  assert.equal(readFileSync(join(fixture.local, "keep.txt"), "utf8"), "keep dirty\n");
+  assert.equal(git(fixture.local, ["ls-files", "-u"]).stdout, "");
+  const kept = git(fixture.local, ["for-each-ref", "--format=%(objectname)", "refs/rubato/update-kept/"]).stdout.trim();
+  assert.ok(kept, out);
+  assert.match(git(fixture.local, ["show", `${kept}:note.txt`]).stdout, /local-wip/);
 });
 
 // Several sessions share this checkout, so it is almost never clean. Stopping on
@@ -246,16 +250,12 @@ test("GUI update fast-forwards over local work that does not overlap", () => {
   assert.equal(git(fixture.local, ["stash", "list"]).stdout, "");
 });
 
-test("GUI update preserves divergent local commits instead of resetting", () => {
+test("GUI update moves past divergent local commits and keeps them on a backup branch", () => {
   const fixture = setupFixture();
-  const before = git(fixture.local, ["rev-parse", "HEAD"]).stdout;
   const result = runUpdate(fixture, { env: { RUBATO_GUI_UPDATE: "1" } });
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /원격에 없는 로컬 커밋 1개/);
-  assert.match(result.stderr, /local-only/);
-  assert.match(result.stderr, /rubato update/);
-  assert.equal(git(fixture.local, ["rev-parse", "HEAD"]).stdout, before);
-  assert.equal(existsSync(fixture.trace), false);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.equal(git(fixture.local, ["rev-parse", "HEAD"]).stdout, git(fixture.local, ["rev-parse", "origin/rubato/base"]).stdout);
+  git(fixture.local, ["merge-base", "--is-ancestor", fixture.localOnly, backupBranch(fixture.local)]);
 });
 
 // A rewritten remote history gives the same changes new hashes, so every local
@@ -424,31 +424,24 @@ test("unattended update restores non-conflicting dirty and untracked work after 
   git(fixture.local, ["merge-base", "--is-ancestor", fixture.localOnly, backup]);
 });
 
-test("restoration conflict is nonzero, skips rebuild, and prints drop from the unmerged tree", () => {
+test("a restoration conflict takes the update for that file, keeps the local version, and finishes", () => {
   const fixture = setupFixture({ dirty: true, conflict: true });
   const result = runUpdate(fixture);
   const out = `${result.stdout}\n${result.stderr}`;
-  assert.notEqual(result.status, 0, out);
-  assert.match(out, /재빌드는 하지 않습니다/);
-  assert.doesNotMatch(out, /업데이트를 마쳤습니다/);
-  assert.doesNotMatch(out, /git stash pop/);
+  assert.equal(result.status, 0, out);
+  assert.match(out, /업데이트를 마쳤습니다/);
+  assert.match(out, /note\.txt/);
+  assert.match(out, /git stash show -p [0-9a-f]{40}/);
 
   const head = git(fixture.local, ["rev-parse", "HEAD"]).stdout.trim();
   const remote = git(fixture.local, ["rev-parse", "origin/rubato/base"]).stdout.trim();
   assert.equal(head, remote);
   assert.ok(backupBranch(fixture.local));
-
-  assert.match(out, /git status/);
-  assert.match(out, /git add -u/);
-  const drop = out.match(/git stash drop (stash@\{\d+\})/);
-  assert.ok(drop, `missing stash drop command in:\n${out}`);
-  assert.match(out, /[0-9a-f]{40}/);
-
-  const stashes = git(fixture.local, ["stash", "list"]).stdout;
-  assert.match(stashes, /rubato-update /);
-  assert.match(stashes, new RegExp(drop[1].replace(/[{}]/g, "\\$&")));
-  const unmerged = git(fixture.local, ["ls-files", "-u"]).stdout;
-  assert.match(unmerged, /note\.txt/);
+  assert.equal(git(fixture.local, ["ls-files", "-u"]).stdout, "");
+  assert.equal(readFileSync(join(fixture.local, "note.txt"), "utf8"), "remote\n");
+  assert.match(git(fixture.local, ["stash", "list"]).stdout, /rubato-update /);
+  const kept = git(fixture.local, ["for-each-ref", "--format=%(objectname)", "refs/rubato/update-kept/"]).stdout.trim();
+  assert.match(git(fixture.local, ["show", `${kept}:note.txt`]).stdout, /local-wip/);
 });
 
 test("tracked dirty .rubato/evidence survives a diverged hard reset", () => {
