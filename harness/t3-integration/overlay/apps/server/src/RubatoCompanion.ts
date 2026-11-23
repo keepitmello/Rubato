@@ -8,6 +8,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { EnvironmentAuth } from "./auth/EnvironmentAuth.ts";
 import { OrchestratorV2 } from "./orchestration-v2/Orchestrator.ts";
 import { threadOfPiSession } from "./provider/RubatoPiSessions.ts";
+import { rubatoCompanionLeadSessions } from "./provider/RubatoPiInventory.ts";
 import { answerFromService, authorized, type ServiceSpec } from "./RubatoServiceRoute.ts";
 import * as ServerSettings from "./serverSettings.ts";
 
@@ -53,6 +54,7 @@ export const rubatoCompanionRouteLayer = Layer.unwrap(
           .split("/")
           .at(-1);
         if (action === "thread") return yield* companionThread(request, sql, { archived, unarchive });
+        if (action === "lead-sessions") return HttpServerResponse.jsonUnsafe({ sessionIds: rubatoCompanionLeadSessions() });
         if (action === "said") return yield* segnoSaid(request, sql);
         return yield* answerFromService(spec, serverSettings, path, request);
       }),

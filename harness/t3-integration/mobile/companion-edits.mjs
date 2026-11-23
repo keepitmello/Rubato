@@ -55,6 +55,8 @@ export const mobileCompanionOverlays = [
   `${companions}/roomColors.test.ts`,
   `${companions}/roomLayout.ts`,
   `${companions}/roomLive.ts`,
+  `${companions}/roomLaunches.ts`,
+  `${companions}/RoomLaunchCard.tsx`,
   `${companions}/roomPoll.ts`,
   `${companions}/roomPoll.test.ts`,
   `${companions}/roomThread.ts`,

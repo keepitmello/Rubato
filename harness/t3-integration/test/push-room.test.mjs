@@ -9,6 +9,8 @@ import test from 'node:test';
 import { RubatoPiBridge } from '../src/bridge.mjs';
 import { RubatoRpcConnection } from '../src/rpc-connection.mjs';
 import { REPLY_TOOL } from '../../companion/home.mjs';
+import { createGrantStore } from '../../push-relay/mac/grants.mjs';
+import { createPushService } from '../src/push/service.mjs';
 
 const user = { role: 'user', content: '오늘 뭐 있어?', timestamp: 3 };
 const replyCall = (id, text) => ({ role: 'assistant', stopReason: 'toolUse', timestamp: 6, content: [{ type: 'toolCall', id, name: REPLY_TOOL, arguments: { text } }] });
@@ -108,4 +110,44 @@ test("the bridge tells push whether a thread's newest run is one a companion ope
   assert.equal(await asked('T-missing'), false);
   await bridge.close();
   assert.equal(answer, null, 'a closed bridge answers nothing');
+});
+
+test('a steer cannot change which iPhones hear about the run that just ended', async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), 'rubato-push-opener-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const delivered = [];
+  const grants = createGrantStore({ home, fetch: async (_url, init) => {
+    delivered.push([init.headers.authorization, JSON.parse(init.body)]);
+    return Response.json({ ok: true });
+  } });
+  for (const [deviceId, companionThreads] of [['quiet', false], ['loud', true]]) {
+    grants.add({ relay: 'https://push.example.dev', grant: deviceId, grantId: deviceId, deviceId,
+      preferences: { companionThreads, liveActivity: false } });
+  }
+  const now = Date.UTC(2026, 10, 23, 8, 9, 42);
+  const push = createPushService({ home, grants, now: () => now, setTimer: () => null });
+  const bridge = new RubatoPiBridge({ descriptorPath: path.join(home, 'none.json'), instanceId: 'rubato-test', sessionStateDir: null, push });
+  t.after(() => bridge.close());
+  bridge.boundSession = async () => ({ sessionId: 'pi-lead', serverId: null });
+  const sessionMessage = (timestamp, companion) => ({ timestamp, role: 'custom', customType: 'rubato-session-message',
+    details: { kind: 'message', from: { companion } } });
+  const messages = [sessionMessage(now - 60_000, true), sessionMessage(now - 1000, false)];
+  bridge.transcript = async () => ({ messages });
+  const startedAt = new Date(now - 59_950).toISOString();
+  const awareness = (phase) => ({ threadId: 'lead', phase, updatedAt: new Date(now).toISOString(), threadTitle: 'Lead',
+    headline: phase, environmentId: 'mac' });
+  const change = async (phase, facts = {}) => push.threadChanged('lead', awareness(phase), { startedAt, ...facts });
+
+  await change('running');
+  await change('waiting_for_approval');
+  await change('waiting_for_input');
+  await change('completed');
+  await change('running');
+  await change('failed', { openedByPerson: true });
+  assert.deepEqual(delivered.map(([phone, alert]) => [phone, alert.body]), [
+    ['Bearer quiet', 'waiting_for_approval'], ['Bearer loud', 'waiting_for_approval'],
+    ['Bearer quiet', 'waiting_for_input'], ['Bearer loud', 'waiting_for_input'],
+    ['Bearer loud', 'completed'],
+    ['Bearer quiet', '⚠︎ failed'], ['Bearer loud', '⚠︎ failed'],
+  ]);
 });

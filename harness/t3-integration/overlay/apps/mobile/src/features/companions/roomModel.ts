@@ -73,7 +73,17 @@ export type RoomItem =
       readonly typedAfter: number;
     }
   | { readonly kind: "call"; readonly id: string; readonly at: number; readonly call: CallRecord }
+  | { readonly kind: "launch"; readonly id: string; readonly at: number; readonly launch: RoomLaunch }
   | { readonly kind: "proposal"; readonly id: string; readonly at: number; readonly proposal: Proposal };
+
+export interface RoomLaunch {
+  readonly id: string;
+  readonly at: number;
+  readonly title: string | null;
+  readonly sessionId: string | null;
+  readonly error: string | null;
+  readonly done: number | null;
+}
 
 /**
  * The person's words as a bubble shows them. T3 writes an attached picture into the message as a
@@ -163,10 +173,12 @@ export function roomItems(
   calls: ReadonlyArray<CallRecord>,
   now = Date.now(),
   proposals: ReadonlyArray<Proposal> = [],
+  launches: ReadonlyArray<RoomLaunch> = [],
 ): RoomItem[] {
   type Entry =
     | ReturnType<typeof parseRoomMessage>
     | { kind: "call"; at: number; call: CallRecord }
+    | { kind: "launch"; at: number; launch: RoomLaunch }
     | { kind: "proposal"; at: number; proposal: Proposal };
   const entries: Entry[] = [
     ...withoutCallSpeech(messages, calls, now)
@@ -176,6 +188,7 @@ export function roomItems(
         && (entry.text !== "" || entry.files !== "" || (entry.message.attachments?.length ?? 0) > 0
           || (entry.message.pending?.attachments.length ?? 0) > 0 || entry.message.streaming)),
     ...calls.map((call) => ({ kind: "call" as const, at: call.createdAt, call })),
+    ...launches.map((launch) => ({ kind: "launch" as const, at: launch.at, launch })),
     ...proposals
       .filter((proposal) => proposal.status !== "superseded")
       .map((proposal) => ({ kind: "proposal" as const, at: proposal.createdAt, proposal })),
@@ -186,8 +199,14 @@ export function roomItems(
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index]!;
     const separated = previous === null || entry.at - previous.at >= SEPARATOR_GAP_MS || !sameDay(previous.at, entry.at);
-    const entryId = entry.kind === "call" ? entry.call.id : entry.kind === "proposal" ? entry.proposal.id : entry.message.id;
+    const entryId = entry.kind === "call" ? entry.call.id : entry.kind === "proposal" ? entry.proposal.id :
+      entry.kind === "launch" ? `launch:${entry.launch.id}` : entry.message.id;
     if (separated) items.push({ kind: "separator", id: `separator:${entryId}`, at: entry.at });
+    if (entry.kind === "launch") {
+      items.push({ kind: "launch", id: entryId, at: entry.at, launch: entry.launch });
+      previous = { at: entry.at, side: "call" };
+      continue;
+    }
     if (entry.kind === "call") {
       items.push({ kind: "call", id: `call:${entry.call.id}`, at: entry.at, call: entry.call });
       previous = { at: entry.at, side: "call" };

@@ -39,10 +39,12 @@ interface PushModule {
   };
 }
 
-/** What a finish alert says of the run beyond the awareness state: how long it took, why it failed. */
+/** The finishing run's timing, failure reason and whether the person opened it in T3. */
 interface RunFacts {
   readonly startedAt: string | null;
+  readonly requestedAt: string | null;
   readonly lastError: string | null;
+  readonly openedByPerson: boolean;
 }
 
 export const rubatoPushLayer = Layer.unwrap(
@@ -68,15 +70,33 @@ export const rubatoPushLayer = Layer.unwrap(
       return yield* tryBridge("push module", () => loaded!.module).pipe(Effect.orElseSucceed(() => null));
     });
 
+    const personOpened = Effect.fn("RubatoPush.personOpened")(function* (threadId: ThreadId, runId: NonNullable<OrchestrationV2ThreadShell["latestRunId"]>) {
+      const { runs } = yield* threads.getThreadRecords(threadId, ["runs"], { runIds: [runId] });
+      const openingMessageId = runs[0]?.userMessageId;
+      if (!openingMessageId) return false;
+      const { messages } = yield* threads.getThreadRecords(threadId, ["messages"], { messageIds: [openingMessageId] });
+      return messages[0]?.role === "user" && messages[0].createdBy === "user";
+    });
+
     const stateOf = Effect.fn("RubatoPush.stateOf")(function* (environmentId: EnvironmentId, threadId: ThreadId) {
       const thread: OrchestrationV2ThreadShell | null = yield* threads.getThreadShell(threadId);
       if (thread === null || thread.archivedAt !== null) return { state: null, run: null };
       const project: Option.Option<Project> = yield* projects.getById(thread.projectId);
       if (Option.isNone(project)) return { state: null, run: null };
-      const startedAt = thread.activityRunStartedAt ?? thread.latestRunStartedAt ?? null;
+      const state = projectThreadAwarenessV2({ environmentId, project: project.value, thread });
+      const terminal = state?.phase === "completed" || state?.phase === "failed";
+      if (!terminal) return { state, run: null };
+      const startedAt = thread.latestRunStartedAt ?? null;
+      const requestedAt = thread.latestRunRequestedAt ?? null;
+      // T3 may mark a run started just before Pi writes the person's prompt. Read the
+      // run's opening message rather than mistaking the previous transcript opener for it.
+      const openedByPerson = thread.latestRunId === null ? false
+        : yield* personOpened(threadId, thread.latestRunId).pipe(Effect.orElseSucceed(() => false));
       return {
-        state: projectThreadAwarenessV2({ environmentId, project: project.value, thread }),
-        run: { startedAt: startedAt === null ? null : DateTime.formatIso(startedAt), lastError: thread.lastError ?? null },
+        state,
+        run: { startedAt: startedAt === null ? null : DateTime.formatIso(startedAt),
+          requestedAt: requestedAt === null ? null : DateTime.formatIso(requestedAt),
+          lastError: thread.lastError ?? null, openedByPerson },
       };
     });
 

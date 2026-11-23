@@ -276,7 +276,7 @@ export class RubatoPiBridge {
     // companion said in one, and asked whether a thread's run is one a companion opened.
     // createBridge, the server's, sets it; a bridge built bare pushes nothing.
     this.push = push;
-    this.forgetCompanionRuns = push?.companionRuns?.((threadId) => this.companionOpened(threadId)) ?? (() => {});
+    this.forgetCompanionRuns = push?.companionRuns?.((threadId, startedAt) => this.companionOpened(threadId, startedAt)) ?? (() => {});
     this.forgetThreadReplies = push?.threadReplies?.((threadId) => this.lastAnswer(threadId)) ?? (() => {});
     // cwd -> the last catalogue the engine answered, kept for while it cannot answer (catalogue).
     this.lastCatalogues = new Map();
@@ -513,14 +513,13 @@ export class RubatoPiBridge {
     return [...this.rpcConnections].find((connection) => connection.threadId === threadId && !connection.closed && connection.sessionId);
   }
   /**
-   * Whether the newest run in `threadId` is one a companion opened: the last thing its session got
-   * before that run is a message from a companion's conversation, not the person's own. In a lead a
-   * companion started, a run that follows the person's own message is the person's.
+   * Whether the run in `threadId` is one a companion opened: the last thing its session got
+   * before that run is a message from a companion's conversation, not the person's own.
    */
-  async companionOpened(threadId) {
+  async companionOpened(threadId, startedAt = null) {
     const sessionId = this.rpcFor(threadId)?.sessionId ?? (await this.boundSession?.(threadId))?.sessionId;
     if (typeof sessionId !== 'string' || !sessionId) return false;
-    const opener = runOpener((await this.transcript(sessionId))?.messages);
+    const opener = runOpener((await this.transcript(sessionId))?.messages, startedAt);
     if (opener?.kind !== 'session') return false;
     return opener.companion || (typeof opener.sessionId === 'string' && await this.companionSession(opener.sessionId));
   }

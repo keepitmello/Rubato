@@ -44,6 +44,9 @@ import { tryBridge } from "../RubatoMemory.ts";
 // lets the next pass start without waiting.
 let wake: Deferred.Deferred<void> | undefined;
 let wakePending = false;
+// Share the inventory pass with the phone's list instead of scanning sessions on every request.
+let companionLeadSessions: readonly string[] | null = null;
+export const rubatoCompanionLeadSessions = () => companionLeadSessions;
 export const syncRubatoInventoryNow = Effect.suspend(() => {
   if (wake) return Effect.asVoid(Deferred.succeed(wake, undefined));
   wakePending = true;
@@ -185,10 +188,11 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
       attachments: [], dispatchMode: { type: "queue_after_active" }, createdBy: "agent", creationSource: "server" });
   }).pipe(Effect.catch((cause) => Effect.logWarning("Rubato engine run not shown", { sessionId: entry.sessionId, cause })));
 
-  const syncInstance = (instance: ProviderInstance) => Effect.gen(function* () {
+  const syncInstance = (instance: ProviderInstance, companionLeads: Set<string>) => Effect.gen(function* () {
     const bridge = rubatoBridgeFor(instance);
     if (!bridge || !instance.enabled) return;
     const inventory = yield* tryBridge("inventory", () => bridge.inventory());
+    for (const entry of inventory) if (entry.companionLead === true) companionLeads.add(entry.sessionId);
     for (const entry of inventory) yield* importSession(instance, entry);
     for (const entry of inventory) if (engineRunning(entry)) yield* showEngineRun(instance, entry);
     // After the imports, so a session made a moment ago already has the thread a request names.
@@ -197,7 +201,9 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
   }).pipe(Effect.catch((cause) => Effect.logWarning("Rubato inventory is unavailable", { instanceId: instance.instanceId, cause })));
 
   const sync = Effect.gen(function* () {
-    for (const instance of yield* registry.value.listInstances) yield* syncInstance(instance);
+    const companionLeads = new Set<string>();
+    for (const instance of yield* registry.value.listInstances) yield* syncInstance(instance, companionLeads);
+    companionLeadSessions = [...companionLeads];
   }).pipe(Effect.provideService(SqlClient.SqlClient, sql.value));
   return {
     sync,

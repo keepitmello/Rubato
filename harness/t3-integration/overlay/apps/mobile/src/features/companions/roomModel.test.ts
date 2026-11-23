@@ -21,6 +21,17 @@ const call = (patch: Partial<CallRecord> & { minutes: number; length?: number })
 };
 
 describe("a companion room", () => {
+  it("inserts a lead card at launch time and keeps its row when the thread becomes available", () => {
+    const messages = [message("ask", "user", "Start a lead", 0), message("reply", "assistant", "I did", 2)];
+    const pending = { id: "tool-42", at: Date.parse(at(1)), title: "Fix the list", sessionId: null, error: null, done: null };
+    const ready = { ...pending, sessionId: "lead-session", done: Date.parse(at(1.5)) };
+    for (const launch of [pending, ready]) {
+      const rows = roomItems(messages, [], Date.parse(at(3)), [], [launch]).filter((row) => row.kind !== "separator");
+      expect(rows.map((row) => row.id)).toEqual(["ask", "launch:tool-42", "reply"]);
+      expect(rows[1]).toMatchObject({ kind: "launch", launch });
+    }
+  });
+
   it("previews the last two spoken lines without reading the rest of a long call", () => {
     let reads = 0;
     const transcript = Array.from({ length: 2000 }, (_, i) => ({

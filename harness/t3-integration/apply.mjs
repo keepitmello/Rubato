@@ -1217,7 +1217,7 @@ export async function applyIntegration({t3,check=false,remove=false}) {
       const prior = priorOf(relative);
       const recorded = prior?.original !== null && typeof prior?.original === 'string'
         && hash(current) === prior.installedHash;
-      original = recorded ? prior.original : untransform(current,edits[relative]);
+      original = recorded ? prior.original : hash(current) === upstream.targets[relative] ? current : untransform(current,edits[relative]);
       if (hash(original)!==upstream.targets[relative]) throw new Error(`T3 source changed outside this overlay: ${relative}`);
       next = transform(original,edits[relative]);
       if (!recorded && current!==original && current!==next) throw new Error(`Partial external edit in T3 target: ${relative}`);

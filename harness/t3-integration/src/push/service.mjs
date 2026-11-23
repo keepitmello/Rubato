@@ -20,8 +20,8 @@
 //                      now, and every thread's card sits in one stack (THREAD_STACK). 'full' shows
 //                      the thread title, the project and how long the run took, and the start of
 //                      the agent's last answer (a failure: its error); 'generic' a fixed line. A
-//                      finish of a run a companion opened (its session_send) is not one: the
-//                      companion tells the person itself.
+//                      finish of a run a companion opened (e.g. its session_send) has a separate
+//                      preference and is off by default: the companion tells the person itself.
 //   companion message  every reply or say of a companion (the items its room gets, rpc-connection.mjs),
 //                      shown like a message; none while that companion is on a call with the person.
 //   companion call     the call service's VoIP ring (push-relay/mac/sender.mjs).
@@ -299,11 +299,11 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
   const activity = { timer: null, sent: 'none', sentAt: 0, active: false, attention: new Set(), sending: Promise.resolve() };
   /** Rooms of companions: threadId -> companion id. */
   const rooms = new Map();
-  /** Who answers whether a thread's newest run is one a companion opened (the bridge, companionRuns). */
+  /** Who answers whether a thread's run is one a companion opened (the bridge, companionRuns). */
   const openers = new Set();
-  const companionOpened = async (threadId) => {
+  const companionOpened = async (threadId, startedAt) => {
     for (const answer of openers) {
-      try { if (await answer(threadId) === true) return true; } catch { /* unknown counts as the person's */ }
+      try { if (await answer(threadId, startedAt) === true) return true; } catch { /* unknown counts as the person's */ }
     }
     return false;
   };
@@ -426,8 +426,8 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
     },
     /**
      * One thread's awareness state after a relevant event; null when the thread has none (idle,
-     * archived, deleted). `run`: { startedAt, lastError } of its latest run, when the server has
-     * them. Resolves with the delivery results when an alert went out.
+     * archived, deleted). `run`: { startedAt, requestedAt, lastError, openedByPerson } of its latest
+     * run, when the server has them. Resolves with the delivery results when an alert went out.
      */
     async threadChanged(threadId, state, run = null) {
       if (rooms.has(threadId)) return null;
@@ -438,7 +438,9 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
       if (!isNews(state, previous, at)) return null;
       // Only routine outcomes are optional. An ask for approval or an answer still uses
       // the normal thread preference: only the person can give it.
-      const preference = TERMINAL.has(state.phase) && await companionOpened(threadId) ? 'companionThreads' : 'threads';
+      const companionOutcome = TERMINAL.has(state.phase) && !run?.openedByPerson
+        && await companionOpened(threadId, run?.startedAt ?? run?.requestedAt);
+      const preference = companionOutcome ? 'companionThreads' : 'threads';
       const preview = readPreview();
       const reply = preview === 'full' && TERMINAL.has(state.phase) ? await lastReply(threadId) : null;
       const sound = phoneSoundFile(desktopSounds()[TERMINAL.has(state.phase) ? 'completion' : 'input']) ?? 'default';
@@ -459,8 +461,8 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
       return sendActivity();
     },
     /**
-     * `answer(threadId)` resolves true when the thread's newest run is one a companion opened, not
-     * the person. Returns the call that takes the answer back.
+     * `answer(threadId, startedAt)` resolves true when that run is one a companion opened, not the
+     * person. Returns the call that takes the answer back.
      */
     companionRuns(answer) {
       if (typeof answer !== 'function') return () => {};

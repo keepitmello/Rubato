@@ -43,6 +43,8 @@ import { composerStripAttachments } from "../../lib/composerImages";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useAppActive } from "../../lib/appState";
 import { startRoomPoll } from "./roomPoll";
+import { useRoomLaunches } from "./roomLaunches";
+import { RoomLaunchCard } from "./RoomLaunchCard";
 import type { ComposerEditorHandle, ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { useComposerDraft } from "../../state/use-composer-drafts";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
@@ -236,7 +238,7 @@ function RoomRow(props: {
   readonly item: RoomItem;
   readonly companion: CompanionEntry | null;
   readonly title: string;
-  readonly environmentId: string;
+  readonly environmentId: EnvironmentId;
   readonly body: BodyText;
   readonly colors: BubbleColors;
   readonly media: RoomMedia;
@@ -252,6 +254,13 @@ function RoomRow(props: {
   const { item } = props;
   const slide = useRevealStyle(props.reveal);
   if (item.kind === "separator") return <TimeLine at={item.at} />;
+  if (item.kind === "launch")
+    return (
+      <Animated.View style={[{ marginTop: GAP_BEFORE_GROUP }, slide]}>
+        <RoomLaunchCard environmentId={props.environmentId} launch={item.launch} />
+        <RowTime at={item.at} />
+      </Animated.View>
+    );
   if (item.kind === "proposal")
     return (
       <Animated.View style={[{ marginTop: GAP_BEFORE_GROUP }, slide]}>
@@ -730,7 +739,8 @@ function RoomBody(props: {
         ),
     [composer.selectedThreadFeed, composer.selectedThreadQueuedMessages],
   );
-  const allItems = useMemo(() => roomItems(messages, calls, Date.now(), proposals), [messages, calls, proposals]);
+  const launches = useRoomLaunches(props.environmentId, props.companionId, props.threadId, visible, composer.activeThreadBusy);
+  const allItems = useMemo(() => roomItems(messages, calls, Date.now(), proposals, launches), [messages, calls, proposals, launches]);
   // A reply that arrives while the room is open comes in one bubble after another, as if typed, with
   // the typing bubble until its last bubble is in.
   const [clock, setClock] = useState(() => Date.now());
