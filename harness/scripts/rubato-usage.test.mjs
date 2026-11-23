@@ -150,7 +150,7 @@ test("every account gets its own row; setup-token reads its last reply, failures
   };
   const { fetchImpl, calls } = fakeFetch({
     "https://chatgpt.com/backend-api/wham/usage": {
-      body: { email: "me@example.com", plan_type: "pro", rate_limit: { primary_window: { used_percent: 62, limit_window_seconds: 604800, reset_at: 1792651174 } } },
+      body: { email: "me@example.com", plan_type: "pro", rate_limit: { primary_window: { used_percent: 62, limit_window_seconds: 604800, reset_at: 1792651174 } }, rate_limit_reset_credits: { available_count: 3, applicable_available_count: 0 } },
     },
     "https://api.anthropic.com/api/oauth/usage": (init) => init.headers.authorization === "Bearer oauth-a"
       ? { body: { five_hour: { utilization: 2, resets_at: "2026-10-17T20:59:59Z" } } }
@@ -181,6 +181,7 @@ test("every account gets its own row; setup-token reads its last reply, failures
   ], "an env API key and a provider with no subscription reader get no row");
   assert.equal(byAccount["openai-codex/default"].email, "me@example.com");
   assert.equal(byAccount["openai-codex/default"].plan, "ChatGPT Pro");
+  assert.equal(byAccount["openai-codex/default"].resetCredits, 3, "reset passes ride on the account row");
   assert.equal(byAccount["anthropic/default"].usageLimits.windows[0].usedPercent, 2);
   assert.equal(byAccount["anthropic/default"].usageLimits.checkedAt, new Date(NOW).toISOString());
 
