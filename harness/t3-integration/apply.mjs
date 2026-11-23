@@ -1140,8 +1140,10 @@ function transform(text, changes) {
   }
   return text;
 }
+// Undo in reverse: an edit that inserts before an anchor an earlier edit also used sits between
+// that earlier addition and the anchor, so undoing in order would leave the earlier one behind.
 function untransform(text, changes) {
-  for (const [anchor, addition, mode] of changes)
+  for (const [anchor, addition, mode] of [...changes].reverse())
     text = mode === 'replace' ? text.replace(addition, anchor) : text.replace(addition + anchor, anchor);
   return text;
 }

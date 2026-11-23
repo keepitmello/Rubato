@@ -39,7 +39,7 @@ test('mobile edits anchor once and add only new text at the pin', {skip: !proces
       assert.equal(text.split(anchor).length, 2, `${relative} (in order): ${anchor.slice(0, 60)}`);
       text = mode === 'replace' ? text.replace(anchor, addition) : text.replace(anchor, addition + anchor);
     }
-    for (const [anchor, addition, mode] of changes)
+    for (const [anchor, addition, mode] of [...changes].reverse())
       text = mode === 'replace' ? text.replace(addition, anchor) : text.replace(addition + anchor, anchor);
     assert.equal(text, original, `${relative} undoes to the pin`);
   }

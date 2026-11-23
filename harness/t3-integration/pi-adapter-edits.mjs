@@ -398,7 +398,8 @@ export const piAdapterEdits = {
   'packages/provider-core/src/server/ProviderAdapter.ts': [
     [
       'export const ProviderAdapterV2TurnMessage = Schema.Struct({\n',
-      '  rubatoAppText: Schema.optionalKey(Schema.String),\n',
+      'export const ProviderAdapterV2TurnMessage = Schema.Struct({\n  rubatoAppText: Schema.optionalKey(Schema.String),\n',
+      'replace',
     ],
     [
       '  readonly hasPendingBackgroundWork?: Effect.Effect<boolean>;\n',

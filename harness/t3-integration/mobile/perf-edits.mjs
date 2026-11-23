@@ -56,7 +56,7 @@ export function rootPathnameFromState(state: NavigationState): string {
     }
   }
   for (let index = restart?.row ?? 0; index < visibleTurnItems.length; index += 1) {`,
-      '  for (let index = restart?.row ?? 0; index < visibleTurnItems.length; index += 1) {',
+      '  // Rubato: the compaction pair is collected in the history pass above.\n  for (let index = restart?.row ?? 0; index < visibleTurnItems.length; index += 1) {',
       'replace',
     ],
     [
