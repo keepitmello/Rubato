@@ -40,6 +40,7 @@ import { rubatoAccountLabel, rubatoAccountOrder } from "../../rubatoAccountLabel
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import { SettingsGroup } from "./SettingsGroup";
+import { agyAccounts, agyAccountsSummary, type AgyAccount, type AgyAccountState } from "./RubatoAgyAccounts.logic";
 import { ProviderAuthenticationSection } from "./ProviderAuthenticationSection";
 import { EffortDefaultSection, ModelEffortControl, useEffortSettings, type EffortState } from "./RubatoEffortSettings";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
@@ -196,19 +197,13 @@ export function RubatoProvidersSettingsPanel() {
   );
 
   const agySummary = useMemo((): { state: ConnectionState; text: string; disabled: boolean } => {
-    const enabledEntries = agyEntries.filter(([, instance]) => instance.enabled !== false);
-    const liveById = new Map(serverProviders.map((provider) => [provider.instanceId, provider]));
-    const connectedCount = enabledEntries.filter(([id, instance]) => {
-      const live = liveById.get(id as ProviderInstanceId);
-      const isolated = isIsolatedAgyInstance(instance);
-      if (isolated) return live?.auth.status === "authenticated" || live?.status === "ready";
-      return live ? live.status === "ready" : true;
-    }).length;
-    const state: ConnectionState = connectedCount > 0 ? "connected" : "absent";
+    const liveById = new Map<string, ServerProvider>(serverProviders.map((provider) => [provider.instanceId, provider]));
+    const { connected, total, off } = agyAccountsSummary(agyAccounts(agyEntries, liveById));
+    const state: ConnectionState = connected > 0 ? "connected" : "absent";
     const parts = [STATE_VIEW[state].label];
-    if (agyEntries.length > 0 && enabledEntries.length === 0) parts.push("Off");
-    if (agyEntries.length > 1) parts.push(`${agyEntries.length} accounts`);
-    return { state, text: parts.join(" · "), disabled: agyEntries.length > 0 && enabledEntries.length === 0 };
+    if (off) parts.push("Off");
+    if (total > 1) parts.push(`${total} accounts`);
+    return { state, text: parts.join(" · "), disabled: off };
   }, [agyEntries, serverProviders]);
 
   const navItems = useMemo(() => {
@@ -846,16 +841,13 @@ function ProviderModels({ providerId, name, effort }: { providerId: string; name
   );
 }
 
-function isIsolatedAgyInstance(instance: ProviderInstanceConfig): boolean {
-  const env = instance.environment ?? [];
-  const hasLocalAgent = env.some(
-    (entry) => entry.name === LOCAL_AGY_AGENT_ENV && typeof entry.value === "string" && entry.value.trim().length > 0,
-  );
-  if (!hasLocalAgent) return true;
-  const isolatedEntry = env.find((entry) => entry.name === LOCAL_AGY_ISOLATED_ENV);
-  const isolated = typeof isolatedEntry?.value === "string" ? isolatedEntry.value.trim().toLowerCase() : "";
-  return isolated === "1" || isolated === "true";
-}
+const AGY_STATE_VIEW: Record<AgyAccountState, { badge: ConnectionState; text: string }> = {
+  connected: { badge: "connected", text: "Connected" },
+  checking: { badge: "stale", text: "Checking…" },
+  signin: { badge: "stale", text: "Sign in" },
+  absent: { badge: "absent", text: "Not connected" },
+  off: { badge: "absent", text: "Off" },
+};
 
 function agyBinaryPathOf(entries: ReadonlyArray<readonly [string, ProviderInstanceConfig]>): string {
   for (const [, instance] of entries) {
@@ -869,16 +861,16 @@ function agyBinaryPathOf(entries: ReadonlyArray<readonly [string, ProviderInstan
 
 function nextAgyAccountSlot(existingIds: ReadonlySet<string>): { id: string; defaultLabel: string } {
   if (!existingIds.has("agy-rubato-lead-sub")) {
-    return { id: "agy-rubato-lead-sub", defaultLabel: "루바토 리드 [sub]" };
+    return { id: "agy-rubato-lead-sub", defaultLabel: "Antigravity [sub]" };
   }
   for (let index = 2; index < 100; index += 1) {
     const id = `agy-rubato-lead-sub${index}`;
     if (!existingIds.has(id)) {
-      return { id, defaultLabel: `루바토 리드 [sub${index}]` };
+      return { id, defaultLabel: `Antigravity [sub${index}]` };
     }
   }
   const suffix = Date.now().toString(36);
-  return { id: `agy-rubato-lead-${suffix}`, defaultLabel: `루바토 리드 [${suffix}]` };
+  return { id: `agy-rubato-lead-${suffix}`, defaultLabel: `Antigravity [${suffix}]` };
 }
 
 function AntigravityAcpDetail({
@@ -915,19 +907,19 @@ function AntigravityAcpDetail({
         instance: { ...instance, enabled },
       });
       if (result._tag !== "Success") {
-        reportError("Could not update Antigravity account", "Settings update failed.");
+        reportError("Could not update Antigravity", "Settings update failed.");
         return;
       }
       onChanged();
     } catch (error) {
-      reportError("Could not update Antigravity account", error);
+      reportError("Could not update Antigravity", error);
     } finally {
       setBusyId(null);
     }
   };
 
   const removeAccount = async (id: string, name: string) => {
-    if (!(await confirm(`Remove Antigravity account "${name}"?`))) return;
+    if (!(await confirm(`Remove ${name}?`))) return;
     setBusyId(id);
     try {
       const result = await persistInstance({
@@ -935,13 +927,13 @@ function AntigravityAcpDetail({
         instanceId: ProviderInstanceId.make(id),
       });
       if (result._tag !== "Success") {
-        reportError("Could not remove Antigravity account", "Settings update failed.");
+        reportError("Could not remove from Antigravity", "Settings update failed.");
         return;
       }
       toastManager.add({ type: "info", title: `Removed ${name}` });
       onChanged();
     } catch (error) {
-      reportError("Could not remove Antigravity account", error);
+      reportError("Could not remove from Antigravity", error);
     } finally {
       setBusyId(null);
     }
@@ -993,13 +985,47 @@ function AntigravityAcpDetail({
     }
   };
 
-  const connectedCount = entries.filter(([id, instance]) => {
-    if (instance.enabled === false) return false;
-    const live = liveById.get(id as ProviderInstanceId);
-    if (isIsolatedAgyInstance(instance)) return live?.auth.status === "authenticated" || live?.status === "ready";
-    return live ? live.status === "ready" : true;
-  }).length;
-  const headerBadge: ConnectionState = connectedCount > 0 ? "connected" : "absent";
+  const accounts = agyAccounts(entries, liveById);
+  const headerBadge: ConnectionState = agyAccountsSummary(accounts).connected > 0 ? "connected" : "absent";
+  const promptCount = accounts.reduce((sum, account) => sum + account.prompts.length, 0);
+
+  const promptRow = (account: AgyAccount, prompt: AgyAccount["prompts"][number]) => {
+    const instance = entries.find(([id]) => id === prompt.instanceId)?.[1];
+    if (!instance) return null;
+    return (
+      <SettingsRow
+        key={prompt.instanceId}
+        title={<span className="pl-3">{prompt.name}</span>}
+        description={
+          <span className="flex flex-wrap items-center gap-1 pl-3">
+            <span>System prompt</span>
+            {prompt.agent ? <code className="rounded bg-muted px-1">{prompt.agent}</code> : null}
+          </span>
+        }
+        control={
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={prompt.enabled}
+              disabled={busyId === prompt.instanceId}
+              onCheckedChange={(checked) => void toggleEnabled(prompt.instanceId, instance, Boolean(checked))}
+              aria-label={`Use ${prompt.name}`}
+            />
+            {account.isolated ? null : (
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                disabled={busyId === prompt.instanceId}
+                onClick={() => void removeAccount(prompt.instanceId, prompt.name)}
+                aria-label={`Remove ${prompt.name}`}
+              >
+                <Trash2Icon className="size-3.5" />
+              </Button>
+            )}
+          </div>
+        }
+      />
+    );
+  };
 
   return (
     <div className="min-w-0 space-y-6 p-4">
@@ -1011,7 +1037,7 @@ function AntigravityAcpDetail({
 
       <div className="space-y-3">
         <h4 className="px-1 text-sm text-foreground/70">Accounts</h4>
-        {entries.length === 0 ? (
+        {accounts.length === 0 ? (
           <SettingsGroup>
             <SettingsRow
               title="No Antigravity account yet"
@@ -1019,67 +1045,48 @@ function AntigravityAcpDetail({
             />
           </SettingsGroup>
         ) : (
-          entries.map(([id, instance]) => {
-            const live = liveById.get(id as ProviderInstanceId);
-            const isolated = isIsolatedAgyInstance(instance);
-            const name = instance.displayName?.trim() || id;
-            const enabled = instance.enabled !== false;
-            const signedIn = isolated
-              ? live?.auth.status === "authenticated" || live?.status === "ready"
-              : live
-                ? live.status === "ready"
-                : enabled;
-            const badge: ConnectionState = !enabled ? "absent" : signedIn ? "connected" : "stale";
-            const badgeText = !enabled
-              ? "Off"
-              : signedIn
-                ? "Connected"
-                : isolated
-                  ? "Sign in"
-                  : "Checking…";
-            const modelNames = (live?.models ?? []).map((model) => model.name);
+          accounts.map((account) => {
+            const view = AGY_STATE_VIEW[account.state];
+            const isolatedId = account.isolated ? account.prompts[0]!.instanceId : null;
+            const live = isolatedId ? liveById.get(isolatedId as ProviderInstanceId) : undefined;
+            const name = account.name ?? "agy CLI login";
             return (
-              <SettingsGroup key={id}>
+              <SettingsGroup key={account.key}>
                 <SettingsRow
                   title={
                     <span className="flex flex-wrap items-center gap-2">
                       <span>{name}</span>
-                      <Badge variant="outline">{isolated ? "Google OAuth" : "agy CLI"}</Badge>
-                      <Badge variant={STATE_VIEW[badge].badge}>{badgeText}</Badge>
+                      <Badge variant="outline">{account.isolated ? "Google OAuth" : "agy CLI"}</Badge>
+                      <Badge variant={STATE_VIEW[view.badge].badge}>{view.text}</Badge>
                     </span>
                   }
                   description={
-                    modelNames.length > 0
-                      ? modelNames.join(" · ")
-                      : isolated
-                        ? "Isolated profile with its own Google sign-in. Shares your Rubato lead prompt, skills, and MCP tools."
+                    account.models.length > 0
+                      ? account.models.join(" · ")
+                      : account.isolated
+                        ? "Its own Google sign-in, sharing your Rubato skills and MCP tools."
                         : "Uses the login your official agy CLI already holds."
                   }
                   control={
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        checked={enabled}
-                        disabled={busyId === id}
-                        onCheckedChange={(checked) => void toggleEnabled(id, instance, Boolean(checked))}
-                        aria-label={`Use ${name}`}
-                      />
+                    isolatedId ? (
                       <Button
                         size="icon-xs"
                         variant="ghost"
-                        disabled={busyId === id}
-                        onClick={() => void removeAccount(id, name)}
+                        disabled={busyId === isolatedId}
+                        onClick={() => void removeAccount(isolatedId, name)}
                         aria-label={`Remove ${name}`}
                       >
                         <Trash2Icon className="size-3.5" />
                       </Button>
-                    </div>
+                    ) : undefined
                   }
                 />
-                {isolated && enabled && live ? (
+                {account.prompts.map((prompt) => promptRow(account, prompt))}
+                {isolatedId && account.state !== "off" && live ? (
                   <ProviderAuthenticationSection
                     environmentId={environmentId}
                     environmentLabel="this machine"
-                    instanceId={ProviderInstanceId.make(id)}
+                    instanceId={ProviderInstanceId.make(isolatedId)}
                     provider={live}
                     readOnly={false}
                   />
@@ -1088,9 +1095,9 @@ function AntigravityAcpDetail({
             );
           })
         )}
-        {entries.length > 1 ? (
+        {promptCount > 1 ? (
           <p className="px-1 text-xs text-muted-foreground">
-            Pick an account&apos;s Gemini model from the composer picker before starting a new thread.
+            Each system prompt is its own group in the composer&apos;s model picker. Pick one there before starting a new thread.
           </p>
         ) : null}
       </div>
@@ -1101,7 +1108,7 @@ function AntigravityAcpDetail({
           <form onSubmit={(event) => void addAccount(event)} className="space-y-3 p-4">
             <div className="space-y-1.5">
               <label htmlFor="agy-account-label" className="text-xs font-medium text-foreground/80">
-                Account label (optional)
+                Account name (optional)
               </label>
               <Input
                 id="agy-account-label"
@@ -1134,8 +1141,7 @@ function AntigravityAcpDetail({
               </Button>
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Creates a separate Google sign-in profile using your installed official{" "}
-              <code className="rounded bg-muted px-1">agy</code> CLI and shares your Rubato lead agent, skills, and MCP tools.
+              Signs in another Google account through your official agy CLI. It runs the Rubato lead system prompt with your skills and MCP tools.
             </p>
           </form>
         </SettingsGroup>

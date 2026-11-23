@@ -51,7 +51,7 @@ const cloudAgy = provider({
 });
 const codex = provider({ instanceId: "codex" as never, driver: "codex" as never, models: [{ slug: "gpt-6.1", name: "GPT 6.1" }] });
 const instances = {
-  "antigravity-work": { driver: "antigravity", environment: [{ name: "RUBATO_LOCAL_AGY_AGENT", value: "work" }] },
+  "antigravity-work": { driver: "antigravity", environment: [{ name: "RUBATO_LOCAL_AGY_AGENT", value: "work" }, { name: "RUBATO_LOCAL_AGY_ISOLATED", value: "1" }] },
   antigravity: { driver: "antigravity" },
 } as unknown as RoomModelMenuInput["instances"];
 

@@ -41,7 +41,7 @@ vi.mock("../../state/use-remote-environment-registry", () => ({
         },
       ],
       settings: { providerInstances: {
-        "antigravity-work": { environment: [{ name: "RUBATO_LOCAL_AGY_AGENT", value: "work" }] },
+        "antigravity-work": { environment: [{ name: "RUBATO_LOCAL_AGY_AGENT", value: "work" }, { name: "RUBATO_LOCAL_AGY_ISOLATED", value: "1" }] },
       } },
     },
   }),

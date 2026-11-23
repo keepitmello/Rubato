@@ -8,6 +8,11 @@
 // model of those accounts is an explicit pick. The desktop's settings page and the phone's "+"
 // both read this, and both send the same create body:
 //
+// An account is a Google login, not an instance. Every instance without RUBATO_LOCAL_AGY_ISOLATED
+// uses the one login the agy CLI holds, whatever agy agent (system prompt) it names, and a
+// companion runs only that login with its own prompt (pi-server companion-agy.mjs). So those
+// instances are offered once, as "Antigravity", through the first that qualifies.
+//
 //   Rubato default        → {}                                     (the request as before)
 //   Gemini on an account  → { modelSelection: { instanceId, model } }
 //
@@ -17,6 +22,9 @@ import type { ServerProvider, ServerSettings } from "@t3tools/contracts";
 
 export const COMPANION_GEMINI_DEFAULT_MODEL = "gemini-4-hydrogen";
 const LOCAL_AGY_AGENT = "RUBATO_LOCAL_AGY_AGENT";
+const LOCAL_AGY_ISOLATED = "RUBATO_LOCAL_AGY_ISOLATED";
+/** What the pickers call the login the official agy CLI holds. */
+export const AGY_CLI_ACCOUNT_LABEL = "Antigravity";
 
 export interface CompanionModelSelection {
   readonly instanceId: string;
@@ -41,13 +49,13 @@ type InstanceSettings = ServerSettings["providerInstances"] | undefined;
 
 const isGemini = (slug: string) => /^gemini-/i.test(slug);
 
-function localAgyAgent(instances: InstanceSettings, instanceId: string): string | null {
+function environmentValue(instances: InstanceSettings, instanceId: string, name: string): string | null {
   const environment = (instances as Record<string, { readonly environment?: unknown } | undefined> | undefined)?.[instanceId]
     ?.environment;
   if (!Array.isArray(environment)) return null;
   const entry = environment.find(
     (item): item is { name: string; value: string } =>
-      typeof item === "object" && item !== null && item.name === LOCAL_AGY_AGENT && typeof item.value === "string",
+      typeof item === "object" && item !== null && item.name === name && typeof item.value === "string",
   );
   return entry?.value.trim() || null;
 }
@@ -58,17 +66,21 @@ export function companionModelAccounts(
   instances: InstanceSettings,
 ): ReadonlyArray<CompanionModelAccount> {
   const accounts: CompanionModelAccount[] = [];
+  let cliLoginOffered = false;
   for (const provider of providers) {
     if (provider.driver !== "antigravity" || !provider.enabled || provider.installed === false) continue;
     if ((provider.status !== "ready" && provider.status !== "warning") || provider.availability === "unavailable") continue;
-    if (localAgyAgent(instances, provider.instanceId) === null) continue;
+    if (environmentValue(instances, provider.instanceId, LOCAL_AGY_AGENT) === null) continue;
+    const isolated = /^(1|true)$/i.test(environmentValue(instances, provider.instanceId, LOCAL_AGY_ISOLATED) ?? "");
+    if (!isolated && cliLoginOffered) continue;
     const models = provider.models
       .filter((model) => isGemini(model.slug))
       .map((model) => ({ slug: model.slug, name: model.name }));
     if (models.length === 0) continue;
+    if (!isolated) cliLoginOffered = true;
     accounts.push({
       instanceId: provider.instanceId,
-      label: provider.displayName?.trim() || provider.instanceId,
+      label: isolated ? provider.displayName?.trim() || provider.instanceId : AGY_CLI_ACCOUNT_LABEL,
       models,
       defaultModel: models.find(({ slug }) => slug === `${COMPANION_GEMINI_DEFAULT_MODEL}-medium`)?.slug ??
         models.find(({ slug }) => slug === COMPANION_GEMINI_DEFAULT_MODEL)?.slug ?? null,

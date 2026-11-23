@@ -11,6 +11,9 @@ export const providerOverlays = [
   'apps/web/src/rubatoAccountModelOrder.ts',
   'apps/web/src/rubatoAccountLabel.ts',
   'apps/web/src/components/settings/RubatoProvidersSettings.tsx',
+  // Antigravity: Google logins as accounts, agy agents on them as system prompts.
+  'apps/web/src/components/settings/RubatoAgyAccounts.logic.ts',
+  'apps/web/src/components/settings/RubatoAgyAccounts.logic.test.ts',
   // Titles and summaries: the session-title ladder the Stats card shares.
   'apps/web/src/components/settings/RubatoTitleModels.tsx',
   // Thinking effort: the level new conversations start at (src/auth/effort.mjs), and the line under

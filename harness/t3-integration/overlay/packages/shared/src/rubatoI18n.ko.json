@@ -4823,7 +4823,22 @@
   "Fish Audio key": "Fish Audio 키",
   "Fish Audio API key": "Fish Audio API 키",
   "Hold messages to others": "다른 사람에게 가는 말 붙잡아 두기",
-  "Advanced — how it works · tools · resident memory · opening and closing lines · Rubato's defaults": "고급 — 일하는 방식 · 도구 · 늘 들고 있는 기억 · 시작과 끝맺음 글 · 루바토 기본값 비교"
+  "Advanced — how it works · tools · resident memory · opening and closing lines · Rubato's defaults": "고급 — 일하는 방식 · 도구 · 늘 들고 있는 기억 · 시작과 끝맺음 글 · 루바토 기본값 비교",
+  "agy CLI login": "agy CLI 로그인",
+  "Uses the login your official agy CLI already holds.": "공식 agy CLI에 이미 로그인된 계정을 씁니다.",
+  "Its own Google sign-in, sharing your Rubato skills and MCP tools.": "따로 로그인한 Google 계정입니다. Rubato 스킬과 MCP 도구를 함께 씁니다.",
+  "System prompt": "시스템 프롬프트",
+  "Each system prompt is its own group in the composer's model picker. Pick one there before starting a new thread.": "시스템 프롬프트마다 입력창 모델 선택에 따로 묶여 나옵니다. 새 스레드를 시작하기 전에 거기서 고르세요.",
+  "Account name (optional)": "계정 이름 (선택 사항)",
+  "Add account": "계정 추가",
+  "Add Google account": "Google 계정 추가하기",
+  "Signs in another Google account through your official agy CLI. It runs the Rubato lead system prompt with your skills and MCP tools.": "공식 agy CLI로 다른 Google 계정에 로그인합니다. 이 계정은 Rubato 리드 시스템 프롬프트를 스킬·MCP 도구와 함께 실행합니다.",
+  "No Antigravity account yet": "아직 Antigravity 계정이 없습니다",
+  "Add a Google account below to run Gemini through official agy ACP.": "아래에서 Google 계정을 추가하면 공식 agy ACP로 Gemini를 쓸 수 있습니다.",
+  "Could not update Antigravity": "Antigravity 설정을 바꿀 수 없습니다",
+  "Could not remove from Antigravity": "Antigravity에서 제거할 수 없습니다",
+  "Settings update failed.": "설정을 저장할 수 없습니다.",
+  "Official agy binary path": "공식 agy 실행 파일 경로"
  },
  "templates": [
   [
@@ -8649,6 +8664,10 @@
   [
    "When Rubato changes who {0} is by default, {0} compares it with your own file and tells you what it recommends. Nothing is merged without you.",
    "루바토 기본값이 바뀌면 {0}한테서 내 파일과 비교한 추천을 받습니다. 내가 정하기 전엔 아무것도 합쳐지지 않습니다."
+  ],
+  [
+   "Removed {0}",
+   "{0} 제거됨"
   ]
  ]
 }
