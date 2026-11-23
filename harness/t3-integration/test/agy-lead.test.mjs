@@ -25,12 +25,14 @@ const fakeAgy = (directory) => {
 };
 const agentFile = (home, name = LEAD_AGENT) => path.join(home, '.gemini', 'config', 'agents', `${name}.md`);
 
-test('the lead agent comes from the canonical lead prompt and enables the Rubato MCP registry', async () => {
+test('the lead agent comes from the canonical lead prompt and inherits the installed MCP registry', async () => {
   const text = await renderLeadAgent();
   assert.match(text, new RegExp(`^---\\nname: ${LEAD_AGENT}\\n[\\s\\S]*?mainAgent: true\\n[\\s\\S]*?\\n---\\n\\n`));
   assert.ok(text.includes('  - invoke_subagent\n'));
   assert.ok(text.includes('  - manage_subagents\n'));
-  assert.ok(text.includes(`mcpServers: [${MCP_SERVER_NAME}]\n`));
+  const frontmatter = text.split('---\n')[1];
+  assert.match(frontmatter, /^inheritMcp: true$/m);
+  assert.doesNotMatch(frontmatter, /^mcpServers:/m);
   assert.ok(text.includes(GENERATED_MARK));
   assert.doesNotMatch(text, RUBATO_ONLY);
   const prompts = fileURLToPath(new URL('../../prompts/', import.meta.url));
@@ -51,6 +53,17 @@ test('the agent file is ours only while it carries the generated mark', async (t
   assert.equal(await installLeadAgent(home), 'kept');
   assert.equal(readFileSync(agentFile(home), 'utf8'), '---\nname: rubato-lead\n---\nmy own lead\n');
   assert.equal(readFileSync(agentFile(home, 'my-agent'), 'utf8'), 'mine\n');
+});
+
+test('a generated lead with the old MCP name list is repaired at install time', async (t) => {
+  const home = scratch(t);
+  const file = agentFile(home);
+  const current = await renderLeadAgent();
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, current.replace('inheritMcp: true', `mcpServers: [${MCP_SERVER_NAME}]`));
+
+  assert.equal(await installLeadAgent(home), 'written');
+  assert.equal(readFileSync(file, 'utf8'), current);
 });
 
 test('agy is found on PATH, then in ~/.local/bin, and only as an executable', async (t) => {

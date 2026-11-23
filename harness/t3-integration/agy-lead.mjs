@@ -53,7 +53,8 @@ const FRONTMATTER = [
   'mainAgent: true',
   'subagent: false',
   'excludeDefaultComponents: true',
-  `mcpServers: [${MCP_SERVER_NAME}]`,
+  // AGY expects inline server definitions in mcpServers, not names from mcp_config.json.
+  'inheritMcp: true',
   'tools:',
   '  - read_file',
   '  - write_file',
