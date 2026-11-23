@@ -363,8 +363,8 @@ test("the text view says what is left, when it resets, and when each reset pass 
     { provider: "anthropic", providerLabel: "Anthropic", account: "default", modelSuffix: "-sub",
       usageLimits: { windows: [{ label: "Weekly", kind: "weekly", usedPercent: 99 }] } },
   ] }, { timeZone: "Asia/Seoul" });
-  assert.match(text, /Codex · default \(main model ids\)\n  Weekly: 7% left, resets 11-29 17:26/);
-  assert.match(text, /reset passes: 1, .*expire 12-01 04:58/);
-  assert.match(text, /Anthropic · default \(model ids end in -sub\)\n  Weekly: 1% left/);
+  assert.match(text, /^Codex: weekly 7% left \(resets 11-29 17:26\) \+ 1 reset pass of 100% each, .*expire 12-01 04:58/m);
+  assert.match(text, /^Anthropic main: weekly 93% left$/m);
+  assert.match(text, /^Anthropic sub: weekly 1% left$/m);
   assert.match(text, /Anthropic weekly, all accounts: 94% left of 200%/);
 });

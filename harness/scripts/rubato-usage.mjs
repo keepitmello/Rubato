@@ -496,31 +496,41 @@ function localStamp(iso, timeZone) {
 const leftOf = (window) => Math.max(0, Math.round(100 - window.usedPercent));
 
 /**
- * `rubato auth usage`: how much each account has left, for a person or a lead choosing a model.
- * `collectUsage` reports used percent for the Usage page; this turns it around.
+ * `rubato auth usage`: one line per account saying how much is left, for a person or a lead
+ * choosing a model. `collectUsage` reports used percent for the Usage page; this turns it around.
  */
 export function formatUsageText({ accounts }, { timeZone } = {}) {
-  const blocks = accounts.map((row) => {
-    const lane = typeof row.modelSuffix !== "string" ? ""
-      : row.modelSuffix ? ` (model ids end in ${row.modelSuffix})` : " (main model ids)";
+  const laneName = (suffix) => (suffix === "" ? "main" : suffix.replace(/^-/, ""));
+  const nameOf = (row) => {
+    const label = row.providerLabel ?? row.provider;
+    const lanes = accounts.filter((other) => other.provider === row.provider);
+    if (typeof row.modelSuffix === "string" && lanes.length > 1) return `${label} ${laneName(row.modelSuffix)}`;
+    return lanes.length > 1 ? `${label} ${row.account}` : label;
+  };
+  const lines = accounts.map((row) => {
     const limits = row.usageLimits ?? {};
-    const lines = (limits.windows ?? []).map((window) =>
-      `${window.label}: ${leftOf(window)}% left${window.resetsAt ? `, resets ${localStamp(window.resetsAt, timeZone)}` : ""}`);
-    if (limits.unavailable) lines.push(`unreadable: ${limits.unavailable.message}`);
+    const windows = [...(limits.windows ?? [])].sort((left, right) => (right.kind === "weekly") - (left.kind === "weekly"));
+    const parts = windows.map((window) =>
+      `${/^\w+$/.test(window.label) ? window.label.toLowerCase() : window.label} ${leftOf(window)}% left${window.resetsAt ? ` (resets ${localStamp(window.resetsAt, timeZone)})` : ""}`);
+    if (limits.unavailable) parts.push(`unreadable: ${limits.unavailable.message}`);
+    let line = `${nameOf(row)}: ${parts.join(", ") || "no limits reported"}`;
     if (Array.isArray(row.resetCredits) && row.resetCredits.length > 0) {
       const expiries = row.resetCredits.map((credit) => (credit.expiresAt ? localStamp(credit.expiresAt, timeZone) : "unknown"));
-      lines.push(`reset passes: ${row.resetCredits.length}, each refills the weekly window to 100% once it is used up; expire ${expiries.join(", ")}`);
+      line += ` + ${row.resetCredits.length} reset pass${row.resetCredits.length === 1 ? "" : "es"} of 100% each, used once the week runs out (expire ${expiries.join(", ")})`;
     }
-    return [`${row.providerLabel ?? row.provider} · ${row.account}${lane}`, ...(lines.length ? lines : ["no limits reported"]).map((line) => `  ${line}`)].join("\n");
+    return line;
   });
   const weekly = new Map();
   for (const row of accounts) {
     const window = row.usageLimits?.windows?.find((entry) => entry.kind === "weekly");
     if (!window) continue;
-    const total = weekly.get(row.providerLabel ?? row.provider) ?? { left: 0, accounts: 0 };
-    weekly.set(row.providerLabel ?? row.provider, { left: total.left + leftOf(window), accounts: total.accounts + 1 });
+    const label = row.providerLabel ?? row.provider;
+    const total = weekly.get(label) ?? { left: 0, accounts: 0 };
+    weekly.set(label, { left: total.left + leftOf(window), accounts: total.accounts + 1 });
   }
   const totals = [...weekly].filter(([, total]) => total.accounts > 1)
     .map(([label, total]) => `${label} weekly, all accounts: ${total.left}% left of ${total.accounts * 100}%`);
-  return [...blocks, ...(totals.length ? ["", ...totals] : [])].join("\n");
+  const lanes = accounts.some((row) => row.modelSuffix && row.modelSuffix !== "")
+    ? ["sub accounts serve the model ids ending in -sub (anthropic/claude-opus-5-5-sub)."] : [];
+  return [...lines, ...(totals.length || lanes.length ? ["", ...totals, ...lanes] : [])].join("\n");
 }
