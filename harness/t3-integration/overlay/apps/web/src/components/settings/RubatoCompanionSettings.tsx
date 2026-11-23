@@ -436,25 +436,33 @@ function CompanionDreamModels({
   busy: boolean;
   save: (patch: CompanionSettingsPatch) => Promise<boolean>;
 }) {
-  const store = (next: readonly { readonly model: string; readonly reasoning: CompanionDreamModel["reasoning"] | null }[]) =>
-    save({ dream: { models: next.map(({ model, reasoning }) => (reasoning ? { model, reasoning } : { model })) } });
+  // The list as last edited here: a second edit made before the first save answers builds on the first.
+  const [local, setLocal] = useState<readonly CompanionDreamModel[]>(models);
+  useEffect(() => {
+    if (!busy) setLocal(models);
+  }, [models, busy]);
+  const store = (next: readonly { readonly model: string; readonly reasoning: CompanionDreamModel["reasoning"] | null }[]) => {
+    const list = next.map(({ model, reasoning }) => (reasoning ? { model, reasoning } : { model }));
+    setLocal(list);
+    return save({ dream: { models: list } });
+  };
   return (
     <div data-rubato-companion-dream-models="">
       <DreamModelsEditor
-        models={models.map(({ model, reasoning }) => ({ model, reasoning: reasoning ?? null }))}
+        models={local.map(({ model, reasoning }) => ({ model, reasoning: reasoning ?? null }))}
         onChange={(next) => void store(next)}
         title="Dream models"
         subject="its dream"
         description={
-          models.length === 0
-            ? "Uses the dream models in Settings › Memory. Add one to give this companion its own."
+          local.length === 0
+            ? "Uses the dream models you set in Settings › Memory, or Opus then Sonnet if you set none there. Add one to give this companion its own."
             : "Its memory dream and document upkeep try these in order and use the first one that answers."
         }
       />
-      {models.length > 0 ? (
+      {local.length > 0 ? (
         <div className="flex justify-end pb-2">
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => void store([])}>
-            Use the models in Settings › Memory
+            Stop using its own models
           </Button>
         </div>
       ) : null}
