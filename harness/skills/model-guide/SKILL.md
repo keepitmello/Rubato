@@ -23,8 +23,8 @@ Choose a model only once a new session is justified.
 Explicit user choices come first: a selected model, approvals, allowed providers
 and effort.
 
-For a subagent, pick from the default allocation below and spawn it; the choice
-needs no measurement or prior failure.
+For a subagent, pick from the default allocation below and spawn it; reading
+usage is the only check the choice needs.
 
 For a team, put each member's model in the combined intent/roster proposal with a
 one-line reason; the user's correction to the roster decides.
@@ -38,14 +38,31 @@ Acceptance criteria stay the same whichever model runs.
 This is the product rule, drawn from the user's experience so far. Update it here
 when new experience changes it.
 
-- Subagents: **DeepSeek** (ultrafast) or **Opus**.
-- Owners: **Opus** or **DeepSeek** (ultrafast).
-- **Fable** or **Astra** for either, with explicit approval.
-- Verifier: **Astra**, then **Opus**, then any other capable model.
-- Astra runs at `xhigh` in every role (user, 2026-10-08).
-- Any approved model can own or verify.
-- **Gemini**: use **Gemini 4 Hydrogen** by default and **Gemini 4 Neon** for design work.
-- **Local `agy` (`agy/gemini-4-neon`, `agy/gemini-4-hydrogen`, `agy/gemini-4-argon`)**: occasional single `Agent` calls only (reviews, second opinions, bounded research). Never use in teams, parallel fan-outs, or automated loops — at most one `agy` agent runs at a time, and team members are rejected. For high-volume or team Gemini workers, use Vertex AI (`google-vertex/*`) or Gemini API (`google/*`).
+Subscription quota runs out before it resets, so every assignment spends a share
+that other work then lacks. Choose the provider first, then the model by role.
+
+**Provider.** Read `rubato auth usage --json` and go where the most quota is left
+for the time until reset. A Codex account's `resetCredits` is how many more times
+its weekly window can be refilled; count each as one more week. An account that
+cannot be read is not proof of room.
+
+**Model by role.**
+
+| Role | Claude | Codex |
+|---|---|---|
+| Owner | Opus | Astra |
+| Subagent | Sonnet; Opus when the piece needs it | Sol; Astra when the piece needs it |
+| Reviewer | Opus, for work Codex built | Astra, for work Claude built |
+
+An owner holds the outcome and the judgement after it, so it runs on the top line.
+A subagent returns one bounded piece, so it starts one line down. An owner can run
+subagents from both providers at once. A reviewer comes from the other provider
+than the builder.
+
+- **Fable**: with explicit approval.
+- **Gemini** (`agy/*`) and **Grok**: when the user names them. Local `agy` runs one
+  single `Agent` call at a time; never use it in teams, parallel fan-outs or
+  automated loops, where team members are rejected.
 
 The `Agent` catalog lists only models from providers this user has signed in to,
 and it is the source of exact ids. A family missing from it is one this user does
@@ -53,7 +70,7 @@ not have, not a failure: choose among the rest, falling back to the lead's own
 model, and say which one ran.
 
 A model registered on several accounts appears once per account, such as Opus 5.5
-and Opus 5.5 [sub]; spread work across them.
+and Opus 5.5 [sub]; spread work across them by the same usage reading.
 
 ## Use the pool for real work
 
@@ -73,8 +90,7 @@ local evidence you already have; ordinary work does not wait for new telemetry.
 Pass an exact `provider/model` or a named `preset` the live harness accepts. The
 same display name on two routes may spend different resources.
 
-Omit `effort` so the configured default applies, except Astra, which always
-runs at `xhigh`. Keep explicit user settings;
+Omit `effort` so the configured default applies. Keep explicit user settings;
 override only for a supported, authorized reason; a role label or your reading of
 difficulty is not one. Report the requested model and
 effort separately from what the runtime confirms actually ran. If identity is not
@@ -85,12 +101,9 @@ a preset by its own configured policy; any result still needs its approval.
 
 ## Approval
 
-Fable, and Astra as an owner or subagent, require explicit
-user approval naming the outcome, model and effort before assignment. A readable
-combined intent/roster approval satisfies that gate when it includes those
-commitments. An approval covers its stated scope, not the whole pool. Astra as
-the default verifier needs no model-specific approval; a team that includes it
-still goes through the combined intent/roster approval.
+Fable requires explicit user approval naming the outcome, model and effort before
+assignment. A readable combined intent/roster approval satisfies that gate when it
+includes those commitments. An approval covers its stated scope, not the whole pool.
 
 Corrections, retries and re-verification by the same approved owner on the same
 outcome keep that approval. A new outcome, a materially changed roster or a higher
@@ -107,8 +120,9 @@ having to reconstruct and direct the whole outcome, weigh continuing, revising t
 brief, making the adviser the owner or stopping that approach, handoff cost included.
 
 Independent verification needs a fresh session reading the authoritative artifacts
-and acceptance criteria, not the builder's reasoning or desired verdict. Any capable
-approved model can verify, the builder's own family included; the actual builder
+and acceptance criteria, not the builder's reasoning or desired verdict. The reviewer
+comes from the other provider; when that provider is out of quota, a fresh session
+from the builder's provider verifies. The actual builder
 never certifies its own work as independent. Call it cross-family review only when
 the actual model identities differ. Neither freshness nor a different family
 guarantees correctness.
