@@ -136,9 +136,10 @@ test("a queued completion costs no second wake only after this companion answere
     await deliver(delivery({ messageId: "next", text: "다른 질문이야" }));
     live = branch; // The companion may have answered, failed or rewound before the queue drains.
     pi.settle();
-    assert.equal(pi.sent.length, 1);
-    assert.equal(pi.sent[0].message.details.messageId, folded ? "next" : notice.messageId);
-    assert.equal(pi.sent[0].message.details.repeatOf, undefined);
+    // Everything still unread is written at once and the last one starts the turn.
+    assert.deepEqual(pi.sent.map((s) => s.message.details.messageId), folded ? ["next"] : [notice.messageId, "next"]);
+    assert.deepEqual(pi.sent.map((s) => s.options.triggerTurn), folded ? [true] : [false, true]);
+    assert.ok(pi.sent.every((s) => s.message.details.repeatOf === undefined));
   }
 });
 
@@ -167,11 +168,11 @@ test("the conversation tools carry the frozen names and descriptions that state 
   assert.match(describe("session_wait"), /already pending on a running target when the wait starts may not be seen/);
   assert.match(describe("session_send"), /instead of polling/);
   assert.match(describe("session_send"), /cursor this tool returns as that target's afterCursor/);
-  assert.match(describe("session_send"), /steer to correct or stop the work in progress/);
-  assert.match(describe("session_send"), /queue \(default\) for the next piece of work/);
+  assert.match(describe("session_send"), /steer \(default\) is for anything about the work in progress: an answer to its question, a fact or approval it needs/);
+  assert.match(describe("session_send"), /queue is for a separate next task/);
   assert.match(describe("session_send"), /delivery says what happened: started .*steered or queued/);
   assert.deepEqual(pi.tools.get("session_send").parameters.properties.mode.enum, [...DELIVERY_MODES]);
-  assert.ok(!pi.tools.get("session_send").parameters.required.includes("mode"), "queue stays the default");
+  assert.ok(!pi.tools.get("session_send").parameters.required.includes("mode"), "the engine picks the default");
   assert.match(describe("session_create"), /only when the user explicitly asked/);
   // A subagent's id arrives from Agent as agentId; the read and search tools say where it goes.
   assert.match(describe("session_read"), /a subagent or team member by its st_ id \(the agentId the Agent tool returned/);

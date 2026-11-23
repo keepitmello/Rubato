@@ -292,9 +292,11 @@ function sessionTools(getLink, { companion }) {
       name: "session_send",
       label: "Send to conversation",
       description: "Send one message to another conversation. It appears there as a message from this conversation, not from the user, " +
-        "and wakes it if idle. If it is working, mode decides when it reads it: " +
-        "steer to correct or stop the work in progress (a scope fix, \"drop that\", \"stop\"): it joins the running turn at its next step; " +
-        "queue (default) for the next piece of work: it is read after the current run ends, and work already pending there may come first. " +
+        "and wakes it if idle. If it is working, mode decides when it reads it. " +
+        "steer (default) is for anything about the work in progress: an answer to its question, a fact or approval it needs, a correction or a stop. " +
+        "It joins the running turn at its next step, so the work goes on with it instead of finishing without it. " +
+        "queue is for a separate next task that should not interrupt this one: it is read after the current run ends, " +
+        "together with anything else queued there by then. " +
         "If its user stops that run, the message stays in its history without starting a turn, so no reply comes until the user continues. " +
         "The result's delivery says what happened: started (it was idle and began a turn), steered or queued. " +
         "Send only what the recipient must act on or know, in a few self-contained lines. " +
@@ -309,8 +311,8 @@ function sessionTools(getLink, { companion }) {
         properties: {
           sessionId: { type: "string", minLength: 1, description: "Target session id from session_list." },
           text: { type: "string", minLength: 1, description: "The message, at most 8000 characters." },
-          mode: { type: "string", enum: [...DELIVERY_MODES], description: "How a working conversation takes it: steer (into the running turn, for a correction or stop) " +
-            "or queue (after the current run, for the next task). Default queue. An idle conversation starts a turn either way." },
+          mode: { type: "string", enum: [...DELIVERY_MODES], description: "How a working conversation takes it: steer (default; into the running turn, for anything about the work in progress) " +
+            "or queue (after the current run, for a separate next task). An idle conversation starts a turn either way." },
           ...(companion ? { allowCold: { type: "boolean", description: "Send even though the target's cache is cold and its context is above 100000 tokens. Default false." } } : {}),
         },
       },

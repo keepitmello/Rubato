@@ -19,9 +19,9 @@ const IDLE_RETRY_MS = 250;
  * `delivery` says which path it took:
  * - idle session (`started`): sent with a turn; Pi writes it as the run starts and the first
  *   request reads it;
- * - running session, `queue` mode (`queued`): held here until the run ends. After a normal end it
- *   is sent with a turn, which starts the next run inside this run's settle; after a stop or
- *   failure it is written without one;
+ * - running session, `queue` mode (`queued`): held here until the run ends. After a normal end
+ *   every held message is written and the last one starts the next run inside this run's settle,
+ *   so that one run reads them all; after a stop or failure they are written without a turn;
  * - running session, `steer` mode (`steered`): handed to Pi as a context message, which Pi writes
  *   at the end of the current step (after its tool results, never between a call and its result)
  *   and keeps through a clear. The next request of the run reads it. Whether there is one cannot
@@ -51,24 +51,26 @@ export function installSessionLink(pi, { sessionLink, companion = false } = {}) 
   const written = () => deliveredMessageIds(state.ctx?.sessionManager?.getEntries?.());
   const idle = () => state.ctx?.isIdle?.() ?? true;
 
-  function send(details, options) {
+  // Takes a held message out of waiting; undefined when it repeats what the companion already read.
+  function release(details) {
     state.waiting.delete(details.messageId);
-    if (details.repeatOf) {
-      const { repeatOf, ...message } = details;
-      // Check at the actual wake, after any earlier queued send got its own turn. A stop,
-      // a failure, or a rewind can leave a written message that the companion never read.
-      const branch = state.ctx?.sessionManager?.getBranch?.() ?? [];
-      const reply = branch.findLastIndex((e) => e.type === "message" && e.message?.role === "assistant" &&
-        ["stop", "toolUse"].includes(e.message.stopReason));
-      if (reply >= 0 && branch.slice(0, reply).some((e) => e.type === "custom_message" && e.customType === SESSION_MESSAGE_TYPE &&
-        e.details?.kind === "message" && e.details.from?.sessionId === details.from.sessionId &&
-        repeatOf.steps.includes(e.details.sourceEntryId) && e.details.text === repeatOf.text)) return false;
-      details = message;
-    }
+    if (!details.repeatOf) return details;
+    const { repeatOf, ...message } = details;
+    // Check at the actual wake. A stop, a failure, or a rewind can leave a written message
+    // that the companion never read.
+    const branch = state.ctx?.sessionManager?.getBranch?.() ?? [];
+    const reply = branch.findLastIndex((e) => e.type === "message" && e.message?.role === "assistant" &&
+      ["stop", "toolUse"].includes(e.message.stopReason));
+    if (reply >= 0 && branch.slice(0, reply).some((e) => e.type === "custom_message" && e.customType === SESSION_MESSAGE_TYPE &&
+      e.details?.kind === "message" && e.details.from?.sessionId === details.from.sessionId &&
+      repeatOf.steps.includes(e.details.sourceEntryId) && e.details.text === repeatOf.text)) return undefined;
+    return message;
+  }
+
+  function send(details, options) {
     state.handed.add(details.messageId);
     // A companion reads another companion's message as a peer's (message.mjs buildEnvelope).
     pi.sendMessage(buildSessionMessage(details, { companion }), options);
-    return true;
   }
 
   // Pi writes every message it was sent by the time it is idle again; one it did not write (its run
@@ -87,14 +89,16 @@ export function installSessionLink(pi, { sessionLink, companion = false } = {}) 
       }
       return;
     }
+    const held = [...state.waiting.values()].map(release).filter(Boolean);
     if (settled && state.interrupted) {
       // The user stopped the run (or it failed): write the messages where the user sees them,
       // without starting the turn the stop just ended.
-      for (const details of [...state.waiting.values()]) send(details, { triggerTurn: false });
+      for (const details of held) send(details, { triggerTurn: false });
       return;
     }
-    // One message starts the run; the rest follow at its boundaries.
-    for (const details of state.waiting.values()) if (send(details, { triggerTurn: true })) break;
+    // Everything held is written now and the last one starts the run, so one run reads them all
+    // instead of each starting a run of its own after the news it carried went stale.
+    held.forEach((details, i) => send(details, { triggerTurn: i === held.length - 1 }));
   }
 
   let untrackSideChat = () => {};

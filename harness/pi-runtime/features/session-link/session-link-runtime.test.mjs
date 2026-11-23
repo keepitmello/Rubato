@@ -284,6 +284,32 @@ for (const [ending, end] of Object.entries(endings)) {
   });
 }
 
+test("several deliveries held during one run are read together by one next run, not one run each", async () => {
+  const { session, requests, hold } = await openSession("held-together", { async list() { return { sessions: [], truncated: false }; } });
+  const deliver = deliverTo(session);
+  let starts = 0;
+  session.subscribe((event) => { if (event.type === "agent_start") starts++; });
+  try {
+    const held = hold();
+    const run = session.prompt("Work");
+    const gate = await held;
+    for (const [id, text] of [["h-1", "Channel joined, add the bot."], ["h-2", "Account details arrived."], ["h-3", "Yes, it is approved."]])
+      assert.equal((await deliver(delivery(id, text))).delivery, "queued");
+    gate.release();
+    await run;
+    for (let i = 0; i < 200 && (starts < 2 || !session.isIdle); i++) await new Promise((r) => setTimeout(r, 10));
+    await settle(session);
+    assert.equal(starts, 2, "one next run");
+    assert.equal(requests.length, 2, "which made one request");
+    for (const text of ["Channel joined, add the bot.", "Account details arrived.", "Yes, it is approved."])
+      assert.ok(mentions(requests[1], text), `the next run read: ${text}`);
+    assert.deepEqual(idsIn(session), ["h-1", "h-2", "h-3"], "each written once, in arrival order");
+    assert.equal(session.agent.hasQueuedMessages(), false, "nothing went to Pi's steering queue");
+  } finally {
+    await close(session);
+  }
+});
+
 test("a delivery answers as soon as the session took it, and a duplicate is one still queued or already written", async () => {
   const { session, requests, hold } = await openSession("accept", { async list() { return { sessions: [], truncated: false }; } });
   const deliver = deliverTo(session);

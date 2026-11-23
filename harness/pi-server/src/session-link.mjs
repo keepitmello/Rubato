@@ -826,11 +826,11 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       };
     },
     /**
-     * `mode` is how a running target takes it: `queue` (default) after its current run, `steer`
-     * inside that run at its next step. An idle target starts a turn either way. The answer's
+     * `mode` is how a running target takes it: `steer` (default) inside that run at its next step,
+     * `queue` after its current run. An idle target starts a turn either way. The answer's
      * `delivery` is what the target's handler did (`started`, `steered`, `queued`).
      */
-    async send({ from, to, text, messageId, sourceEntryId, mode = 'queue', allowCold = false } = {}) {
+    async send({ from, to, text, messageId, sourceEntryId, mode = 'steer', allowCold = false } = {}) {
       requireId(from, 'from'); requireId(to, 'to'); requireText(text);
       if (!SEND_MODES.includes(mode)) throw fail('invalid', `mode must be one of ${SEND_MODES.join(', ')}`);
       const id = messageIdOf(messageId);

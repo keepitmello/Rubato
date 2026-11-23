@@ -133,7 +133,8 @@ export function parseDelivery(data) {
 }
 
 /**
- * The delivery mode a deliver request asks for (`mode`, default `queue`). It rides beside the
+ * The delivery mode a deliver request asks for (`mode`, default `queue`; the engine's send
+ * defaults to steer and passes it here). It rides beside the
  * message, not in it: the transcript keeps the message as it was sent.
  */
 export function parseDeliveryMode(data) {

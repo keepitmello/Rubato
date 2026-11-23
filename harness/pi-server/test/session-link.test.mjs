@@ -168,7 +168,7 @@ test('send loads a stored target through the router and delivers the frozen data
   assert.equal(env.host.metrics.runtimeStarts, 1, 'only the target was loaded');
   assert.equal(env.host.getSessionWorker(a.id), undefined, 'the sender is not loaded to resolve its name');
   assert.deepEqual(await env.deliveries(b.id), [{ mode: 'turn', data: { v: 1, messageId: 'msg-1', kind: 'message',
-    from: { sessionId: a.id, title: 'Sender A', cwd: env.root }, text: 'please check the build' } }]);
+    from: { sessionId: a.id, title: 'Sender A', cwd: env.root }, text: 'please check the build', mode: 'steer' } }]);
   await until(() => env.row(b.id).attachments === 0, 'the delivery attachment was not released');
 
   const second = await env.api.send({ from: a.id, to: b.id, text: 'another' });
@@ -644,16 +644,16 @@ test("send reports the target handler's answer, and null where the handler said 
   assert.equal((await env.api.send({ from: a.id, to: b.id, text: 'fifth', messageId: 'm-5' })).delivery, null, 'an unknown delivery is not passed on');
 });
 
-test('send passes steer to the target beside the message, and only then; an unknown mode is refused before anything is sent', async (t) => {
+test('send steers by default and passes steer beside the message; queue sends no mode; an unknown mode is refused before anything is sent', async (t) => {
   const env = await setup(t);
   const a = await env.make('A');
   const b = await env.make('B');
-  await env.api.send({ from: a.id, to: b.id, text: 'next task', messageId: 'q-1' });
-  await env.api.send({ from: a.id, to: b.id, text: 'drop that part', messageId: 's-1', mode: 'steer' });
+  await env.api.send({ from: a.id, to: b.id, text: 'the account details arrived', messageId: 's-1' });
+  await env.api.send({ from: a.id, to: b.id, text: 'next task', messageId: 'q-1', mode: 'queue' });
   const delivered = (await env.deliveries(b.id)).map((item) => item.data);
-  assert.equal('mode' in delivered[0], false, 'queue is the default and sends no mode');
-  assert.equal(delivered[1].mode, 'steer');
-  assert.equal(delivered[1].text, 'drop that part');
+  assert.equal(delivered[0].mode, 'steer', 'steer is the default');
+  assert.equal(delivered[0].text, 'the account details arrived');
+  assert.equal('mode' in delivered[1], false, 'queue is the target\'s own default and sends no mode');
   await assert.rejects(env.api.send({ from: a.id, to: b.id, text: 'x', mode: 'now' }), { code: 'invalid' });
   assert.equal((await env.deliveries(b.id)).length, 2);
 });
