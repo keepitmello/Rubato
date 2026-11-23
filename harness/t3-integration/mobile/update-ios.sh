@@ -33,6 +33,13 @@ if [ "${RUBATO_MOBILE_WORKTREE:-}" != 1 ]; then
   prefix="$(git -C "$INTEGRATION" rev-parse --show-prefix | sed 's#/$##')"
   git -C "$(git -C "$INTEGRATION" rev-parse --show-toplevel)" archive "HEAD:$prefix" | tar -x -C "$source_dir"
 fi
+# This tree is built from the pin and the integration alone, like the desktop's (install-gui.sh): a
+# file changed outside the overlay is moved aside and the pin checked out again, never a reason to stop.
+if [ -f "$T3_MOBILE/.rubato-pi-overlay.json" ]; then
+  preserved="$(node "$source_dir/apply.mjs" --t3 "$T3_MOBILE" --preserve-edits "$HOME/.rubato-pi/backups/t3-mobile/$(date +%Y%m%d-%H%M%S)")"
+  case "$preserved" in *'"preserved":[]'*) ;; *) printf 'Moved files changed outside the overlay aside: %s\n' "$preserved" >&2 ;; esac
+fi
+git -C "$T3_MOBILE" checkout --force --detach "$pin" >/dev/null
 applied="$(node "$source_dir/apply.mjs" --t3 "$T3_MOBILE")"
 case "$applied" in
   *'"compatible": true'*) ;;
