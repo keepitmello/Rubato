@@ -584,3 +584,35 @@ test('a case-only rename, a tracked file under node_modules, a folder turned lin
   assert.equal(git(repo, 'show', `${branch}:docs/sub/file.md`), 'inside\n');
   assert.deepEqual(record.reverted.map((item) => `${item.path}:${item.reason}`).sort(), ['docs/sub:link', 'docs/temp:nested repository']);
 });
+
+test('a nested repository made inside a tracked folder takes nothing of that folder with it', async (t) => {
+  const { record, repo } = await branchRun(t, {
+    setup({ repo }) { put(path.join(repo, 'docs', 'sub', 'file.md'), 'inside\n'); git(repo, 'add', '.'); git(repo, 'commit', '--quiet', '-m', 'sub'); },
+    work({ worktree }) {
+      execFileSync('git', ['init', '--quiet', path.join(worktree, 'docs', 'sub')]);
+      writeFileSync(path.join(worktree, 'docs', 'copy.md'), 'See runbook.\n');
+    },
+  });
+  const branch = record.branches[0].branch;
+  assert.deepEqual(git(repo, 'show', '--name-status', '--no-renames', '--format=', branch).trim().split('\n'), ['M\tdocs/copy.md']);
+  assert.equal(git(repo, 'show', `${branch}:docs/sub/file.md`), 'inside\n');
+});
+
+test('a locked file under node_modules is locked like any other', { skip: !darwin }, async (t) => {
+  const { record, repo } = await branchRun(t, {
+    setup({ repo }) {
+      put(path.join(repo, 'docs', 'node_modules', 'guide.md'), 'locked guide\n');
+      git(repo, 'add', '-f', '.');
+      git(repo, 'commit', '--quiet', '-m', 'guide');
+      execFileSync('chflags', ['uchg', path.join(repo, 'docs', 'node_modules', 'guide.md')]);
+    },
+    work({ worktree }) {
+      const guide = path.join(worktree, 'docs', 'node_modules', 'guide.md');
+      execFileSync('chflags', ['nouchg', guide]);
+      writeFileSync(guide, 'changed\n');
+    },
+  });
+  assert.deepEqual(record.branches, []);
+  assert.deepEqual(record.reverted.map((item) => `${item.path}:${item.reason}`), ['docs/node_modules/guide.md:locked']);
+  execFileSync('chflags', ['nouchg', path.join(repo, 'docs', 'node_modules', 'guide.md')]);
+});

@@ -43,6 +43,7 @@ const INSTRUCTIONS = path.join(import.meta.dirname, 'docs.md');
 /** A report folder outside git is fingerprinted by its files' sizes and times, up to this many. */
 const FINGERPRINT_FILE_LIMIT = 20_000;
 const SKIPPED_DIRS = new Set(['.git', 'node_modules']);
+const GIT_ONLY = new Set(['.git']);
 /** Git without hooks or prompts: the dream's own worktree and commit run nothing of the repository's. */
 const GIT_QUIET = ['--literal-pathspecs', '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false'];
 
@@ -90,14 +91,14 @@ function git(cwd, args, { input, allowFail = false, env: extra = {} } = {}) {
 
 const BSD = new Set(['darwin', 'freebsd', 'openbsd', 'netbsd']);
 
-/** Every file under `dir`, links included, minus .git and node_modules. */
-function filesUnder(dir) {
+/** Every file under `dir`, links included, minus the folders in `skip` (.git and node_modules by default). */
+function filesUnder(dir, skip = SKIPPED_DIRS) {
   const out = [];
   const walk = (current) => {
     let entries;
     try { entries = readdirSync(current, { withFileTypes: true }); } catch { return; }
     for (const entry of entries) {
-      if (SKIPPED_DIRS.has(entry.name)) continue;
+      if (skip.has(entry.name)) continue;
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) walk(full);
       else out.push(full);
@@ -117,7 +118,8 @@ export function immutableFiles(target, platform = process.platform) {
   if (!BSD.has(platform) || !existsSync(target)) return [];
   let out;
   try {
-    out = execFileSync('find', [target, '(', '-name', '.git', '-o', '-name', 'node_modules', ')', '-prune', '-o',
+    // Only git's own folder is left out: a locked document may live anywhere, node_modules included.
+    out = execFileSync('find', [target, '-name', '.git', '-prune', '-o',
       '(', '-flags', '+uchg', '-o', '-flags', '+schg', ')', '-print0'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
       maxBuffer: 64 * 1024 * 1024 });
   } catch (error) {
@@ -129,7 +131,7 @@ export function immutableFiles(target, platform = process.platform) {
     found.add(file);
     let stat;
     try { stat = lstatSync(file); } catch { continue; }
-    if (stat.isDirectory()) for (const inner of filesUnder(file)) found.add(inner);
+    if (stat.isDirectory()) for (const inner of filesUnder(file, GIT_ONLY)) found.add(inner);
   }
   return [...found].sort();
 }
@@ -347,7 +349,8 @@ function finishWorktree(open, { date, message, runDir }) {
     const ignored = new Set(existing.length ? (git(worktree, ['check-ignore', '-z', '--stdin'], { env: index, input: existing.join('\0'), allowFail: true }) ?? '')
       .split('\0').filter(Boolean) : []);
     const present = existing.filter((rel) => !ignored.has(rel));
-    const gone = touched.filter((rel) => !now.has(rel));
+    // What sits inside a rejected nested repository was not scanned, not removed: it stays as the base has it.
+    const gone = touched.filter((rel) => !now.has(rel) && !nested.some((item) => rel.startsWith(`${item}/`)));
     // Removals first: on a case-insensitive disk a new spelling is otherwise filed under the old entry.
     if (gone.length) git(worktree, ['update-index', '-z', '--force-remove', '--stdin'], { env: index, input: gone.join('\0') });
     if (present.length) git(worktree, [`--attr-source=${base}`, 'add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul'], { env: index, input: present.join('\0') });
