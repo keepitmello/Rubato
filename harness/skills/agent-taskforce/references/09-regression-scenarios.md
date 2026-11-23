@@ -95,7 +95,7 @@ These are behavior scenarios, not claims of live runs. Static contract tests and
 - **cross-provider-reviewer** — 독립 검증이 필요해. → 별도 문맥, 실제 산출물과 수용 기준, 판정 책임으로 독립성을 확보해. 리뷰어는 만든 쪽과 다른 제공사(클로드가 만들면 Astra, 코덱스가 만들면 Opus)이고, 그쪽 쿼터가 바닥이면 만든 쪽 제공사의 새 세션이 보고 교차 리뷰가 아니었다고 적어.
 - **owner-different-verifier** — 구현자가 자신의 결과를 독립 검증했다고 하려 해. → 같은 구현 세션의 자체 검사는 독립 검증이 아니야. 같은 계열의 새 유능한 세션은 검증자가 될 수 있어.
 - **no-standing-fable-teammate** — 페이블이나 아스트라를 오너로 배정할 수 있어. → 처음부터 승인된 전체 결과를 맡길 수 있으며, 실패한 하위 모델이나 정식 프레이밍이 선행 조건이 아니야. 이름을 채우기 위한 상시 팀원은 만들지 않아.
-- **provider-by-quota-model-by-role** — 새 배정이야. → `rubato auth usage --json`으로 리셋까지 쿼터가 더 남은 제공사를 고르고(코덱스 리셋권 한 장은 한 주), 그 안에서 오너는 Opus·Astra, 서브에이전트는 Sonnet·Sol이야. 오너가 다시 해야 할 판단이 든 조각이면 서브에이전트도 윗줄을 써. 난이도로 등급을 나누지 않고 윗줄부터 쓰지 않아. DeepSeek은 기본에서 빠졌고 Gemini·Grok은 사용자가 지목할 때만 써. (2026-11-23 사용자 합의: "사라진적 한번도 없고 항상 먼저 바닥남", "클로드 쿼터만 빨리 다는거아닌가", "코덱스 리셋권이 많은 걸 생각을 해야함")
+- **provider-by-quota-model-by-role** — 새 배정이야. → `rubato auth usage`로 리셋까지 더 남은 제공사를 고르고(계정 여럿이면 남은 % 합, 코덱스 리셋권은 만료 전에 한도를 채울 수 있을 때만 100%), 그 안에서 오너는 Opus·Astra, 서브에이전트는 Sonnet·Sol이야. 오너가 다시 해야 할 판단이 든 조각이면 서브에이전트도 윗줄을 써. 난이도로 등급을 나누지 않고 윗줄부터 쓰지 않아. DeepSeek은 기본에서 빠졌고 Gemini·Grok은 사용자가 지목할 때만 써. (2026-11-23 사용자 합의: "사라진적 한번도 없고 항상 먼저 바닥남", "클로드 쿼터만 빨리 다는거아닌가", "코덱스 리셋권이 많은 걸 생각을 해야함")
 - **no-model-gate-but-fable** — 오너·검증자에 Astra나 Opus를 배정해. → 모델 승인을 따로 받지 않고 effort도 고정하지 않아. 팀이면 목적·팀 구성 묶음 승인에 포함돼. 모델 승인은 Fable에만 있어.
 
 ## Evidence-first alignment and combined confirmation

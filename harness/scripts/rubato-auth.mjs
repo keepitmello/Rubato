@@ -30,7 +30,7 @@ import {
 import { CredentialSlotRepository } from "../pi-runtime/features/providers/auth-pool/state-store.mjs";
 import { readDisabledProviders, setProviderDisabled, readAccountLoadBalancing, setAccountLoadBalancing } from "../pi-runtime/features/providers/provider-switch.mjs";
 import { readObservedUsage, usageObservedPath } from "../pi-runtime/features/providers/auth-pool/usage-observed.mjs";
-import { collectUsage } from "./rubato-usage.mjs";
+import { collectUsage, formatUsageText } from "./rubato-usage.mjs";
 import { GEMINI_KEYCHAIN_SOURCE, GEMINI_PROVIDER_ID, deleteGeminiKeychainSecret, readGeminiKeychainSecret } from "../rubato-pi/src/gemini-keychain.mjs";
 import { geminiRequestsPath } from "../rubato-pi/src/gemini-request-count.mjs";
 import {
@@ -381,6 +381,7 @@ export function printUsage(stdout = process.stdout) {
   stdout.write("       rubato auth unpin <provider>\n");
   stdout.write("       rubato auth remove <provider> <name>\n");
   stdout.write("       rubato auth check <provider> <name>\n");
+  stdout.write("       rubato auth usage                      quota left per account, and Codex reset passes\n");
   stdout.write("       rubato auth disable|enable <provider>   hide or show its models; the login stays\n");
   stdout.write("       rubato auth balance anthropic on|off   automatic quota-aware account allocation\n");
   stdout.write("       add --json to status, usage, login, check, pin, unpin, remove, disable, enable, balance for the GUI contract\n");
@@ -1333,6 +1334,10 @@ export async function main(argv = process.argv.slice(2), io = {}) {
   }
   if (argv[0] === "--status" || argv[0] === "status") {
     await printStatus(ctx);
+    return;
+  }
+  if (argv[0] === "usage" && argv.length === 1) {
+    stdout.write(`${formatUsageText(await usageJson(ctx))}\n`);
     return;
   }
   if (argv.length === 0) {

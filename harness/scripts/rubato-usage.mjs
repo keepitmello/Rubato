@@ -113,22 +113,45 @@ export function codexUsageWindows(body) {
   return windows;
 }
 
+/** `wham/rate-limit-reset-credits` → the passes still usable, soonest expiry first. */
+export function codexResetCredits(body) {
+  return (Array.isArray(body?.credits) ? body.credits : [])
+    .filter((credit) => credit?.status === "available" && credit.is_supported_by_plan !== false)
+    .map((credit) => {
+      const expiresAt = isoFromText(credit.expires_at);
+      return expiresAt ? { expiresAt } : {};
+    })
+    .sort((left, right) => (left.expiresAt ?? "~").localeCompare(right.expiresAt ?? "~"));
+}
+
 async function readCodex({ slot, fetchImpl }) {
   if (!slot?.access) return { unsupported: true };
   const accountId = jwtClaims(slot.access)?.["https://api.openai.com/auth"]?.chatgpt_account_id;
-  const body = await requestJson(fetchImpl, "https://chatgpt.com/backend-api/wham/usage", {
+  const init = {
     headers: {
       authorization: `Bearer ${slot.access}`,
       "user-agent": "codex_cli_rs",
       ...(typeof accountId === "string" && accountId ? { "chatgpt-account-id": accountId } : {}),
     },
-  }, "Codex");
+  };
+  const body = await requestJson(fetchImpl, "https://chatgpt.com/backend-api/wham/usage", init, "Codex");
+  // Reset passes refill the weekly window once it is used up; each expires 30 days after it was granted.
+  const count = body?.rate_limit_reset_credits?.available_count;
+  let resetCredits;
+  if (Number.isInteger(count) && count > 0) {
+    try {
+      resetCredits = codexResetCredits(await requestJson(fetchImpl, "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits", init, "Codex"));
+    } catch {
+      resetCredits = Array.from({ length: count }, () => ({}));
+    }
+  } else if (Number.isInteger(count)) {
+    resetCredits = [];
+  }
   return {
     windows: codexUsageWindows(body),
     ...(typeof body?.email === "string" && body.email ? { email: body.email } : {}),
     ...(typeof body?.plan_type === "string" && body.plan_type ? { plan: `ChatGPT ${titleCase(body.plan_type)}` } : {}),
-    // Reset passes the account holds: each one refills the weekly window once it is used up.
-    ...(Number.isInteger(body?.rate_limit_reset_credits?.available_count) ? { resetCredits: body.rate_limit_reset_credits.available_count } : {}),
+    ...(resetCredits ? { resetCredits } : {}),
   };
 }
 
@@ -458,4 +481,46 @@ function lane(account) {
 function laneOrder(modelSuffix) {
   const at = ["", "-sub", "-sub2"].indexOf(modelSuffix);
   return at === -1 ? 3 : at;
+}
+
+// ── Text ────────────────────────────────────────────────────────────────────
+
+function localStamp(iso, timeZone) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date(iso));
+  const part = (type) => parts.find((entry) => entry.type === type)?.value;
+  return `${part("month")}-${part("day")} ${part("hour")}:${part("minute")}`;
+}
+
+const leftOf = (window) => Math.max(0, Math.round(100 - window.usedPercent));
+
+/**
+ * `rubato auth usage`: how much each account has left, for a person or a lead choosing a model.
+ * `collectUsage` reports used percent for the Usage page; this turns it around.
+ */
+export function formatUsageText({ accounts }, { timeZone } = {}) {
+  const blocks = accounts.map((row) => {
+    const lane = typeof row.modelSuffix !== "string" ? ""
+      : row.modelSuffix ? ` (model ids end in ${row.modelSuffix})` : " (main model ids)";
+    const limits = row.usageLimits ?? {};
+    const lines = (limits.windows ?? []).map((window) =>
+      `${window.label}: ${leftOf(window)}% left${window.resetsAt ? `, resets ${localStamp(window.resetsAt, timeZone)}` : ""}`);
+    if (limits.unavailable) lines.push(`unreadable: ${limits.unavailable.message}`);
+    if (Array.isArray(row.resetCredits) && row.resetCredits.length > 0) {
+      const expiries = row.resetCredits.map((credit) => (credit.expiresAt ? localStamp(credit.expiresAt, timeZone) : "unknown"));
+      lines.push(`reset passes: ${row.resetCredits.length}, each refills the weekly window to 100% once it is used up; expire ${expiries.join(", ")}`);
+    }
+    return [`${row.providerLabel ?? row.provider} · ${row.account}${lane}`, ...(lines.length ? lines : ["no limits reported"]).map((line) => `  ${line}`)].join("\n");
+  });
+  const weekly = new Map();
+  for (const row of accounts) {
+    const window = row.usageLimits?.windows?.find((entry) => entry.kind === "weekly");
+    if (!window) continue;
+    const total = weekly.get(row.providerLabel ?? row.provider) ?? { left: 0, accounts: 0 };
+    weekly.set(row.providerLabel ?? row.provider, { left: total.left + leftOf(window), accounts: total.accounts + 1 });
+  }
+  const totals = [...weekly].filter(([, total]) => total.accounts > 1)
+    .map(([label, total]) => `${label} weekly, all accounts: ${total.left}% left of ${total.accounts * 100}%`);
+  return [...blocks, ...(totals.length ? ["", ...totals] : [])].join("\n");
 }

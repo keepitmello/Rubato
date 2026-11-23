@@ -9,6 +9,7 @@ import {
   readObservedUsage,
 } from "../pi-runtime/features/providers/auth-pool/usage-observed.mjs";
 import {
+  formatUsageText,
   anthropicUsageWindows,
   antigravitySummaryWindows,
   codexUsageWindows,
@@ -149,6 +150,14 @@ test("every account gets its own row; setup-token reads its last reply, failures
     opengateway: [{ name: "default", source: "login" }],
   };
   const { fetchImpl, calls } = fakeFetch({
+    "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits": {
+      body: { available_count: 3, credits: [
+        { status: "available", expires_at: "2026-12-12T22:26:47Z" },
+        { status: "available", expires_at: "2026-11-30T19:58:34Z" },
+        { status: "redeemed", expires_at: "2026-11-20T00:00:00Z" },
+        { status: "available", is_supported_by_plan: false, expires_at: "2026-12-01T00:00:00Z" },
+      ] },
+    },
     "https://chatgpt.com/backend-api/wham/usage": {
       body: { email: "me@example.com", plan_type: "pro", rate_limit: { primary_window: { used_percent: 62, limit_window_seconds: 604800, reset_at: 1792651174 } }, rate_limit_reset_credits: { available_count: 3, applicable_available_count: 0 } },
     },
@@ -181,7 +190,10 @@ test("every account gets its own row; setup-token reads its last reply, failures
   ], "an env API key and a provider with no subscription reader get no row");
   assert.equal(byAccount["openai-codex/default"].email, "me@example.com");
   assert.equal(byAccount["openai-codex/default"].plan, "ChatGPT Pro");
-  assert.equal(byAccount["openai-codex/default"].resetCredits, 3, "reset passes ride on the account row");
+  assert.deepEqual(byAccount["openai-codex/default"].resetCredits, [
+    { expiresAt: "2026-11-30T19:58:34.000Z" },
+    { expiresAt: "2026-12-12T22:26:47.000Z" },
+  ], "usable reset passes ride on the account row, soonest expiry first");
   assert.equal(byAccount["anthropic/default"].usageLimits.windows[0].usedPercent, 2);
   assert.equal(byAccount["anthropic/default"].usageLimits.checkedAt, new Date(NOW).toISOString());
 
@@ -339,4 +351,20 @@ test("Gemini API is removed from usage collection", async () => {
     readAgyLogin: async () => undefined,
   });
   assert.equal(result.accounts.length, 0);
+});
+
+test("the text view says what is left, when it resets, and when each reset pass expires", () => {
+  const text = formatUsageText({ accounts: [
+    { provider: "openai-codex", providerLabel: "Codex", account: "default", modelSuffix: "",
+      resetCredits: [{ expiresAt: "2026-11-30T19:58:34Z" }],
+      usageLimits: { windows: [{ label: "Weekly", kind: "weekly", usedPercent: 92.6, resetsAt: "2026-11-29T08:26:08Z" }] } },
+    { provider: "anthropic", providerLabel: "Anthropic", account: "setup-token", modelSuffix: "",
+      usageLimits: { windows: [{ label: "Weekly", kind: "weekly", usedPercent: 7 }] } },
+    { provider: "anthropic", providerLabel: "Anthropic", account: "default", modelSuffix: "-sub",
+      usageLimits: { windows: [{ label: "Weekly", kind: "weekly", usedPercent: 99 }] } },
+  ] }, { timeZone: "Asia/Seoul" });
+  assert.match(text, /Codex · default \(main model ids\)\n  Weekly: 7% left, resets 11-29 17:26/);
+  assert.match(text, /reset passes: 1, .*expire 12-01 04:58/);
+  assert.match(text, /Anthropic · default \(model ids end in -sub\)\n  Weekly: 1% left/);
+  assert.match(text, /Anthropic weekly, all accounts: 94% left of 200%/);
 });

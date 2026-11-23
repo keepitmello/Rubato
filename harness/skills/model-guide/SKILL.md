@@ -41,12 +41,16 @@ when new experience changes it.
 Subscription quota runs out before it resets, so every assignment spends a share
 that other work then lacks. Choose the provider first, then the model by role.
 
-**Provider.** Read `rubato auth usage --json` and go where the most quota is left
-for the time until reset. An account with any window at 100% is out until that
-window's `resetsAt`. A Codex account's `resetCredits` is how many more times its
-weekly window can be refilled; count each as one more week. A row's `modelSuffix`
-is the suffix its model ids carry (`-sub` reads `anthropic/claude-opus-5-5-sub`).
-An account that cannot be read is not proof of room.
+**Provider.** Run `rubato auth usage`. It shows how much each account has left,
+when each window resets, and Codex reset passes with their expiry. Go to the
+provider with the most left for the time until its windows reset; a provider's
+room is what its accounts have left together. An account with any window at 0%
+left is out until that window resets. A reset pass refills the Codex weekly window
+to 100% once it is used up and lapses on its expiry, so it counts only if the
+window can be used up before then; a pass close to expiry is a reason to spend
+Codex first. Each account line names the model ids it serves (`-sub` reads
+`anthropic/claude-opus-5-5-sub`). An account that cannot be read is not proof of
+room.
 
 **Model by role.**
 
