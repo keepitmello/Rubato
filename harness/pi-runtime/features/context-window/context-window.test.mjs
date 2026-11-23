@@ -20,6 +20,7 @@ import { loadPiFeatures } from "../../feature-catalog.mjs";
 import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { feature as contextNotesFeature } from "../context-notes/patches.mjs";
+import { feature as companionHomeFeature } from "../companion-home/feature.mjs";
 import { feature, files, patches } from "./patches.mjs";
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
@@ -150,10 +151,11 @@ const dependencies = await loadPiFeatures([
 const staged = await stagePiRuntime({
   sourceRoot,
   outputRoot,
-  features: [...dependencies, contextNotesFeature, feature],
+  features: [...dependencies, contextNotesFeature, feature, companionHomeFeature],
 });
 const runtime = resolvePiRuntime({ root: staged.root });
 const sdk = await import(pathToFileURL(runtime.sdkEntry));
+const { installRecentUserWords } = await import(pathToFileURL(join(staged.root, "rubato-features/companion-home/recent-user-words.mjs")));
 const { AssistantMessageEventStream } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/event-stream.js",
 )));
 // 0.86 hands providers a normalized transcript: the prompt and the tool loadout are
@@ -172,7 +174,7 @@ const { default: codemodeExtension } = await import(pathToFileURL(join(
   staged.root, "rubato-features/codemode/src/index.ts",
 )));
 
-const noteCode = "await tool.notes_write_file({path:'work.md',text:'Goal, progress, latest result, next step'});";
+const noteCode = "await tool.notes_write_file({path:'now.md',text:'Goal, progress, latest result, next step'});";
 for (const [scenario, steps] of [
   ["paired-eval", [noteCode + "await tool.new_context({});"]],
   ["separate-eval", [noteCode, "await tool.new_context({});"]],
@@ -258,7 +260,7 @@ for (const [scenario, steps] of [
     if (scenario === "repair-exhausted") {
       assert.equal(contexts.length, steps.length, "only one repair attempt is allowed");
       assert.equal(errors.length, 1);
-      assert.match(errors[0], /최신 작업 노트가 완성되지 않았/);
+      assert.match(errors[0], /최신 now\.md가 완성되지 않았/);
       assert.equal(session.sessionManager.getEntries().filter((e) => e.type === "compaction").length, 0);
       assert.match(JSON.stringify(session.messages), /Original request must remain/);
       return;
@@ -403,10 +405,11 @@ test("staged convertToLlm keeps hidden notices chronological and identifies harn
   assert.match(converted[1].content[1].text, /after compaction/);
 });
 
-test("actual SDK commits new_context once and the immediate provider turn uses only the live window", async (t) => {
-  const cwd = join(scratch, "sdk-project");
-  const agentDir = join(scratch, "sdk-agent");
-  const sessionDir = join(scratch, "sdk-sessions");
+async function checkImmediateWindow(t, companion) {
+  const suffix = companion ? "-companion" : "";
+  const cwd = join(scratch, `sdk-project${suffix}`);
+  const agentDir = join(scratch, `sdk-agent${suffix}`);
+  const sessionDir = join(scratch, `sdk-sessions${suffix}`);
   mkdirSync(cwd);
   mkdirSync(agentDir);
   mkdirSync(sessionDir);
@@ -434,6 +437,7 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
     noContextFiles: true,
     extensionFactories: [
       { name: "context-notes", factory: createContextNotesExtension({ agentDir, enabled: true }) },
+      ...(companion ? [{ name: "recent-user-words", factory: installRecentUserWords }] : []),
       { name: "context-window-probe", factory: probeExtension },
     ],
   });
@@ -443,7 +447,7 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
     agentDir,
     settingsManager,
     resourceLoader,
-    sessionManager: sdk.SessionManager.create(cwd, sessionDir, { id: "context-window-sdk" }),
+    sessionManager: sdk.SessionManager.create(cwd, sessionDir, { id: `context-window-sdk${suffix}` }),
     model: {
       provider: "context-window-test",
       id: "fake-model",
@@ -492,7 +496,7 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
     });
     const message = call === 0
       ? assistant([{ type: "toolCall", id: "write-1", name: "notes_write_file", arguments: {
-        path: "handoff.md",
+        path: "now.md",
         text: "goal=atomic context window; next=continue after cut",
       } }], "toolUse")
       : call === 1
@@ -502,7 +506,9 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
     return completeStream(AssistantMessageEventStream, message);
   };
 
-  await result.session.prompt("Keep the original request out of the next context window");
+  const original = "소스에서 섞이지 않으면 그대로 둬.\n지금은 화면부터 봐 줘.";
+  await result.session.prompt(companion ? `${original}\n\n<t3_context version="1">\nsynthetic attachment path\n</t3_context>` : original,
+    companion ? { source: "rpc", rubatoAppText: original } : undefined);
   assert.equal(contexts.length, 3, JSON.stringify({ errors, notices, messages: result.session.messages }));
 
   const preCut = contexts[1].messages;
@@ -511,17 +517,24 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
   const writeResult = preCut.find((message) => message.role === "toolResult" && message.toolCallId === "write-1");
   assert.ok(writeAssistant && writeResult, "stock provider context preserves the complete tool-call/result pair without pruning");
 
-  // The transcript carries the prompt as its leading system message; the window itself
-  // must be the only conversational turn the next provider request sees.
+  // The very next provider call runs before any control tower wake could go out.
   const nextWindow = contexts[2].messages.filter((message) => message.role !== "system");
-  assert.equal(nextWindow.length, 1, JSON.stringify(nextWindow));
+  assert.equal(nextWindow.length, companion ? 2 : 1, JSON.stringify(nextWindow));
   assert.equal(nextWindow[0].role, "user");
   assert.match(textOf(nextWindow[0]), /^<rubato_context_window_v1>/);
-  assert.doesNotMatch(JSON.stringify(nextWindow), /Keep the original request/);
+  assert.doesNotMatch(textOf(nextWindow[0]), /소스에서 섞이지 않으면/);
   assert.doesNotMatch(JSON.stringify(nextWindow), /atomic context window/);
   assert.doesNotMatch(JSON.stringify(nextWindow), /The conversation history before this point was compacted/);
 
   const entries = result.session.sessionManager.getEntries();
+  assert.ok(!entries.some((entry) => entry.customType === "rubato-companion.recent-user-words"));
+  if (companion) {
+    const originalEntry = entries.find((entry) => entry.message?.rubatoAppText === original);
+    const quote = textOf(nextWindow[1]);
+    assert.match(quote, /사용자가 앱에 직접 쓴 말/);
+    assert.deepEqual(JSON.parse(quote.split("\n").at(-1)), { at: new Date(originalEntry.message.timestamp).toISOString(), text: original });
+    assert.doesNotMatch(JSON.stringify(nextWindow), /t3_context|synthetic attachment path/);
+  }
   const compactions = entries.filter((entry) => entry.type === "compaction" &&
     entry.details?.source === "rubato-history-notes-v1");
   assert.equal(compactions.length, 1);
@@ -540,6 +553,7 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
   const committed = compactionEvents.find((event) => event.type === "compaction_end")?.result;
   assert.ok(Number.isFinite(committed.estimatedTokensAfter) && committed.estimatedTokensAfter > 0,
     "estimatedTokensAfter is measured on the committed window");
+  if (companion) return;
 
   // Use the same public extension seam twice at one valid revision. JavaScript
   // enters the first call through commit before it can yield; the second call
@@ -550,7 +564,7 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
   assert.ok(writeTool);
   await writeTool.execute(
     "write-race-note",
-    { path: "race.md", text: "checkpoint before concurrent apply" },
+    { path: "now.md", text: "checkpoint before concurrent apply" },
     new AbortController().signal,
   );
   const branch = result.session.sessionManager.getBranch();
@@ -561,7 +575,7 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
   const marker = preparedBranch.at(-1);
   const note = preparedBranch.findLast((entry) => entry.customType === contextProtocol.NOTE_ENTRY);
   const raceResult = {
-    summary: contextProtocol.encodeBootstrap(raceWindow, "race.md"),
+    summary: contextProtocol.encodeBootstrap(raceWindow, "now.md"),
     firstKeptEntryId: marker.id,
     tokensBefore: 10,
     details: {
@@ -605,7 +619,10 @@ test("actual SDK commits new_context once and the immediate provider turn uses o
   assert.deepEqual(notices.filter((notice) => notice.level === "error"), []);
   assert.equal(existsSync(result.session.sessionFile), true);
   assert.match(readFileSync(result.session.sessionFile, "utf8"), /rubato-history-notes-v1/);
-});
+}
+
+test("actual SDK commits new_context once and the immediate provider turn uses only the live window", (t) => checkImmediateWindow(t, false));
+test("a companion's first provider request after new_context already has the app user's words", (t) => checkImmediateWindow(t, true));
 
 test("provider admission and Anthropic server compaction both fail closed in notes mode", async (t) => {
   const cwd = join(scratch, "admission-project");
@@ -706,7 +723,7 @@ export default function contextWindowProvider(pi) {
       appendFileSync(capturePath, JSON.stringify(context) + "\\n");
       const value = call === 0
         ? message([{ type: "toolCall", id: "rpc-write", name: "notes_write_file",
-          arguments: { path: "rpc.md", text: "rpc-note-body-must-not-leak" } }], "toolUse")
+          arguments: { path: "now.md", text: "rpc-note-body-must-not-leak" } }], "toolUse")
         : call === 1
           ? message([{ type: "toolCall", id: "rpc-window", name: "new_context", arguments: {} }], "toolUse")
           : message([{ type: "text", text: "rpc continued in new window" }]);
@@ -777,6 +794,7 @@ export default function contextWindowProbe(pi) {
   const start = channel.frames.length;
   assert.equal((await channel.request("prompt-1", "prompt", {
     message: "rpc original message must be cut atomically",
+    rubatoAppText: "Original app input before provider formatting.",
   })).success, true);
   await channel.waitFor((frame) => frame.type === "agent_settled", 20_000, start);
 
@@ -785,12 +803,14 @@ export default function contextWindowProbe(pi) {
   const windowMessages = contexts[2].messages.filter((message) => message.role !== "system");
   assert.equal(windowMessages.length, 1, JSON.stringify(contexts[2]));
   assert.match(textOf(windowMessages[0]), /^<rubato_context_window_v1>/);
-  assert.doesNotMatch(JSON.stringify(contexts[2]), /rpc original message|rpc-note-body-must-not-leak/);
+  assert.doesNotMatch(JSON.stringify(contexts[2]), /rpc original message|rpc-note-body-must-not-leak|Original app input/);
   assert.ok(channel.frames.some((frame) => frame.type === "compaction_end" && frame.reason === "extension" && frame.aborted === false));
 
   const entriesBefore = await channel.request("entries-before", "get_entries");
   assert.equal(entriesBefore.success, true);
   assert.equal(entriesBefore.data.entries.filter((entry) => entry.type === "compaction").length, 1);
+  assert.equal(entriesBefore.data.entries.find((entry) => entry.message?.role === "user").message.rubatoAppText,
+    "Original app input before provider formatting.");
   const revision = await channel.request("revision", "extension_request", { name: "context_window_revision" });
   assert.equal(revision.success, true, channel.stderr());
   assert.equal(Number.isSafeInteger(revision.data.revision), true);

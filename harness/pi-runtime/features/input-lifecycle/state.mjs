@@ -20,13 +20,14 @@ export class InputLifecycle {
   #messageRecords = new WeakMap();
   #pendingMessages = new WeakSet();
 
-  begin({ sessionId, text, images, source, streamingBehavior }) {
+  begin({ sessionId, text, images, source, streamingBehavior, rubatoAppText }) {
     const inputId = `${sessionId}:${++this.#nextInputId}`;
     this.#openInputs.set(inputId, {
       id: inputId,
       inputId,
       source: pendingSource(source),
       text,
+      rubatoAppText,
       imageCount: Array.isArray(images) ? images.length : 0,
       enqueuedAt: Date.now(),
       ...(streamingBehavior === undefined ? {} : { delivery: streamingBehavior }),
@@ -50,6 +51,10 @@ export class InputLifecycle {
     record.delivery = delivery;
     record.text = text;
     record.imageCount = Array.isArray(images) ? images.length : 0;
+    // Reuse the stored text block when Pi did not rewrite the app's input.
+    // null records a new, non-app input; legacy entries have no field at all.
+    message.rubatoAppText = typeof record.rubatoAppText !== "string" ? null
+      : record.rubatoAppText === message.content?.[0]?.text ? true : record.rubatoAppText;
     this.#messageRecords.set(message, record);
     if (pending) this.#pendingMessages.add(message);
     return record;

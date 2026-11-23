@@ -30,6 +30,20 @@ function connection(client, bridge = {}, options = {}) {
   return { conn, records, closed };
 }
 
+test('the app original rides the companion prompt separately from provider text', async () => {
+  for (const companion of [true, false]) {
+    const client = fakeClient();
+    const { conn } = connection(client);
+    await conn.attach('s1');
+    conn.companion = companion;
+    const prompt = { type: 'prompt', message: 'edited for the provider', streamingBehavior: 'steer' };
+    const original = ' 앞뒤 공백도 그대로.\n두 줄째. ';
+    await conn.command({ ...prompt, rubatoAppText: original });
+    assert.deepEqual(client.commands.at(-1), { ...prompt, ...(companion ? { rubatoAppText: original } : {}) });
+    await conn.close();
+  }
+});
+
 test('events before the attach are history; later ones arrive once, in order', async () => {
   const client = fakeClient();
   const { conn, records } = connection(client);

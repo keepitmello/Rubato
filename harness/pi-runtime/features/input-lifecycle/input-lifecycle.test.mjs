@@ -66,7 +66,7 @@ function preparePatchedPackage() {
 preparePatchedPackage();
 
 test("manifest is stock-locked, additive, drift-strict, and syntactically valid", () => {
-  assert.equal(patches.length, 6);
+  assert.equal(patches.length, 7);
   assert.deepEqual(files.map((file) => file.path), [
     "dist/rubato-features/input-lifecycle/state.mjs",
   ]);
@@ -83,6 +83,7 @@ test("manifest is stock-locked, additive, drift-strict, and syntactically valid"
   for (const path of [
     "dist/core/agent-session.js",
     "dist/core/extensions/runner.js",
+    "dist/modes/rpc/rpc-mode.js",
     files[0].path,
   ]) {
     const syntax = spawnSync(process.execPath, ["--check", join(patchedPackage, path)], {

@@ -123,7 +123,7 @@ function patchAgentSessionRuntime(source) {
             return;
         }
         const { text: currentText, images: currentImages } = processedInput;`,
-    `        const processedInput = await this._runInputHandlers(text, options?.images, options?.source ?? "interactive", this.isStreaming ? options?.streamingBehavior : undefined);
+    `        const processedInput = await this._runInputHandlers(text, options?.images, options?.source ?? "interactive", this.isStreaming ? options?.streamingBehavior : undefined, options?.rubatoAppText);
         if (!processedInput) {
             preflightResult?.("handled");
             return;
@@ -151,13 +151,14 @@ function patchAgentSessionRuntime(source) {
         }
         return { text, images };
     }`,
-    `    async _runInputHandlers(text, images, source, streamingBehavior) {
+    `    async _runInputHandlers(text, images, source, streamingBehavior, rubatoAppText) {
         const inputId = this._inputLifecycle.begin({
             sessionId: this.sessionId,
             text,
             images,
             source,
             streamingBehavior,
+            rubatoAppText,
         });
         if (!this._extensionRunner.hasHandlers("input")) {
             return { text, images, inputId };
@@ -448,6 +449,15 @@ function patchRunnerRuntime(source) {
   return next;
 }
 
+function patchRpcRuntime(source) {
+  return replaceOnce(
+    source,
+    '                    source: "rpc",\n                    preflightResult:',
+    '                    source: "rpc",\n                    rubatoAppText: command.rubatoAppText,\n                    preflightResult:',
+    "prompt-app-original",
+  );
+}
+
 function patchRunnerTypes(source) {
   unpatched(source, "streamingBehavior: \"steer\" | \"followUp\" | undefined, inputId: string", "runner-types");
   return replaceOnce(
@@ -494,4 +504,5 @@ export const patches = Object.freeze([
   patch("dist/core/extensions/runner.d.ts", "6aef77e094e73abd7e508850e45c58e244ab2d5db6c4f6278d8652ea9ded2bb1", patchRunnerTypes),
   patch("dist/core/extensions/index.d.ts", "fe5661c6cd9a948293f0f1d1db5a052dcc60493f6b1f68349a7ab96987b10e40", patchExtensionIndexTypes),
   patch("dist/index.d.ts", "b254e36846b1dcc64ce1a8ba72e23fb410df4aa4408ba8c23e69e5b3f934e3cc", patchPublicIndexTypes),
+  patch("dist/modes/rpc/rpc-mode.js", "631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db", patchRpcRuntime),
 ]);

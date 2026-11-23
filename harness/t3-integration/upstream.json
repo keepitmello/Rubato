@@ -86,6 +86,7 @@
     "apps/server/src/orchestration-v2/ProjectionStore.ts": "bc5dbe309795fc214c4b91896a5df00643895f5e4f55ed13a7f40a83858dd835",
     "apps/server/src/orchestration-v2/ProviderSessionManager.test.ts": "ac03fafb2a2b5dcc829420fd33eeaff972e8bdd170b865a4541070c28e129041",
     "apps/server/src/orchestration-v2/ProviderSessionManager.ts": "f4ad24f91d112213c684c38298998f5bb5bbec028924adebc1145af317153552",
+    "apps/server/src/orchestration-v2/ProviderTurnControlService.ts": "f744deb2296ffdd0837cd979549f8d1e283db293d8232b76ee332b0dc8642195",
     "apps/server/src/orchestration-v2/ProviderTurnStartService.ts": "cddd561c289d7716bf23e1cb9c05c1a3ff3088bd67d7fbd03e46f88dc598aa3b",
     "apps/server/src/orchestration-v2/legacy/LegacyV1ThreadImporter.ts": "07f07984efa9be16f198acf9660832a657af28a27a68040ebe72cb242b71f89c",
     "apps/server/src/orchestration-v2/runtimeLayer.test.ts": "4c065e78b18499d7e10d15724211b67905d34712ae31386fd1273994fcb778f1",

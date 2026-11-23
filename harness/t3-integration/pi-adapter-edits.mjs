@@ -325,6 +325,17 @@ export const piAdapterEdits = {
       '              } else if (stopRequested || closedQuietly) {\n                yield* updateProviderSession("stopped", null);\n',
       'replace',
     ],
+    [
+      '      const resolvePromptPayload = Effect.fnUntraced(function* (',
+      `      const rubatoOriginalAppText = (message: ProviderAdapter.ProviderAdapterV2TurnInput["message"]) =>
+        PI_PROVIDER === "rubato-pi" && message.createdBy === "user" && message.rubatoAppText !== undefined &&
+        message.senderThreadId === undefined && message.scheduledTaskId === undefined &&
+        (message.creationSource === "web" || message.creationSource === "mobile")
+          ? { rubatoAppText: message.rubatoAppText }
+          : {};
+
+`,
+    ],
     // A manual continuation (T3's resume) sends the caller's continue instead of an empty prompt.
     [
       '                } else if (payload !== null) {\n                  yield* sendPrompt({\n                    providerTurnId: providerTurn.id,\n                    kind: "turn_start",\n                    record: {\n                      type: "prompt",\n                      message: payload.message,\n',
@@ -339,8 +350,14 @@ export const piAdapterEdits = {
         '                      : {',
         '                      type: "prompt",',
         '                      message: payload.message,',
+        '                      ...rubatoOriginalAppText(turnInput.message),',
         '',
       ].join('\n'),
+      'replace',
+    ],
+    [
+      '                      message: payload.message,\n                      streamingBehavior: "steer",',
+      '                      message: payload.message,\n                      ...rubatoOriginalAppText(steerInput.message),\n                      streamingBehavior: "steer",',
       'replace',
     ],
     [
@@ -360,11 +377,29 @@ export const piAdapterEdits = {
       ].join('\n'),
     ],
   ],
+  // Capture the authored text before T3 adds chip/context envelopes or handoff text.
+  'apps/server/src/orchestration-v2/ProviderTurnStartService.ts': [
+    [
+      '          text: userText,\n          attachments: providerMessage.attachments,\n',
+      '          ...(session.driver === "rubato-pi" ? { rubatoAppText: message.text } : {}),\n',
+    ],
+  ],
+  'apps/server/src/orchestration-v2/ProviderTurnControlService.ts': [
+    [
+      '                messageId: message.id,\n                text: withMessageSenderNote(\n',
+      '                messageId: message.id,\n                ...(loaded.session.value.driver === "rubato-pi" ? { rubatoAppText: message.text } : {}),\n                text: withMessageSenderNote(\n',
+      'replace',
+    ],
+  ],
   // T3 releases a session that idled for 30 minutes, and with it the thread's stream. A
   // runtime can now ask to stay loaded instead (Rubato: Segno's conversation, so what Segno
   // says with reply reaches its thread at once, not at the person's next message). The answer
   // is asked again every idle window, so a runtime that stops asking is released then.
   'packages/provider-core/src/server/ProviderAdapter.ts': [
+    [
+      'export const ProviderAdapterV2TurnMessage = Schema.Struct({\n',
+      '  rubatoAppText: Schema.optionalKey(Schema.String),\n',
+    ],
     [
       '  readonly hasPendingBackgroundWork?: Effect.Effect<boolean>;\n',
       [
