@@ -7,6 +7,12 @@ import type { PiBridge } from "./provider/Drivers/RubatoPiDriver.ts";
 import { ProviderInstanceRegistry } from "./provider/ProviderInstanceRegistry.ts";
 import { piSessionOfThread, rubatoBridge } from "./provider/RubatoPiSessions.ts";
 import { authorized } from "./RubatoServiceRoute.ts";
+import { ServerConfig } from "./config.ts";
+import { ServerSettingsService } from "./serverSettings.ts";
+import { localAgyAgent } from "./provider/RubatoLocalAgy.ts";
+import { savePrompt } from "./provider/agyPrompt.mjs";
+import { agyThreadPrompt } from "./provider/RubatoAgyThreadPrompt.ts";
+import { listSessionPrompts, openSessionPromptFolder, resolveSessionPrompt } from "./provider/session-prompts.mjs";
 
 // The new-thread screen's "시스템 프롬프트" chip: a new conversation can open with another prompt
 // in place of Rubato's own, as its whole system prompt. The library and the reading live in the
@@ -32,6 +38,9 @@ const text = (body: Body, key: string) =>
 export const rubatoSessionPromptRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const auth = yield* EnvironmentAuth;
+    const settings = yield* ServerSettingsService;
+    const { stateDir } = yield* ServerConfig;
+    const sql = yield* SqlClient.SqlClient;
     const context = yield* Effect.context<SqlClient.SqlClient | ProviderInstanceRegistry>();
 
     const bridgeOf = (instanceId: string | undefined) =>
@@ -80,6 +89,18 @@ export const rubatoSessionPromptRouteLayer = Layer.unwrap(
     const thread = Effect.fn("RubatoSessionPrompt.thread")(function* (body: Body) {
       const threadId = text(body, "threadId");
       if (!threadId) return failure(400, "invalid", "threadId is missing.");
+      const active = yield* sql<{ provider_instance_id: string; driver: string }>`
+        SELECT pt.provider_instance_id, pt.driver FROM orchestration_v2_projection_threads t
+        JOIN orchestration_v2_projection_provider_threads pt ON pt.provider_thread_id = t.active_provider_thread_id
+        WHERE t.thread_id = ${threadId}`.pipe(Effect.orElseSucceed(() => []));
+      if (active[0]?.driver === "antigravity") {
+        const instance = active[0].provider_instance_id;
+        const instances = (yield* settings.getSettings.pipe(Effect.orElseSucceed(() => null)))?.providerInstances;
+        const config = Object.entries(instances ?? {}).find(([id]) => id === instance)?.[1];
+        const prompt = config && localAgyAgent(config.environment)
+          ? yield* agyThreadPrompt(sql, stateDir, threadId).pipe(Effect.orElseSucceed(() => null)) : null;
+        return HttpServerResponse.jsonUnsafe({ started: true, prompt: prompt ? { label: prompt.label, source: prompt.source, createdAt: prompt.createdAt } : null });
+      }
       // `started: false` until the thread's first message opens a session; the badge asks again.
       const session = yield* piSessionOfThread(threadId).pipe(
         Effect.provide(context),
@@ -100,7 +121,23 @@ export const rubatoSessionPromptRouteLayer = Layer.unwrap(
           if (!(yield* authorized(auth, request))) return HttpServerResponse.empty({ status: 401 });
           const body = yield* request.json.pipe(Effect.orElseSucceed(() => null));
           if (!body || typeof body !== "object") return failure(400, "invalid", "The request has no JSON body.");
-          return yield* handle(body as Body);
+          const input = body as Body;
+          const instanceId = text(input, "instanceId");
+          if (instanceId && action !== "thread") {
+            const instances = (yield* settings.getSettings.pipe(Effect.orElseSucceed(() => null)))?.providerInstances;
+            const instance = Object.entries(instances ?? {}).find(([id]) => id === instanceId)?.[1];
+            if (instance?.driver === "antigravity" && instance.enabled && localAgyAgent(instance.environment)) {
+              if (action === "list") return yield* call(listSessionPrompts, (prompts) => ({ prompts }));
+              if (action === "open-folder") return yield* call(openSessionPromptFolder, (value) => value);
+              const threadId = text(input, "threadId");
+              if (!threadId) return failure(400, "invalid", "threadId is missing.");
+              const existing = yield* sql`SELECT 1 FROM orchestration_v2_projection_provider_threads WHERE thread_id = ${threadId} LIMIT 1`
+                .pipe(Effect.orElseSucceed(() => [true]));
+              if (existing.length) return failure(409, "started", "This thread already started.");
+              return yield* call(async () => savePrompt(stateDir, threadId, await resolveSessionPrompt(input)), (prompt) => ({ prompt }));
+            }
+          }
+          return yield* handle(input);
         }),
       );
 

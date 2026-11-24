@@ -146,12 +146,18 @@ export const localAgyEdits = {
   [driver]: [
     [
       'import { discoverAntigravitySkills, resolveAntigravityUserHome } from "./AntigravitySkills.ts";\n',
+      'import { AgentScopeThreadId } from "@t3tools/shared/AgentScope";\n' +
+      'import * as SqlClient from "effect/sql/SqlClient";\n' +
+      'import * as Option from "effect/Option";\n' +
+      'import { agyThreadPrompt, AgyPromptFileError } from "../RubatoAgyThreadPrompt.ts";\n' +
+      'import { installPromptAgent, verifyProfileAgent } from "../agyPrompt.mjs";\n' +
       'import { hasLocalAgyAgent, linkLocalAgyProfileConfig, localAgyAgent, localAgyApprovalSpawn, localAgyIsolated, localAgyLoginOwner, localAgyModels, localAgySpawn, localAgyWithAgentArgs } from "../RubatoLocalAgy.ts";\n',
     ],
     [
       '    const settings = { ...config, enabled } satisfies AntigravitySettings;\n',
       '    const settings = { ...config, enabled } satisfies AntigravitySettings;\n' +
       '    const localAgent = localAgyAgent(environment);\n' +
+      '    const promptSql = localAgent ? Option.getOrUndefined(yield* Effect.serviceOption(SqlClient.SqlClient)) : undefined;\n' +
       '    const localIsolated = Boolean(localAgent) && localAgyIsolated(environment);\n' +
       '    const localExistingLogin = Boolean(localAgent) && !localIsolated;\n',
       'replace',
@@ -185,12 +191,13 @@ export const localAgyEdits = {
             detail: "Use an absolute path to official agy and sign in with Google.",
           });
         }
-        const localBaseSpawn = localAgySpawn(settings.binaryPath, localAgent, cwd, userHome, baseEnv);
+        const agent = promptAgent ?? localAgent;
+        const localBaseSpawn = localAgySpawn(settings.binaryPath, agent, cwd, userHome, baseEnv);
         const agentMissing = (cause?: unknown) =>
           new ProviderSetupError({
             instanceId,
             operation: "start",
-            detail: \`The registered agy agent '\${localAgent}' is not available. Check it with agy agents.\`,
+            detail: \`The registered agy agent '\${agent}' is not available. Check it with agy agents.\`,
             cause,
           });
         const listing = yield* spawner
@@ -206,7 +213,7 @@ export const localAgyEdits = {
             Effect.mapError(agentMissing),
             Effect.timeoutOrElse({ duration: "8 seconds", orElse: () => Effect.fail(agentMissing()) }),
           );
-        if (!hasLocalAgyAgent(listing, localAgent)) return yield* agentMissing();
+        if (!hasLocalAgyAgent(listing, agent)) return yield* agentMissing();
         const executable: AntigravityInstallation.AntigravityExecutable = {
           executablePath: settings.binaryPath,
           source: "override",
@@ -240,6 +247,9 @@ export const localAgyEdits = {
         yield* Effect.promise(() =>
           linkLocalAgyProfileConfig(profile.geminiHome, userHome, profile.platform),
         );
+        if (promptAgent) {
+          yield* Effect.tryPromise({ try: () => verifyProfileAgent(userHome, profile.geminiHome, promptAgent), catch: agentMissing });
+        }
         const runtimeTempDirectory = yield* Effect.acquireRelease(
           fileSystem.makeTempDirectory({ directory: profile.tempDirectory, prefix: "run-" }).pipe(
             Effect.mapError(
@@ -270,7 +280,7 @@ export const localAgyEdits = {
             auth,
             runtimeTempDirectory,
           }),
-          localAgent,
+          agent,
         );
         return { executable, spawn: localAgyApprovalSpawn(isolatedSpawn, environment) };
       }
@@ -286,6 +296,22 @@ export const localAgyEdits = {
       '            : {}),\n',
       'replace',
     ],
+    ['      baseEnv: NodeJS.ProcessEnv,\n', '      baseEnv: NodeJS.ProcessEnv,\n      promptAgent?: string,\n', 'replace'],
+    ['      const { processEnvironment: threadEnvironment, ...runtimeInput } = input;\n',
+      '      const { processEnvironment: threadEnvironment, sessionSystemPromptAppend, ...runtimeInput } = input;\n', 'replace'],
+    ['        ...runtimeInput,\n', '        ...runtimeInput,\n        ...(!promptAgent && sessionSystemPromptAppend !== undefined ? { sessionSystemPromptAppend } : {}),\n', 'replace'],
+    ['      const { executable, spawn } = yield* prepareSpawn(\n', `      const appThread = yield* AgentScopeThreadId;
+      if (localAgent && appThread && !promptSql) {
+        return yield* new ProviderSetupError({ instanceId, operation: "start", detail: "The conversation prompt database is unavailable." });
+      }
+      const promptAgent = promptSql && appThread
+        ? yield* agyThreadPrompt(promptSql, host.paths.stateDir, appThread).pipe(
+            Effect.flatMap((prompt) => prompt ? Effect.tryPromise({ try: () => installPromptAgent(userHome, prompt.text), catch: (cause) => new AgyPromptFileError({ cause }) }) : Effect.undefined),
+            Effect.mapError((cause) => new ProviderSetupError({ instanceId, operation: "start", detail: "Could not prepare the conversation's agy prompt.", cause })),
+          )
+        : undefined;
+`],
+    ['          : { ...processEnvironment, ...threadEnvironment },\n', '          : { ...processEnvironment, ...threadEnvironment },\n        promptAgent,\n', 'replace'],
     [
       '      const executable = yield* installation.resolve(settings.binaryPath, processEnvironment).pipe(\n',
       `      if (localAgent) {

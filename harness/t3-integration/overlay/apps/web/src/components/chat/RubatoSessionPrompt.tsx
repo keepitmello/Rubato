@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import * as Option from "effect/Option";
 import { postRubato } from "~/state/rubatoHttp";
 import { usePreparedConnection } from "~/state/session";
-import { environmentServerConfigsAtom } from "~/state/server";
+import { environmentServerConfigsAtom, serverEnvironment } from "~/state/server";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
@@ -69,19 +69,23 @@ function lastChoiceId(): string | null {
   try { return localStorage.getItem(LAST_CHOICE_KEY); } catch { return null; }
 }
 
-/** Whether `instanceId` is a Rubato provider in this environment: only Rubato sessions take a prompt. */
+/** Only Rubato and local agy instances can replace their entire system prompt. */
 type ProviderConfigs = {
   get(environmentId: EnvironmentId): { readonly providers?: ReadonlyArray<{ readonly instanceId: string; readonly driver: string }> } | undefined;
 };
 
-export function runsOnRubato(
+export function supportsSessionPrompt(
   configs: ProviderConfigs,
   environmentId: EnvironmentId,
   instanceId: string | null,
+  instances?: Readonly<Record<string, { readonly environment?: ReadonlyArray<{readonly name: string; readonly value: unknown}> }>>,
 ): boolean {
   if (instanceId === null) return false;
   const providers = configs.get(environmentId)?.providers ?? [];
-  return providers.some((provider) => provider.instanceId === instanceId && provider.driver === "rubato-pi");
+  const driver = providers.find(provider => provider.instanceId === instanceId)?.driver;
+  return driver === "rubato-pi" || (driver === "antigravity" && !!instances?.[instanceId]?.environment?.some(
+    ({ name, value }) => name === "RUBATO_LOCAL_AGY_AGENT" && typeof value === "string" && value.trim(),
+  ));
 }
 
 // What a started thread runs on, by environment and thread. A prepared prompt is put here before
@@ -101,7 +105,7 @@ export async function prepareRubatoSessionPrompt(input: {
 }): Promise<void> {
   const choice = sessionPromptChoice(input.draftKey);
   if (choice.kind === "default") return;
-  if (!runsOnRubato(appAtomRegistry.get(environmentServerConfigsAtom), input.environmentId, input.instanceId)) return;
+  if (!rubatoSessionPromptAvailable(input.environmentId, input.draftKey, input.instanceId)) return;
   const body = choice.kind === "file"
     ? { id: choice.id }
     : { text: choice.text, label: choice.label };
@@ -122,7 +126,7 @@ function choiceLabel(choice: SessionPromptChoice): string {
 const displayPath = (source: string) => source.replace(/^\/Users\/[^/]+/, "~");
 
 /**
- * Whether the composer offers `/prompt`: only a draft that will run on a Rubato model takes a prompt.
+ * Whether the composer offers `/prompt` for the draft's selected instance.
  * Read outside React because the composer builds its slash menu in a memo.
  */
 export function rubatoSessionPromptAvailable(
@@ -130,7 +134,8 @@ export function rubatoSessionPromptAvailable(
   draftKey: string | null,
   instanceId: string | null,
 ): boolean {
-  return draftKey !== null && runsOnRubato(appAtomRegistry.get(environmentServerConfigsAtom), environmentId, instanceId);
+  return draftKey !== null && supportsSessionPrompt(appAtomRegistry.get(environmentServerConfigsAtom), environmentId, instanceId,
+    appAtomRegistry.get(serverEnvironment.settingsValueAtom(environmentId))?.providerInstances);
 }
 
 // `/prompt` opens the picker of the draft it was typed in. The picker is mounted with the composer.
@@ -157,7 +162,8 @@ export function RubatoSessionPromptPicker(props: {
 }) {
   const { environmentId, draftKey, instanceId, onReturnFocus } = props;
   const configs = useAtomValue(environmentServerConfigsAtom);
-  const rubato = draftKey !== null && runsOnRubato(configs, environmentId, instanceId);
+  const settings = useAtomValue(serverEnvironment.settingsValueAtom(environmentId));
+  const rubato = draftKey !== null && supportsSessionPrompt(configs, environmentId, instanceId, settings?.providerInstances);
   // The library loads once the Mac's connection is up; a new draft can open before it is.
   const connected = Option.isSome(usePreparedConnection(environmentId));
   const choice = useSyncExternalStore(subscribe, () => sessionPromptChoice(draftKey));
