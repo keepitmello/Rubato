@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -224,5 +224,19 @@ test('a waiting cut that cannot be read fails instead of passing as none', async
   await writeFile(path.join(dir, 'cuts', 's1', '999999999999999-000000001-x.json'), '{ not json');
   const prompt = { jsonrpc: '2.0', id: 9, method: 'session/prompt', params: { sessionId: 's1', prompt: [] } };
   assert.equal(await native.fromClient(prompt), null);
+  assert.match(toClientLog.at(-1).error.message, /could not be read/);
+});
+
+test('a cut folder that cannot be listed fails instead of passing as none', async (t) => {
+  const { dir, native, toClientLog } = await harness(t);
+  await writeCut(dir, 's1', { throughTime: at(5) });
+  const folder = path.join(dir, 'cuts', 's1');
+  await chmod(folder, 0o000);
+  const prompt = { jsonrpc: '2.0', id: 9, method: 'session/prompt', params: { sessionId: 's1', prompt: [] } };
+  try {
+    assert.equal(await native.fromClient(prompt), null);
+  } finally {
+    await chmod(folder, 0o700);
+  }
   assert.match(toClientLog.at(-1).error.message, /could not be read/);
 });

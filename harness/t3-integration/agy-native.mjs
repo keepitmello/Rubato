@@ -67,7 +67,12 @@ export async function writeCut(dir, sessionId, keep) {
  */
 export async function readCut(dir, sessionId) {
   const folder = cutFolder(dir, sessionId);
-  const names = (await readdir(folder).catch(() => [])).filter((name) => name.endsWith('.json')).toSorted();
+  // Only a folder that is not there means no cut; any other failure to look must not read as none.
+  const listed = await readdir(folder).catch((error) => {
+    if (error?.code === 'ENOENT') return [];
+    throw new Error(`The rewinds waiting for this conversation could not be read: ${error?.message ?? error}`);
+  });
+  const names = listed.filter((name) => name.endsWith('.json')).toSorted();
   if (!names.length) return null;
   let cut;
   try { cut = await readJson(path.join(folder, names.at(-1))); } catch {}
