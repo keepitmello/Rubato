@@ -471,3 +471,32 @@ test('search asks msearch across every store and falls back to plain text withou
   const viaMsearch = await createMemoryService({ env: { ...process.env, HOME: plain.home, RUBATO_MEMORY_HOME: '' }, msearch: bin }).handle('search', { query: '서명' });
   assert.deepEqual(viaMsearch, { engine: 'msearch', results: [{ store: 'scratch', path: 'decisions/signing.md', description: '앱 코드 서명', preview: '로컬 인증서' }] });
 });
+
+test('reads that overlap share one process, and a write ends the sharing', async (t) => {
+  const f = await fixture(t);
+  const count = path.join(f.home, 'view-count');
+  const script = path.join(f.home, 'counting-rubato');
+  await writeFile(script, `#!/bin/sh
+case "$*" in
+  *"memory view"*) echo x >> "${count}"; sleep 0.3; echo '{"exists":false,"count":0,"topics":[],"asks":[]}' ;;
+  *"memory rule"*) echo '{"saved":true}' ;;
+  *) echo '{"models":[],"stores":[]}' ;;
+esac
+`, { mode: 0o755 });
+  const service = createMemoryService({ env: { ...process.env, HOME: f.home, RUBATO_MEMORY_HOME: '' }, msearch: '/nonexistent/msearch', rubato: ['/bin/sh', script] });
+  const runs = async () => (await readFile(count, 'utf8').catch(() => '')).split('\n').filter(Boolean).length;
+  const views = () => service.handle('user-view', {});
+
+  const together = await Promise.all([views(), views(), views()]);
+  assert.equal(await runs(), 1);
+  assert.equal(together[0], together[2]);
+
+  await views();
+  assert.equal(await runs(), 2, 'a read that already finished is not reused');
+
+  const before = views();
+  await service.handle('user-rule', { path: 'preferences/a.md', blob: 'a'.repeat(40), load: true });
+  const after = views();
+  await Promise.all([before, after]);
+  assert.equal(await runs(), 4, 'a read started after a write does not join one that began before it');
+});

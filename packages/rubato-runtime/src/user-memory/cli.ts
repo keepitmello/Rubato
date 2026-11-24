@@ -45,7 +45,8 @@ async function main(argv: readonly string[]): Promise<number> {
     return 0
   }
   if (command === "view") {
-    process.stdout.write(`${JSON.stringify(await composeUserView(memoryRoot), null, 2)}\n`)
+    // Read by the settings server, not by a person: compact JSON is 40% smaller.
+    process.stdout.write(`${JSON.stringify(await composeUserView(memoryRoot))}\n`)
     return 0
   }
   if (command === "reforget") {

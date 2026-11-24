@@ -88,6 +88,20 @@ export function createMemoryService(options = {}) {
     '/opt/homebrew/bin', '/usr/local/bin', env.PATH ?? '/usr/bin:/bin',
   ].join(path.delimiter) };
   const running = new Map();
+  // One page load asks for the same slow read from several places at once, and each ask is its own
+  // process. Reads that overlap share one run. A write starts a new generation, so nobody joins a
+  // read that began before it.
+  const inflight = new Map();
+  let writes = 0;
+  const shared = (key, work) => {
+    const id = `${key}#${writes}`;
+    let promise = inflight.get(id);
+    if (!promise) {
+      promise = work().finally(() => inflight.delete(id));
+      inflight.set(id, promise);
+    }
+    return promise;
+  };
   // What the page keeps for itself: never memory, only views of it (insights, sent marks).
   const cacheDir = path.join(home, '.rubato', 'cache', 'memory-page');
 
@@ -188,7 +202,7 @@ export function createMemoryService(options = {}) {
   }
 
   async function status() {
-    const [cliStatus, { text }] = await Promise.all([cli(['--json'], 120_000), readConfigText()]);
+    const [cliStatus, { text }] = await Promise.all([shared('dream-status', () => cli(['--json'], 120_000)), readConfigText()]);
     const config = parseConfig(text);
     const dream = config.memory?.dream ?? {};
     const stores = await Promise.all((cliStatus.stores ?? []).map(async (entry) => ({
@@ -485,7 +499,7 @@ export function createMemoryService(options = {}) {
   const userRuntime = path.join(memoryRoot, 'agents', USER_STORE, 'runtime');
 
   async function userView() {
-    return cli(['view', '--json'], 60_000, 'memory');
+    return shared('user-view', () => cli(['view', '--json'], 60_000, 'memory'));
   }
 
   async function userRule({ path: record, blob, load }) {
@@ -1030,6 +1044,7 @@ export function createMemoryService(options = {}) {
     return { store, archive };
   }
 
+  const WRITE_ACTIONS = new Set(['save-file', 'delete-file', 'delete-store', 'dream', 'config', 'self-save', 'user-rule', 'user-ask', 'user-reforget', 'companion-sent']);
   const actions = {
     status: () => status(),
     stores: () => stores(),
@@ -1070,7 +1085,10 @@ export function createMemoryService(options = {}) {
     async handle(action, input) {
       const handler = Object.hasOwn(actions, action) ? actions[action] : undefined;
       if (!handler) throw new MemoryRequestError(404, 'no-action', `Unknown memory action ${action}.`);
-      return handler(input && typeof input === 'object' ? input : {});
+      if (!WRITE_ACTIONS.has(action)) return handler(input && typeof input === 'object' ? input : {});
+      writes += 1;
+      try { return await handler(input && typeof input === 'object' ? input : {}); }
+      finally { writes += 1; }
     },
   };
 }
