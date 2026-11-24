@@ -9,13 +9,7 @@ const fake = vi.hoisted(() => ({
   focus: vi.fn(),
   accept: vi.fn(),
 }));
-vi.mock("../../state/rubatoHttp", () => ({
-  RubatoRequestError: class extends Error {
-    constructor(readonly code: string, message: string) {
-      super(message);
-    }
-  },
-}));
+vi.mock("../../state/session", () => ({ readPreparedConnection: () => null }));
 vi.mock("../../state/rubatoCompanion", () => ({
   acceptCompanionAvatar: fake.accept,
   rubatoCompanion: {
