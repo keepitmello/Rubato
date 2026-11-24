@@ -6,12 +6,18 @@
 // session through 2026-09-23), and with the 1h Anthropic tier its first idle refresh (54m) would
 // fall past the 30-minute idle limit anyway.
 //
-// Rubato's policy is anchored on the person, not on the last request: keep the cache warm for two
+// Rubato's policy is anchored on the person, not on the last request: keep the cache warm within two
 // hours after the latest user input, refreshing Claude every 40 minutes (1h tier), Codex every
 // 20 minutes (30m tier) and Gemini on Vertex every 10 minutes. Vertex implicit caching has no
 // declared lifetime: Google's Gemini 4 Argon guide names a 15-20 minute TTL, so the warmer
 // plans on 15 and stops at the first refresh that reads nothing (`warmMissedCache`). Inside that window every refresh is sent; outside it none is. Other
 // providers keep stock behaviour.
+//
+// Inside that default window Claude sends only the first refresh after a turn
+// (`RUBATO_DEFAULT_REFRESHES`). The second, 80 minutes after the turn, rescued 8 of 108 idle
+// stretches on the user's threads (2026-11-11..24) while 16 of them found the 1h entry already
+// evicted by the provider and re-wrote the whole thread, so it cost more than the cold starts it
+// saved. An end the person or the companion sets is warmed to the end.
 //
 // A conversation no person has written in (a lead a companion started and drives by session
 // messages) has no input to count from, so it is not warmed until someone sets an end: most are
@@ -111,6 +117,13 @@ export const RUBATO_WARMING_INTERVAL_MS = Object.freeze({
 });
 /** Rubato keeps warming this long after the latest user input, unless the session set its own end. */
 export const RUBATO_WARMING_HORIZON_MS = 2 * 60 * 60_000;
+/**
+ * Refreshes sent after a turn when no one set an end, per provider; a provider without an
+ * entry is refreshed through the whole default window.
+ */
+export const RUBATO_DEFAULT_REFRESHES = Object.freeze({
+    anthropic: 1,
+});
 /** The longest a session may ask for from now: warming keeps its runtime loaded that long. */
 export const RUBATO_WARMING_MAX_HOURS = 24;
 export function rubatoWarmingIntervalMs(model) {
@@ -383,7 +396,9 @@ export function warmingDeadline(entries, preference = sessionWarming(entries)) {
     `    start(request, isCurrent) {
         this.clearRun();`,
     `    start(request, isCurrent, touchedAt) {
-        this.held = { request, isCurrent, touchedAt: touchedAt ?? Date.now() };
+        // requestAt is when the person's side last sent this request; a resume keeps it.
+        const requestAt = touchedAt === undefined ? Date.now() : this.held?.requestAt ?? touchedAt;
+        this.held = { request, isCurrent, touchedAt: touchedAt ?? Date.now(), requestAt };
         this.clearRun();`,
     "start-held",
   );
@@ -411,9 +426,23 @@ export function warmingDeadline(entries, preference = sessionWarming(entries)) {
     sessionDisabled() {
         return !this.sessionPreference().enabled;
     }
-    /** When warming ends for this session (warmingDeadline), or undefined before any input. */
+    /**
+     * When warming ends for this session (warmingDeadline), or undefined before any input.
+     * In the default window (an end that comes from the input, not one someone set) a provider
+     * in RUBATO_DEFAULT_REFRESHES ends just after that many refreshes past the held request,
+     * with the late-timer allowance, so the published end is the one the warmer acts on.
+     */
     deadline() {
-        return warmingDeadline(this.sessionManager.getBranch(), this.sessionPreference());
+        const preference = this.sessionPreference();
+        const end = warmingDeadline(this.sessionManager.getBranch(), preference);
+        const held = this.held;
+        const provider = held?.request.model?.provider;
+        const refreshes = RUBATO_DEFAULT_REFRESHES[provider];
+        const intervalMs = rubatoWarmingIntervalMs(held?.request.model);
+        if (!Number.isFinite(end) || end === preference.until || refreshes === undefined || intervalMs === undefined)
+            return end;
+        const graceMs = Math.floor((RUBATO_CACHE_LIFETIME_MS[provider] - intervalMs) / 2);
+        return Math.min(end, held.requestAt + refreshes * intervalMs + graceMs);
     }
     /**
      * Change this session's warmer: on/off, and hours from now to end warming. Turning it

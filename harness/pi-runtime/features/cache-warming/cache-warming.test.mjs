@@ -15,7 +15,7 @@ const scratch = mkdtempSync(join(tmpdir(), "rubato-cache-warming-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const staged = await stagePiRuntime({ sourceRoot, outputRoot: join(scratch, "stage"), features: [cacheWarmingFeature] });
 const runtime = resolvePiRuntime({ root: staged.root });
-const { CacheWarmer, RUBATO_CACHE_LIFETIME_MS, isCacheWarmRequest } = await import(pathToFileURL(join(runtime.codingAgentDir, "dist/core/cache-warmer.js")).href);
+const { CacheWarmer, RUBATO_CACHE_LIFETIME_MS, isCacheWarmRequest, warmingDeadline } = await import(pathToFileURL(join(runtime.codingAgentDir, "dist/core/cache-warmer.js")).href);
 const { SessionManager } = await import(pathToFileURL(join(runtime.codingAgentDir, "dist/core/session-manager.js")).href);
 const { AssistantMessageEventStream } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/event-stream.js",
 )).href);
@@ -67,23 +67,59 @@ async function advance(ms) {
   for (let i = 0; i < 20; i += 1) await new Promise((resolveTick) => setImmediate(resolveTick));
 }
 
-test("Claude warms every 40 minutes until two hours after the latest user input", async (t) => {
+// The second default refresh (80 minutes after the turn) rescued few returns and often found the
+// entry already evicted, re-writing the whole thread: by default Claude sends only the first.
+test("Claude sends one refresh 40 minutes after a turn, inside two hours of the latest user input", async (t) => {
   mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
   t.after(() => mock.timers.reset());
-  const { warmer, warms, calls } = harness("anthropic", 0);
+  const { warmer, warms } = harness("anthropic", 0);
   warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => true);
   warmer.onAgentSettled();
   assert.equal(warmer.status.state, "scheduled");
   assert.equal(warmer.status.nextWarmAt, 40 * MIN);
+  // The published end is the one the warmer acts on: the refresh plus the late-timer allowance.
+  assert.equal(warmer.status.until, 50 * MIN);
+  assert.equal(warmer.deadline(), 50 * MIN);
 
   await advance(40 * MIN);
-  await advance(40 * MIN);
-  assert.equal(warms.length, 2);
+  assert.equal(warms.length, 1);
   assert.equal(warms[0].note, "stopped after prefill");
-  // The next refresh would land at 2h, the horizon: warming stops instead.
-  await advance(40 * MIN);
-  assert.equal(warms.length, 2);
   assert.equal(warmer.status.state, "inactive");
+  assert.match(warmer.status.reason, /warming window ended/);
+  await advance(40 * MIN);
+  assert.equal(warms.length, 1);
+});
+
+test("a later turn inside the two hours gets its one refresh, and none past the two hours", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  t.after(() => mock.timers.reset());
+  const { warmer, warms } = harness("anthropic", 0);
+  const request = { model: model("anthropic"), context: {}, options: {} };
+  // A notification turn at 30 minutes: one refresh at 70.
+  await advance(30 * MIN);
+  warmer.start(request, () => true);
+  warmer.onAgentSettled();
+  await advance(40 * MIN);
+  assert.equal(warms.length, 1);
+  // A turn at 100 minutes: its refresh would land at 140, past the two hours.
+  await advance(30 * MIN);
+  warmer.start(request, () => true);
+  warmer.onAgentSettled();
+  assert.equal(warmer.deadline(), 120 * MIN);
+  await advance(40 * MIN);
+  assert.equal(warms.length, 1);
+});
+
+test("an end the person sets is warmed to the end, past the one default refresh", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  t.after(() => mock.timers.reset());
+  const { warmer, warms } = harness("anthropic", 0);
+  warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => true);
+  warmer.onAgentSettled();
+  warmer.setSessionWarming({ hours: 3 });
+  for (let step = 0; step < 5; step += 1) await advance(40 * MIN);
+  // 40, 80, 120 and 160 minutes; the one at 200 is past the three hours.
+  assert.equal(warms.length, 4);
   assert.match(warmer.status.reason, /warming window ended/);
 });
 
@@ -221,7 +257,7 @@ test("the latest action wins: an end set after the input can be shorter, a later
   const { warmer, branch } = harness("anthropic", 0);
   warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => true);
   warmer.onAgentSettled();
-  assert.equal(warmer.status.until, 2 * 60 * MIN);
+  assert.equal(warmingDeadline(branch), 2 * 60 * MIN);
 
   await advance(10 * MIN);
   warmer.setSessionWarming({ hours: 1 });
@@ -230,7 +266,7 @@ test("the latest action wins: an end set after the input can be shorter, a later
 
   // A later input gets its two hours over the shorter end …
   branch.push({ type: "message", message: { role: "user", timestamp: 20 * MIN } });
-  assert.equal(warmer.deadline(), 140 * MIN);
+  assert.equal(warmingDeadline(branch), 140 * MIN);
   // … and keeps a set end that reaches further.
   warmer.setSessionWarming({ hours: 6 });
   branch.push({ type: "message", message: { role: "user", timestamp: 30 * MIN } });
@@ -317,6 +353,7 @@ for (const [provider, intervalMin, graceMin] of [["anthropic", 40, 10], ["openai
       mock.timers.reset();
       mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
       const { warmer, warms } = harness(provider, 0);
+      warmer.setSessionWarming({ hours: 2 });
       warmer.start({ model: model(provider), context: {}, options: {} }, () => true);
       warmer.onAgentSettled();
       assert.equal(warmer.status.nextWarmAt, intervalMin * MIN);
@@ -371,6 +408,7 @@ test("a warmer holding a transcript with a notice still refreshes after the turn
   transcript = session.buildSessionProjection().messages;
 
   const { warmer, warms } = harness("anthropic", 0);
+  warmer.setSessionWarming({ hours: 2 });
   warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => extendsRequest(requested, transcript));
   warmer.onAgentSettled();
   await advance(40 * MIN);
@@ -429,6 +467,7 @@ test("a Claude refresh that reads nothing keeps warming: only Vertex stops on a 
   t.after(() => mock.timers.reset());
   mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
   const { warmer, warms } = harness("anthropic", 0, { ...usage, input: 300_000, cacheRead: 0 });
+  warmer.setSessionWarming({ hours: 2 });
   warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => true);
   warmer.onAgentSettled();
   await advance(40 * MIN);
