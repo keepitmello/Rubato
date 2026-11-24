@@ -2,6 +2,8 @@
 import { access, copyFile, lstat, mkdir, readlink, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 
+import { AGY_NATIVE_DIR_ENV, agyNativeDir } from "./RubatoAgyNative.ts";
+
 export const LOCAL_AGY_AGENT = "RUBATO_LOCAL_AGY_AGENT";
 export const LOCAL_AGY_ISOLATED = "RUBATO_LOCAL_AGY_ISOLATED";
 /** On an isolated instance: the instance whose Google login (profile) it runs on, instead of its own. */
@@ -24,8 +26,9 @@ export function localAgyApprovalSpawn<T extends {
 }>(spawn: T, environment: InstanceEnvironment): T {
   const bridge = plainValue(environment, LOCAL_AGY_APPROVAL_BRIDGE);
   if (!bridge || !path.isAbsolute(bridge)) return spawn;
+  // The bridge also lands the GUI's rewinds and forks on agy's own store (RubatoAgyNative.ts).
   return { ...spawn, command: process.execPath, args: [bridge, spawn.command, ...spawn.args],
-    env: { ...spawn.env, ELECTRON_RUN_AS_NODE: "1" } };
+    env: { ...spawn.env, ELECTRON_RUN_AS_NODE: "1", [AGY_NATIVE_DIR_ENV]: agyNativeDir() } };
 }
 
 export function localAgyAgent(environment: InstanceEnvironment) {

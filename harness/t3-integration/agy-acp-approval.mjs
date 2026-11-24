@@ -1,15 +1,20 @@
 // Official AGY keeps the model and tool execution. This stdio adapter gives its
 // Rubato MCP child a way to ask the existing ACP client's user-input handler.
+// With RUBATO_AGY_NATIVE_DIR set it also gives the client rewind and fork on agy's own
+// conversation store (agy-native.mjs).
 import { spawn } from 'node:child_process';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
+import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
+import { AGY_NATIVE_DIR_ENV, agyLogDirectory, createAgyNative } from './agy-native.mjs';
 
-export async function runAgyApprovalBridge(command, args, { input = process.stdin, output = process.stdout } = {}) {
+export async function runAgyApprovalBridge(command, args, { input = process.stdin, output = process.stdout,
+  env = process.env, nativeOptions = {} } = {}) {
   const token = `Bearer ${randomUUID()}${randomUUID()}`;
   const prefix = `rubato-local-${randomUUID()}-`;
-  let sequence = 0, child;
+  let sequence = 0, child, native;
   const pending = new Map(), turnIds = new Map();
   const write = (stream, value) => stream.write(`${JSON.stringify(value)}\n`);
   const server = createServer(async (req, res) => {
@@ -52,21 +57,30 @@ export async function runAgyApprovalBridge(command, args, { input = process.stdi
     server.listen(0, '127.0.0.1', resolve);
   });
   try {
-    child = spawn(command, args, { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env,
+    child = spawn(command, args, { stdio: ['pipe', 'pipe', 'inherit'], env: { ...env,
       RUBATO_AGY_APPROVAL_URL: `http://127.0.0.1:${server.address().port}/form`, RUBATO_AGY_APPROVAL_TOKEN: token } });
     child.stdin.on('error', () => {});
+    const nativeDir = env[AGY_NATIVE_DIR_ENV];
+    if (nativeDir) native = createAgyNative({ dir: nativeDir, logDir: agyLogDirectory(args, env.HOME || homedir()),
+      pid: child.pid, prefix, toAgent: (value) => write(child.stdin, value), toClient: (value) => write(output, value),
+      ...nativeOptions });
     const clientLines = createInterface({ input });
     const agentLines = createInterface({ input: child.stdout });
     const cancel = (turnId) => {
       turnIds.delete(turnId);
       for (const request of pending.values()) if (request.turnId === turnId) request.finish();
     };
-    clientLines.on('line', line => {
+    const forward = async (line) => {
       let wire;
       try { wire = JSON.parse(line); } catch { child.stdin.write(`${line}\n`); return; }
       if (!wire.method && typeof wire.id === 'string' && wire.id.startsWith(prefix)) {
         pending.get(wire.id)?.finish(wire.result);
         return;
+      }
+      if (native) {
+        const next = await native.fromClient(wire);
+        if (next === null) return;
+        if (next !== wire) { wire = next; line = JSON.stringify(next); }
       }
       if (wire.method === 'session/prompt' && typeof wire.params?.sessionId === 'string') {
         turnIds.set(wire.id, wire.params.sessionId);
@@ -74,15 +88,26 @@ export async function runAgyApprovalBridge(command, args, { input = process.stdi
         for (const [id, sid] of turnIds) if (sid === wire.params?.sessionId) cancel(id);
       }
       child.stdin.write(`${line}\n`);
-    });
+    };
+    // A cut or fork answers agy before the client's message goes on, so client messages keep their order.
+    let forwarding = Promise.resolve();
+    clientLines.on('line', line => { forwarding = forwarding.then(() => forward(line)).catch(() => {}); });
     agentLines.on('line', line => {
+      let wire;
       try {
-        const wire = JSON.parse(line);
-        if (!wire.method && turnIds.has(wire.id)) cancel(wire.id);
+        wire = JSON.parse(line);
       } catch {}
+      if (wire && native) {
+        const next = native.fromAgent(wire);
+        if (next === null) return;
+        if (next !== wire) { wire = next; line = JSON.stringify(next); }
+      }
+      if (wire) {
+        if (!wire.method && turnIds.has(wire.id)) cancel(wire.id);
+      }
       output.write(`${line}\n`);
     });
-    clientLines.once('close', () => { child.stdin.end(); child.kill(); });
+    clientLines.once('close', () => { forwarding.finally(() => { child.stdin.end(); child.kill(); }); });
     const stop = () => child.kill();
     process.once('SIGTERM', stop);
     process.once('SIGINT', stop);
@@ -98,6 +123,7 @@ export async function runAgyApprovalBridge(command, args, { input = process.stdi
       agentLines.close();
     }
   } finally {
+    native?.close();
     for (const request of pending.values()) request.finish();
     server.close();
     server.closeAllConnections();

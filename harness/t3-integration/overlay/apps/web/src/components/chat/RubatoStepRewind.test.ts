@@ -119,13 +119,16 @@ describe("step rewind on V2 rows", () => {
     // The last reply has nothing after it.
     expect(rewindOffered(thread, reply("r2"))).toBe(false);
     expect(rewindOffered(thread, { kind: "last-step", runId: "r1" })).toBe(true);
-    // A run with no Rubato step, or a group of rows none of which is one.
+    // A run with no step, or a group of rows none of which is one.
     expect(rewindOffered(thread, { kind: "last-step", runId: "r2" })).toBe(false);
     expect(rewindOffered(thread, { kind: "last-step", runId: "r1", itemIds: ["th1", "rep1"] })).toBe(false);
     const step = thread.items[2]!.item;
     const codex = { ...step, nativeItemRef: { driver: "codex", nativeId: "x", strength: "strong" } };
     expect(rewindOffered(null, { kind: "step", itemId: "a", runId: "r1" }, codex as never)).toBe(false);
     expect(rewindOffered(null, { kind: "step", itemId: "a", runId: "r1" }, step)).toBe(true);
+    // agy's tool rows rewind too, on its own store through the approval bridge.
+    const agy = { ...step, nativeItemRef: { driver: "antigravity", nativeId: "call_1", strength: "strong" } };
+    expect(rewindOffered(null, { kind: "step", itemId: "a", runId: "r1" }, agy as never)).toBe(true);
   });
 
   it("a reply rewinds to the run boundary through T3's revert", () => {
@@ -136,8 +139,8 @@ describe("step rewind on V2 rows", () => {
     expect(replyCutFor(thread, { runId: "r2", messageId: "m-rep2" })).toBe("Nothing comes after this reply.");
   });
 
-  it("refuses a step that is not a finished Rubato step, or a run still working", () => {
-    expect(stepCutFor(thread, "rep1", "x", "rep1")).toBe("Only a finished Rubato step can be rewound to.");
+  it("refuses a step that is not a finished tool step, or a run still working", () => {
+    expect(stepCutFor(thread, "rep1", "x", "rep1")).toBe("Only a finished tool step can be rewound to.");
     const running = { ...thread, runs: [{ id: "r1", ordinal: 1, status: "running" }, thread.runs[1]!] };
     expect(stepCutFor(running, "a", "x", "b")).toBe("This run has not finished yet.");
   });

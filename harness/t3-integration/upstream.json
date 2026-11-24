@@ -82,6 +82,8 @@
     "apps/server/src/auth/SessionStore.ts": "ae577588bc3f894b5eae4f79693b34125a2dfae80a59c041c371c168c081eb6a",
     "apps/server/src/cloud/CloudLink.lifecycle.test.ts": "a321039b394c5681a2d0fdec44efef5d1bc283ab07a1f257d1595c0cc1f31a28",
     "apps/server/src/observability/RpcInstrumentation.ts": "6412e9bb4815dcae593594359a498be1b456fe1472cb0ca42dc7bd80b9345a91",
+    "apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts": "99d6896a7ae14fc9f6f2f866724d91cd1bd06f738ee312dee2510fbdf2be94b1",
+    "apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.ts": "620ae253b345ae153cc0e47da2561f3cad7d7006a424938d5454f82a9de8a224",
     "apps/server/src/orchestration-v2/Orchestrator.ts": "d46bf04434de94371859fb75a5c20b9a2c44f33c93bb66f6474b01668ef1f31f",
     "apps/server/src/orchestration-v2/ProjectionStore.ts": "bc5dbe309795fc214c4b91896a5df00643895f5e4f55ed13a7f40a83858dd835",
     "apps/server/src/orchestration-v2/ProviderSessionManager.test.ts": "ac03fafb2a2b5dcc829420fd33eeaff972e8bdd170b865a4541070c28e129041",

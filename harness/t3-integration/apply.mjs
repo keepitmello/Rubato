@@ -69,6 +69,7 @@ import { threadFoldersEdits, threadFoldersOverlays } from './thread-folders-edit
 import { tailscaleEdits, tailscaleOverlays } from './tailscale-edits.mjs';
 import { localAgyEdits, localAgyOverlays } from './local-agy-edits.mjs';
 import { acpPerfEdits, acpPerfOverlays } from './acp-perf-edits.mjs';
+import { agyNativeEdits, agyNativeOverlays } from './agy-native-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1129,6 +1130,11 @@ for (const [relative, changes] of Object.entries(localAgyEdits)) {
 }
 overlays.push(...acpPerfOverlays);
 for (const [relative, changes] of Object.entries(acpPerfEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Rewind and fork on agy's own conversation store (agy-native-edits.mjs), after the ACP edits above.
+overlays.push(...agyNativeOverlays);
+for (const [relative, changes] of Object.entries(agyNativeEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */

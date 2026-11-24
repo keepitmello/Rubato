@@ -23,7 +23,7 @@ import { Checkbox } from "../ui/checkbox";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
-// Rewind to a finished tool step (step-rewind-ui-edits.mjs). Every Rubato tool row offers it:
+// Rewind to a finished tool step (step-rewind-ui-edits.mjs). Every Rubato or agy tool row offers it:
 // hovering the row's rewind button fades what would go, the card says what stays and what
 // goes, and then either
 // - "Rewind & instruct": the rewind waits for the next message, so it can still be undone
@@ -43,7 +43,7 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 // group's row rewind after the last step under them, so nothing has to be expanded. A
 // reply's row rewinds to right after that reply: a run boundary, so it is T3's ordinary
 // revert, with nothing to continue from. A button shows only where a rewind can land: a
-// reply with rows after it, a folded row with a Rubato step under it.
+// reply with rows after it, a folded row with a step under it.
 
 /** A rewind point, with the rows it drops. */
 export interface StepCut {
@@ -124,11 +124,13 @@ const TOOL_TYPES = new Set<OrchestrationV2TurnItem["type"]>([
   "web_search",
 ]);
 const isTool = (item: OrchestrationV2TurnItem) => TOOL_TYPES.has(item.type);
+/** Drivers whose finished tool steps rewind: Rubato's engine, and agy through its bridge. */
+const STEP_DRIVERS: ReadonlySet<string> = new Set(["rubato-pi", "antigravity"]);
 // A tool that ended in an error is a finished step too: its result is what the model saw.
 const isStep = (item: OrchestrationV2TurnItem) =>
   isTool(item) &&
   (item.status === "completed" || item.status === "failed") &&
-  item.nativeItemRef?.driver === "rubato-pi";
+  STEP_DRIVERS.has(item.nativeItemRef?.driver ?? "");
 const messageIdOf = (item: OrchestrationV2TurnItem): string | undefined =>
   item.type === "user_message" || item.type === "assistant_message" ? item.messageId : undefined;
 
@@ -183,7 +185,7 @@ function droppedAfter(thread: RewindThread, runId: string, ordinal: number, posi
 export function stepRefusal(thread: RewindThread, itemId: string): string | undefined {
   const row = thread.items.find((entry) => entry.item.id === itemId);
   if (!row) return "This step is not in the thread any more.";
-  if (!isStep(row.item)) return "Only a finished Rubato step can be rewound to.";
+  if (!isStep(row.item)) return "Only a finished tool step can be rewound to.";
   if (row.item.runId === null || !settledRun(thread, row.item.runId)) return "This run has not finished yet.";
   return undefined;
 }
@@ -216,7 +218,7 @@ export function stepCutFor(
   };
 }
 
-/** The last finished Rubato step of a run, or of the given items: what a folded row rewinds to. */
+/** The last finished step of a run, or of the given items: what a folded row rewinds to. */
 export function lastStepOf(
   thread: RewindThread,
   scope: { readonly runId: string; readonly itemIds?: ReadonlyArray<string | undefined> },
@@ -335,7 +337,7 @@ function offerIndexOf(thread: RewindThread): OfferIndex {
   return index;
 }
 
-/** Whether a button can land anywhere: a Rubato step, a folded row with one, a reply with rows after it. */
+/** Whether a button can land anywhere: a step, a folded row with one, a reply with rows after it. */
 export function rewindOffered(
   thread: RewindThread | null,
   target: RewindTarget,
@@ -362,7 +364,7 @@ function useRewindOffered(
 ): boolean {
   const environmentId = threadRef?.environmentId;
   const threadId = threadRef?.threadId;
-  // Steps need no thread: whether the row is a Rubato step is on the row itself.
+  // Steps need no thread: whether the row is a step is on the row itself.
   const subscribeThread = useCallback((listener: () => void) => {
     if (!threadRef) return () => {};
     const stopItems = appAtomRegistry.subscribe(environmentThreadDetails.visibleTurnItemsAtom(threadRef), listener);
@@ -533,7 +535,7 @@ export function isStepCutRun(
 const stop = (event: MouseEvent | PointerEvent) => event.stopPropagation();
 
 /**
- * A rewind button with its card: on a finished Rubato tool row, on a folded row (after its
+ * A rewind button with its card: on a finished tool row, on a folded row (after its
  * last step), or on a reply. `reveal: "row"` shows it while its `group/timeline-row` is
  * hovered; `"inherit"` leaves that to the surrounding row (a reply's action row).
  */
@@ -541,7 +543,7 @@ export function RubatoStepRewindButton(props: {
   readonly threadKey: string;
   readonly threadRef: ScopedThreadRef | null;
   readonly target: RewindTarget;
-  /** A step row's item, to offer only finished Rubato steps. */
+  /** A step row's item, to offer only finished steps. */
   readonly item?: OrchestrationV2TurnItem | undefined;
   readonly label: string;
   readonly busy: boolean;

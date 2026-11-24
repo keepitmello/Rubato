@@ -17,6 +17,12 @@
  *
  * Nothing changes unless the engine still holds the step. The step's files go back before the
  * engine rewinds (V1's order), so a restore that fails refuses with the conversation unmoved.
+ *
+ * An Antigravity step (its native ref is agy's tool call) rewinds on agy's own store: the thread's
+ * agy session gets a cut through the step's batch, which the approval bridge lands before the
+ * session's next turn (RubatoAgyNative.ts), and the batch is the one the bridge last saw agy make.
+ * Only a session that negotiated native rewind through the bridge takes one. Continue sends the
+ * same text as an ordinary message, from which agy runs on.
  */
 import {
   CommandId, MessageId, ThreadId, TurnItemId,
@@ -31,6 +37,7 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { EnvironmentAuth } from "./auth/EnvironmentAuth.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import { ProviderInstanceRegistry } from "./provider/ProviderInstanceRegistry.ts";
+import { AGY_STEP_CONTINUE_TEXT, agyBatchEnd, writeAgyCut } from "./provider/RubatoAgyNative.ts";
 import { piSessionOfThread, rubatoBridge } from "./provider/RubatoPiSessions.ts";
 import { RubatoThreadImporter } from "./provider/RubatoThreadImporter.ts";
 import { authorized } from "./RubatoServiceRoute.ts";
@@ -51,6 +58,14 @@ const FINISHED: ReadonlySet<OrchestrationV2TurnItem["status"]> = new Set(["compl
 
 const StepRewindBody = Schema.Struct({ threadId: Schema.String, itemId: Schema.String, restoreFiles: Schema.optional(Schema.Boolean) });
 const ContinueBody = Schema.Struct({ threadId: Schema.String });
+const RUBATO_DRIVER = "rubato-pi";
+const AGY_DRIVER = "antigravity";
+
+/** What a rewind asks of the conversation's owner: the step's batch, then the cut after it. */
+interface StepEngine {
+  readonly batch: () => Promise<ReadonlyArray<string>>;
+  readonly rewindToStep: () => Promise<void>;
+}
 
 export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
   const auth = yield* EnvironmentAuth;
@@ -61,30 +76,58 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
   const commandId = Effect.map(uuid, (id) => CommandId.make(`rubato-step-rewind:${id}`));
 
   const records = (threadId: ThreadId) =>
-    orchestrator.getThreadRecords(threadId, ["runs", "turnItems", "messages", "checkpoints"]).pipe(
+    orchestrator.getThreadRecords(threadId, ["runs", "turnItems", "messages", "checkpoints", "providerThreads", "providerSessions"]).pipe(
       Effect.mapError((cause) => refuse("unknown-thread", describe(cause))));
+
+  /** The agy session of the step's provider thread, when it rewinds natively. */
+  const agySessionOf = Effect.fn("RubatoStepRewind.agySessionOf")(function* (
+    projection: Effect.Success<ReturnType<typeof records>>, providerThreadId: string | null,
+  ) {
+    const providerThread = projection.providerThreads.find((candidate) => candidate.id === providerThreadId);
+    const sessionId = providerThread?.nativeThreadRef?.nativeId;
+    if (!providerThread || typeof sessionId !== "string")
+      return yield* refuse("no-session", "This thread has no Antigravity conversation.");
+    const session = projection.providerSessions.find((candidate) => candidate.id === providerThread.providerSessionId);
+    if (session?.capabilities.checkpointing.providerCanRollbackConversation !== true)
+      return yield* refuse("unavailable", "This Antigravity account does not rewind through Rubato.");
+    return sessionId;
+  });
 
   // The step, its run, and its batch as the engine holds it.
   const stepOf = Effect.fn("RubatoStepRewind.stepOf")(function* (projection: Effect.Success<ReturnType<typeof records>>, threadId: ThreadId, itemId: string, rewinding: boolean) {
     const item = projection.turnItems.find((candidate) => candidate.id === itemId);
-    const toolCallId = item?.nativeItemRef?.driver === "rubato-pi" ? item.nativeItemRef.nativeId : null;
+    const driver = item?.nativeItemRef?.driver;
+    const toolCallId = driver === RUBATO_DRIVER || driver === AGY_DRIVER ? item?.nativeItemRef?.nativeId ?? null : null;
     if (!item || !toolCallId || TEXT_ITEMS.has(item.type) || !FINISHED.has(item.status) || item.runId === null)
-      return yield* refuse("not-a-step", "Only a finished Rubato tool step can be rewound to.");
+      return yield* refuse("not-a-step", "Only a finished tool step can be rewound to.");
     if (rewinding && projection.runs.some((run) => BUSY.has(run.status)))
       return yield* refuse("busy", "Wait for this conversation to stop before rewinding.");
     const runId = item.runId;
     const run = projection.runs.find((candidate) => candidate.id === runId);
     if (!run) return yield* refuse("not-a-step", "This step's turn is gone.");
-    const session = yield* piSessionOfThread(threadId).pipe(Effect.mapError((cause) => refuse("no-session", describe(cause))));
-    if (session === null) return yield* refuse("no-session", "This thread has no Rubato session.");
-    const bridge = yield* rubatoBridge(run.providerInstanceId);
-    if (bridge === null) return yield* refuse("unavailable", "The Rubato provider is not running.");
+    let engine: StepEngine;
+    if (driver === AGY_DRIVER) {
+      const sessionId = yield* agySessionOf(projection, item.providerThreadId ?? run.providerThreadId ?? null);
+      engine = {
+        batch: async () => [toolCallId, await agyBatchEnd(sessionId, toolCallId)],
+        rewindToStep: () => writeAgyCut(sessionId, { throughToolCallId: toolCallId }),
+      };
+    } else {
+      const session = yield* piSessionOfThread(threadId).pipe(Effect.mapError((cause) => refuse("no-session", describe(cause))));
+      if (session === null) return yield* refuse("no-session", "This thread has no Rubato session.");
+      const bridge = yield* rubatoBridge(run.providerInstanceId);
+      if (bridge === null) return yield* refuse("unavailable", "The Rubato provider is not running.");
+      engine = {
+        batch: () => bridge.stepBatch({ threadId, sessionId: session.sessionId, toolCallId }),
+        rewindToStep: async () => { await bridge.rewindToStep({ threadId, sessionId: session.sessionId, toolCallId }); },
+      };
+    }
     // The engine must still hold the step before anything is undone.
     const batch = yield* Effect.tryPromise({
-      try: () => bridge.stepBatch({ threadId, sessionId: session.sessionId, toolCallId }),
+      try: engine.batch,
       catch: (cause) => refuse("engine-refused", describe(cause)),
     });
-    return { item, run, runId, session, bridge, toolCallId, batch };
+    return { item, run, runId, engine, batch };
   });
   /** The run's last row of the step's batch: the rewind lands right after it. */
   const cutAfterOf = (turnItems: ReadonlyArray<OrchestrationV2TurnItem>, runId: string, item: OrchestrationV2TurnItem, batch: ReadonlyArray<string>) => {
@@ -105,7 +148,7 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
 
   const rewind = Effect.fn("RubatoStepRewind.rewind")(function* (threadId: ThreadId, itemId: string, restoreFiles: boolean) {
     let projection = yield* records(threadId);
-    const { item, run, runId, session, bridge, toolCallId, batch } = yield* stepOf(projection, threadId, itemId, true);
+    const { item, run, runId, engine, batch } = yield* stepOf(projection, threadId, itemId, true);
 
     // Later turns go the way Edit from here takes them: V2's rollback to this turn's checkpoint.
     // It moves the engine and the thread together, so a refusal after it leaves both at that turn.
@@ -150,7 +193,7 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
       }
     }
     yield* Effect.tryPromise({
-      try: () => bridge.rewindToStep({ threadId, sessionId: session.sessionId, toolCallId }),
+      try: engine.rewindToStep,
       catch: (cause) => refuse("engine-refused", describe(cause)),
     });
     const importer = yield* RubatoThreadImporter;
@@ -165,15 +208,20 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
     const latest = [...projection.runs].filter((run) => run.status !== "rolled_back").sort((left, right) => right.ordinal - left.ordinal)[0];
     if (!latest || latest.status !== "interrupted")
       return yield* refuse("not-rewound", "There is no rewound step to continue from.");
-    const bridge = yield* rubatoBridge(latest.providerInstanceId);
-    if (bridge === null) return yield* refuse("unavailable", "The Rubato provider is not running.");
     const id = yield* uuid;
-    // Only this message becomes the engine's continue (rpc-connection.mjs); a GUI restart in
-    // between changes nothing, since the mark is set right here.
-    bridge.markStepContinue(threadId);
+    let text = AGY_STEP_CONTINUE_TEXT;
+    const driver = projection.providerThreads.find((candidate) => candidate.id === latest.providerThreadId)?.driver;
+    if (driver !== AGY_DRIVER) {
+      const bridge = yield* rubatoBridge(latest.providerInstanceId);
+      if (bridge === null) return yield* refuse("unavailable", "The Rubato provider is not running.");
+      // Only this message becomes the engine's continue (rpc-connection.mjs); a GUI restart in
+      // between changes nothing, since the mark is set right here.
+      bridge.markStepContinue(threadId);
+      text = bridge.stepContinueText;
+    }
     yield* orchestrator.dispatch({ type: "message.dispatch", createdBy: "user", creationSource: "web",
       commandId: CommandId.make(`rubato-step-continue:${id}`), threadId, messageId: MessageId.make(`rubato-step-continue:${id}`),
-      text: bridge.stepContinueText, attachments: [], manualContinuationOfRunId: latest.id,
+      text, attachments: [], manualContinuationOfRunId: latest.id,
       dispatchMode: { type: "start_immediately" } })
       .pipe(Effect.mapError((cause) => refuse("continue-failed", describe(cause))));
     return {};

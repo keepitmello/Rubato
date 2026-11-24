@@ -53,9 +53,9 @@ export const threadForkEdits = {
   ],
   'apps/web/src/components/Sidebar.tsx': [
     ['import {\n  buildDraftActionMenuItems,\n  buildThreadActionMenuItems,\n',
-      'import { forkThread, threadRunsOnRubato } from "./sidebar/rubatoThreadFork";\n'],
+      'import { forkThread, threadCanFork } from "./sidebar/rubatoThreadFork";\n'],
     ['                titleRegeneration: configLoaded,\n',
-      '                titleRegeneration: configLoaded,\n                fork: threadRunsOnRubato(thread),\n',
+      '                titleRegeneration: configLoaded,\n                fork: threadCanFork(thread),\n',
       'replace'],
     ['          case "rename":\n            startThreadRename(threadRef, thread.title);\n',
       ['          case "fork": {', ...forkHandler('            '), '          }', ''].join('\n')],

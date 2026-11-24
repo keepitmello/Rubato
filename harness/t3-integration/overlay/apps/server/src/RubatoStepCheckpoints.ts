@@ -21,8 +21,14 @@ import { forkParked } from "./serverActivation.ts";
 // back. Kept as a hidden git ref beside the thread's turn checkpoints, and only for a thread
 // with its own worktree: restoring a shared checkout could erase another thread's work.
 
-/** The Rubato provider's driver; its tool items carry the Pi toolCallId as native id. */
-export const RUBATO_STEP_DRIVER = ProviderDriverKind.make("rubato-pi");
+/**
+ * Drivers whose tool items carry the tool call id a step rewind lands on: the Rubato provider
+ * (Pi's toolCallId) and Antigravity (agy's ACP toolCallId, RubatoStepRewind.ts).
+ */
+export const STEP_DRIVERS: ReadonlySet<string> = new Set([
+  ProviderDriverKind.make("rubato-pi"),
+  ProviderDriverKind.make("antigravity"),
+]);
 
 /** Turn items that stand for one Pi tool call. */
 const STEP_ITEM_TYPES: ReadonlySet<OrchestrationV2TurnItem["type"]> = new Set([
@@ -63,7 +69,7 @@ export function stepCompletionOf(event: OrchestrationV2DomainEvent): StepComplet
   const ref = item.nativeItemRef;
   if (
     ref === null ||
-    ref.driver !== RUBATO_STEP_DRIVER ||
+    !STEP_DRIVERS.has(ref.driver) ||
     ref.nativeId === null ||
     !STEP_ITEM_TYPES.has(item.type) ||
     !FINISHED_STATUSES.has(item.status)
