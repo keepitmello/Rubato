@@ -29,7 +29,8 @@ function model(provider) {
 
 function harness(provider, userAt, warmUsage = usage) {
   const branch = [
-    { type: "message", message: { role: "user", timestamp: userAt } },
+    // No userAt: a conversation no person has written in, such as a lead a companion started.
+    ...(userAt === undefined ? [] : [{ type: "message", message: { role: "user", timestamp: userAt } }]),
     { type: "message", message: { role: "assistant", usage } },
   ];
   const warms = [];
@@ -450,6 +451,58 @@ test("the companion warms without an end until the person turns its warming off"
   warmer.setSessionWarming({ enabled: false });
   await advance(40 * MIN);
   assert.equal(warms.length, 36);
+});
+
+// A lead a companion started has session messages and no user message. It used to get two hours
+// after every turn, and most such leads were never opened again.
+test("a conversation no person has written in is not warmed until an end is set", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  t.after(() => mock.timers.reset());
+  const { warmer, warms } = harness("anthropic", undefined);
+  assert.equal(warmer.deadline(), undefined);
+  warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => true);
+  warmer.onAgentSettled();
+  assert.equal(warmer.status.state, "inactive");
+  assert.match(warmer.status.reason, /no person's input/);
+  for (let step = 0; step < 3; step += 1) await advance(40 * MIN);
+  assert.equal(warms.length, 0);
+});
+
+test("a companion that means to come back sets an end, and its lead warms from the held request", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  t.after(() => mock.timers.reset());
+  const { warmer, warms } = harness("anthropic", undefined);
+  warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => true);
+  warmer.onAgentSettled();
+  await advance(20 * MIN);
+  warmer.setSessionWarming({ hours: 1 });
+  assert.equal(warmer.deadline(), 80 * MIN);
+  assert.equal(warmer.status.state, "scheduled");
+  // The first refresh counts from the turn that touched the cache, not from the switch.
+  assert.equal(warmer.status.nextWarmAt, 40 * MIN);
+  await advance(20 * MIN);
+  assert.equal(warms.length, 1);
+});
+
+test("turning on a conversation no person has written in warms two hours from now", (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 50 * MIN });
+  t.after(() => mock.timers.reset());
+  const { warmer, branch } = harness("anthropic", undefined);
+  warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => true);
+  warmer.onAgentSettled();
+  assert.equal(warmer.status.state, "inactive");
+  warmer.setSessionWarming({ enabled: true });
+  assert.deepEqual(branch.at(-1).data, { enabled: true, until: 170 * MIN, setAt: 50 * MIN });
+  assert.equal(warmer.status.state, "scheduled");
+  assert.equal(warmer.status.until, 170 * MIN);
+});
+
+test("turning the switch on again after the window ended starts two hours from now, even if it was never off", (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 3 * 60 * MIN });
+  t.after(() => mock.timers.reset());
+  const { warmer } = harness("anthropic", 0);
+  warmer.setSessionWarming({ enabled: true });
+  assert.equal(warmer.deadline(), 5 * 60 * MIN);
 });
 
 test("the same branch projects once; an append, a branch move or a rollback projects again", () => {

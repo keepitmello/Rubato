@@ -413,9 +413,11 @@ function sessionTools(getLink, { companion }) {
       name: "session_cache_warming",
       label: "Conversation cache warmer",
       description: "Keep another conversation's prompt cache warm for longer, or stop warming it: the same switch as the context ring in the app. " +
-        "By default a conversation's cache is kept warm for two hours after the user's latest message. " +
+        "By default a conversation the user writes in is kept warm for two hours after their latest message. " +
+        "A conversation no person has written in, such as a lead you started and drive with session_send, is not warmed until an end is set, " +
+        "since most are never opened again: set hours on a lead you mean to message again soon (for example once the user answers), and leave one whose work is done. " +
         "hours ends warming that many hours from now (1 to 24, shorter than the default too); a later user message still gets its two hours. " +
-        "enabled false stops warming that conversation until it is turned back on; turning it back on after its window ended starts two hours from now. " +
+        "enabled false stops warming that conversation until it is turned back on; turning it on when it is not warming starts two hours from now. " +
         "Warming sends a small refresh request on the conversation's model every 10 to 40 minutes, which costs a little; a cold cache " +
         "makes the next message read the whole context again. The result carries the conversation's warming (global mode, enabled, until) " +
         "and its cache as session_list reports it. A conversation that is not loaded keeps the choice and starts warming at its next message.",

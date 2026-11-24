@@ -13,6 +13,12 @@
 // plans on 15 and stops at the first refresh that reads nothing (`warmMissedCache`). Inside that window every refresh is sent; outside it none is. Other
 // providers keep stock behaviour.
 //
+// A conversation no person has written in (a lead a companion started and drives by session
+// messages) has no input to count from, so it is not warmed until someone sets an end: most are
+// never opened again (2026-11-11..24: 132 of 168 idle stretches), and a refresh that finds the
+// entry already evicted re-writes the whole thread. The companion that started it turns warming
+// on (`session_cache_warming`) when it means to come back.
+//
 // The person can also set the end directly ("warm for N hours from now"). The latest action wins:
 // an end set after the latest input stands as set, shorter than two hours too; a later input
 // still gets its two hours unless the set end reaches further (`warmingDeadline`).
@@ -228,7 +234,13 @@ export function warmingDeadline(entries, preference = sessionWarming(entries)) {
   next = replaceOnce(
     next,
     `        const delayMs = getCacheWarmingDelayMs(ttlMs);`,
-    `        const delayMs = rubatoIntervalMs ?? getCacheWarmingDelayMs(ttlMs);`,
+    `        const delayMs = rubatoIntervalMs ?? getCacheWarmingDelayMs(ttlMs);
+        // No person's input and no end set: nothing to warm for until one is set (the request
+        // stays held, so setting an end warms from it).
+        if (rubatoIntervalMs !== undefined && this.deadline() === undefined) {
+            this.stop("no person's input to warm for");
+            return;
+        }`,
     "start-delay",
   );
   next = replaceOnce(
@@ -242,7 +254,7 @@ export function warmingDeadline(entries, preference = sessionWarming(entries)) {
             firstTouchAt: touchedAt,
             anchoredUntil: rubatoIntervalMs === undefined
                 ? undefined
-                : this.deadline() ?? Date.now() + RUBATO_WARMING_HORIZON_MS,
+                : this.deadline(),
         };
         this.schedule(this.run);`,
     "start-anchor",
@@ -405,7 +417,8 @@ export function warmingDeadline(entries, preference = sessionWarming(entries)) {
     }
     /**
      * Change this session's warmer: on/off, and hours from now to end warming. Turning it
-     * on after its window ended starts a new two-hour window from now. The choice persists
+     * on when it has no live window (ended, or never had one: no person's input) starts two
+     * hours from now, whether or not it was switched off. The choice persists
      * in the session, so later turns and a new runtime keep it. A warmer that is on restarts
      * from the latest request, counting from when the cache was last touched, so a longer
      * window picks up again and a shorter one ends where it should.
@@ -415,7 +428,7 @@ export function warmingDeadline(entries, preference = sessionWarming(entries)) {
         const now = Date.now();
         const ended = !(this.deadline() > now);
         const until = validWarmingHours(hours) ? now + hours * 3_600_000
-            : enabled === true && !current.enabled && ended ? now + RUBATO_WARMING_HORIZON_MS
+            : enabled === true && ended ? now + RUBATO_WARMING_HORIZON_MS
                 : undefined;
         const next = {
             enabled: typeof enabled === "boolean" ? enabled : current.enabled,
