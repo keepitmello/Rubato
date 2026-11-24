@@ -101,6 +101,35 @@ test("native tools are search-exposed and research work holds one-shot sessions"
 	assert.equal(sent.length, 1);
 });
 
+test("separate research questions in one conversation run in parallel", async (t) => {
+	const { cwd, transcript, calls, jobHarness } = fixture(t);
+	const tools = new Map();
+	const ctx = { cwd, sessionManager: { getSessionFile: () => transcript, getEntries: () => [] } };
+	const hooks = new Map();
+	registerResearchTools({
+		on: (event, cb) => hooks.set(event, cb),
+		registerTool: (value) => tools.set(value.name, value),
+		sendMessage() {},
+	}, jobHarness());
+	hooks.get("session_start")({}, ctx);
+	const deep = tools.get(DEEP_RESEARCH);
+	const web = tools.get(WEB_AGENT);
+	const started = await Promise.all([
+		deep.execute("call-a", { question: "first topic" }, undefined, undefined, ctx),
+		deep.execute("call-b", { question: "second topic" }, undefined, undefined, ctx),
+		web.execute("call-c", { prompt: "third topic" }, undefined, undefined, ctx),
+		web.execute("call-d", { prompt: "fourth topic" }, undefined, undefined, ctx),
+	]);
+	assert.ok(started.every((result) => result.details.status === "running"));
+	assert.equal(new Set(started.map((result) => result.details.id)).size, 4);
+	assert.deepEqual(calls.map((call) => `${call.command} ${call.args[0]}`).sort(),
+		["aside exec", "aside exec", "outpost send", "outpost send"]);
+	for (const result of started) {
+		assert.doesNotMatch(result.content[0].text, /second run/);
+		assert.match(result.content[0].text, /different question can run alongside/);
+	}
+});
+
 test("Aside interruption inspects the same session without a second exec", async (t) => {
 	const { cwd, transcript, calls, jobHarness } = fixture(t);
 	const harness = jobHarness();

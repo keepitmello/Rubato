@@ -81,7 +81,7 @@ export function registerResearchTools(pi, jobs = researchJobs()) {
 				return {
 					content: [{ type: "text", text: job.existing
 						? `${label} (${job.id}) was already queued in this conversation. Rubato did not send it again.`
-						: `${label} started (${job.id}). Rubato will bring the result back to this conversation when it finishes. Do not poll or start a second run.` }],
+						: `${label} started (${job.id}). Rubato will bring the result back to this conversation when it finishes. Do not poll it or resend this request; a different question can run alongside it.` }],
 					details: { ...job, status: "running" },
 				};
 			} catch (error) {
@@ -90,9 +90,9 @@ export function registerResearchTools(pi, jobs = researchJobs()) {
 		},
 	});
 	pi.registerTool(tool(WEB_AGENT, "Web Agent",
-		"Delegate a browser task to Aside: broad fresh web search, multi-site evidence collection, and work on signed-in sites. Give the whole browser task, scope, and needed evidence. Leave unrequested posts, messages, purchases, and other changes outside the task.",
+		"Delegate a browser task to Aside: broad fresh web search, multi-site evidence collection, and work on signed-in sites. Give the whole browser task, scope, and needed evidence. Leave unrequested posts, messages, purchases, and other changes outside the task. Separate tasks run in parallel, so start independent ones together.",
 		webParameters));
 	pi.registerTool(tool(DEEP_RESEARCH, "Deep Research",
-		"Ask ChatGPT Pro for deep research, independent judgment, synthesis, or diagnosis. Provide the question and optionally the exact files to send. Rubato packages and submits them and returns the result asynchronously. After a possible submission it recovers the same run, rather than resending.",
+		"Ask ChatGPT Pro for deep research, independent judgment, synthesis, or diagnosis. Provide the question and optionally the exact files to send. Rubato packages and submits them and returns the result asynchronously. After a possible submission it recovers the same run, rather than resending. Different questions each open their own conversation and can run at the same time; two or three at once is reliable.",
 		deepParameters));
 }
