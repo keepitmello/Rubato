@@ -4869,7 +4869,8 @@
   "Could not update Antigravity": "Antigravity 설정을 바꿀 수 없습니다",
   "Could not remove from Antigravity": "Antigravity에서 제거할 수 없습니다",
   "Settings update failed.": "설정을 저장할 수 없습니다.",
-  "Official agy binary path": "공식 agy 실행 파일 경로"
+  "Official agy binary path": "공식 agy 실행 파일 경로",
+  "Shown limits": "표시할 한도"
  },
  "templates": [
   [

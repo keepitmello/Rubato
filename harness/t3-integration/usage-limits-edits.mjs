@@ -4,8 +4,9 @@
 // one row per account under that provider's icon, read by `rubato auth usage --json`
 // (overlay/apps/server/src/usage/RubatoUsageLimits.ts, harness/scripts/rubato-usage.mjs).
 //
-// The page shows only long windows (weekly, monthly), and each provider's heading moves it
-// up or down or folds it away; the arrangement stays in this browser
+// The page shows long windows (weekly, monthly) and Gemini's five-hour quota by default. Each
+// provider's heading moves it up or down, folds it away, and switches each of its windows on or
+// off; each window's card moves it up or down within its provider. The arrangement stays in this browser
 // (overlay/apps/web/src/components/usage/rubatoUsageLayout.ts, with its meaning in
 // overlay/packages/shared/src/rubatoUsageLayout.ts, which the phone shares).
 //
@@ -113,6 +114,7 @@ const POOL_SECTION_NEW = [
   '  onMove,',
   '  canMoveUp = false,',
   '  canMoveDown = false,',
+  '  layout,',
   '}: {',
   '  readonly pool: LimitPool;',
   '  readonly now: number;',
@@ -121,11 +123,12 @@ const POOL_SECTION_NEW = [
   '  readonly onMove?: (delta: -1 | 1) => void;',
   '  readonly canMoveUp?: boolean;',
   '  readonly canMoveDown?: boolean;',
+  '  readonly layout: ReturnType<typeof useRubatoUsageLayout>;',
   '}) {',
   '  const color = barColor(pool.driver);',
   '  // Rubato rows can name a driver T3 does not ship (a Gemini API key → "gemini").',
   '  const label = providerClients.get(pool.driver)?.label ?? (pool.driver === "gemini" ? "Gemini API" : String(pool.driver));',
-  '  const windows = visibleLimitWindows(pool);',
+  '  const windows = layout.windowsOf(pool);',
   '  const m = useMessages();',
   '  return (',
   '    <section className="group/pool flex flex-col gap-3">',
@@ -155,6 +158,29 @@ const POOL_SECTION_NEW = [
   '          ) : null}',
   '        </button>',
   '        <span className="ms-auto flex items-center gap-0.5 opacity-0 transition-opacity group-hover/pool:opacity-100 focus-within:opacity-100">',
+  '          <Menu>',
+  '            <MenuTrigger',
+  '              render={<Button variant="ghost-muted" size="icon-xs" aria-label={`Choose ${label} limits`} />}',
+  '            >',
+  '              <SlidersHorizontalIcon aria-hidden />',
+  '            </MenuTrigger>',
+  '            <MenuPopup align="end">',
+  '              <MenuGroup>',
+  '                <MenuGroupLabel>Shown limits</MenuGroupLabel>',
+  '                {layout.windowChoicesOf(pool).map(({ window, shown }) => (',
+  '                  <MenuCheckboxItem',
+  '                    key={window.id}',
+  '                    variant="switch"',
+  '                    checked={shown}',
+  '                    closeOnClick={false}',
+  '                    onCheckedChange={(checked) => layout.showWindow(pool.driver, window.id, checked)}',
+  '                  >',
+  '                    {(pool.driver === "cursor" ? cursorUsageWindowDetails(window.id, pool, m)?.label : null) ?? window.label}',
+  '                  </MenuCheckboxItem>',
+  '                ))}',
+  '              </MenuGroup>',
+  '            </MenuPopup>',
+  '          </Menu>',
   '          <Button',
   '            variant="ghost-muted"',
   '            size="icon-xs"',
@@ -178,14 +204,66 @@ const POOL_SECTION_NEW = [
   '      {(collapsed ? [] : windows).map((window) => {',
 ].join('\n');
 
+// Each window's card, with buttons that move it within its provider.
+const CARD_OLD = [
+  "        return (",
+  "          <PoolWindowCard",
+  "            key={`${window.kind}:${window.id}`}",
+  "            pool={window}",
+  "            color={color}",
+  "            now={now}",
+  "            label={details?.label}",
+  "            description={details?.description}",
+  "          />",
+  "        );",
+].join('\n');
+
+const CARD_NEW = [
+  "        const order = windows.map((entry) => entry.id);",
+  "        const position = order.indexOf(window.id);",
+  "        return (",
+  "          <div key={`${window.kind}:${window.id}`} className=\"group/window relative\">",
+  "            <PoolWindowCard",
+  "              pool={window}",
+  "              color={color}",
+  "              now={now}",
+  "              label={details?.label}",
+  "              description={details?.description}",
+  "            />",
+  "            {windows.length > 1 ? (",
+  "              <span className=\"absolute end-2 top-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/window:opacity-100 focus-within:opacity-100\">",
+  "                <Button",
+  "                  variant=\"ghost-muted\"",
+  "                  size=\"icon-xs\"",
+  "                  disabled={position <= 0}",
+  "                  onClick={() => layout.moveWindow(pool.driver, order, window.id, -1)}",
+  "                  aria-label={`Move ${window.label} up`}",
+  "                >",
+  "                  <ChevronUpIcon aria-hidden />",
+  "                </Button>",
+  "                <Button",
+  "                  variant=\"ghost-muted\"",
+  "                  size=\"icon-xs\"",
+  "                  disabled={position >= order.length - 1}",
+  "                  onClick={() => layout.moveWindow(pool.driver, order, window.id, 1)}",
+  "                  aria-label={`Move ${window.label} down`}",
+  "                >",
+  "                  <ChevronDownIcon aria-hidden />",
+  "                </Button>",
+  "              </span>",
+  "            ) : null}",
+  "          </div>",
+  "        );",
+].join('\n');
+
 export const usageLimitsEdits = {
   'apps/web/src/components/usage/UsageLimitsPooled.tsx': [
     [
       'import { AlertTriangleIcon, ExternalLinkIcon, TicketIcon } from "lucide-react";',
-      'import {\n  AlertTriangleIcon,\n  ChevronDownIcon,\n  ChevronRightIcon,\n  ChevronUpIcon,\n  ExternalLinkIcon,\n  TicketIcon,\n} from "lucide-react";',
+      'import {\n  AlertTriangleIcon,\n  ChevronDownIcon,\n  ChevronRightIcon,\n  ChevronUpIcon,\n  ExternalLinkIcon,\n  SlidersHorizontalIcon,\n  TicketIcon,\n} from "lucide-react";',
       'replace',
     ],
-    ['} from "./UsageLimits";\n', '} from "./UsageLimits";\nimport { useRubatoUsageLayout, visibleLimitWindows } from "./rubatoUsageLayout";\n', 'replace'],
+    ['} from "./UsageLimits";\n', '} from "./UsageLimits";\nimport { useRubatoUsageLayout } from "./rubatoUsageLayout";\nimport { Menu, MenuCheckboxItem, MenuGroup, MenuGroupLabel, MenuPopup, MenuTrigger } from "../ui/menu";\n', 'replace'],
     [
       'import { T, useGT, useMessages } from "gt-react";',
       'import { T, useGT, useLocale, useMessages } from "gt-react";\nimport { paceForecast, paceForecastText, type PaceStage } from "@t3tools/shared/rubatoUsagePace";',
@@ -218,13 +296,14 @@ export const usageLimitsEdits = {
     ['function LegendRow({', PACE_FORECAST_LINE],
     ['  createContext,\n  Fragment,\n  type ReactNode,\n', '  createContext,\n  type CSSProperties,\n  Fragment,\n  type ReactNode,\n', 'replace'],
     [POOL_SECTION_OLD, POOL_SECTION_NEW, 'replace'],
+    [CARD_OLD, CARD_NEW, 'replace'],
     [
       '  const pools = collectLimitPools(collectLimitAccounts(presentations), now);',
       [
         '  const layout = useRubatoUsageLayout();',
         '  const pools = layout.arrange(',
         '    collectLimitPools(collectLimitAccounts(presentations), now).filter(',
-        '      (pool) => visibleLimitWindows(pool).length > 0,',
+        '      (pool) => layout.keepsPool(pool),',
         '    ),',
         '  );',
       ].join('\n'),
@@ -249,6 +328,7 @@ export const usageLimitsEdits = {
         '              }',
         '              canMoveUp={index > 0}',
         '              canMoveDown={index < pools.length - 1}',
+        '              layout={layout}',
         '            />',
       ].join('\n'),
       'replace',

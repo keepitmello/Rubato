@@ -5,21 +5,29 @@
 import {
   arrangePools,
   EMPTY_USAGE_LAYOUT,
+  hasWindowChoices,
+  limitWindowChoices,
   moveDriver,
+  moveWindow,
+  setWindowShown,
   toggleCollapsed,
+  visibleLimitWindows,
 } from "@t3tools/shared/rubatoUsageLayout";
+import type { LimitPool } from "@t3tools/shared/usageLimits";
 import * as Schema from "effect/Schema";
 import { useCallback } from "react";
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 
-export { arrangePools, moveDriver, toggleCollapsed, visibleLimitWindows } from "@t3tools/shared/rubatoUsageLayout";
+export { arrangePools, moveDriver, toggleCollapsed } from "@t3tools/shared/rubatoUsageLayout";
 
 export const RUBATO_USAGE_LAYOUT_KEY = "rubato.usageLimits.layout";
 
 const UsageLayout = Schema.Struct({
   order: Schema.Array(Schema.String),
   collapsed: Schema.Array(Schema.String),
+  windows: Schema.optionalKey(Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Boolean))),
+  windowOrder: Schema.optionalKey(Schema.Record(Schema.String, Schema.Array(Schema.String))),
 });
 
 export function useRubatoUsageLayout() {
@@ -39,5 +47,32 @@ export function useRubatoUsageLayout() {
     [setLayout],
   );
   const isCollapsed = useCallback((driver: string) => layout.collapsed.includes(driver), [layout.collapsed]);
-  return { arrange, move, toggle, isCollapsed };
+  const windowsOf = useCallback((pool: LimitPool) => visibleLimitWindows(pool, layout), [layout]);
+  const windowChoicesOf = useCallback((pool: LimitPool) => limitWindowChoices(pool, layout), [layout]);
+  /** A provider stays on the page while it shows a window, or after the person switched its windows. */
+  const keepsPool = useCallback(
+    (pool: LimitPool) => visibleLimitWindows(pool, layout).length > 0 || hasWindowChoices(layout, pool.driver),
+    [layout],
+  );
+  const showWindow = useCallback(
+    (driver: string, windowId: string, shown: boolean) =>
+      setLayout((current) => setWindowShown(current, driver, windowId, shown)),
+    [setLayout],
+  );
+  const moveWindowBy = useCallback(
+    (driver: string, visible: ReadonlyArray<string>, windowId: string, delta: -1 | 1) =>
+      setLayout((current) => moveWindow(current, driver, visible, windowId, delta)),
+    [setLayout],
+  );
+  return {
+    arrange,
+    move,
+    toggle,
+    isCollapsed,
+    windowsOf,
+    windowChoicesOf,
+    keepsPool,
+    showWindow,
+    moveWindow: moveWindowBy,
+  };
 }
