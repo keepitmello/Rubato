@@ -29,8 +29,8 @@ it("the folder is the configured one, else under the user's Rubato home", () => 
 
 it("each cut is its own file in the session's folder, the latest sorting last", async () => {
   const dir = await tempDir();
+  // Back to back, often within one millisecond: the later write still sorts last.
   await writeAgyCut("s-1", { throughTime: "2026-11-24T11:00:05.000Z" }, dir);
-  await new Promise((resolve) => setTimeout(resolve, 2));
   await writeAgyCut("s-1", { throughToolCallId: "call_1", batchEnd: "call_2" }, dir);
   const names = (await readdir(path.join(dir, "cuts", "s-1"))).toSorted();
   expect(names).toHaveLength(2);

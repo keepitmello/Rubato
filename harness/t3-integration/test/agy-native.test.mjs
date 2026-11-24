@@ -205,3 +205,24 @@ test('clearing a landed cut leaves a cut written between its read and its cleari
   await clearCut(dir, 's1', await readCut(dir, 's1'));
   assert.equal(await readCut(dir, 's1'), null);
 });
+
+test('cuts written in one millisecond land in the order they were written', async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'agy-native-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  for (let round = 0; round < 50; round++) {
+    await writeCut(dir, 's1', { throughTime: at(5) });
+    await writeCut(dir, 's1', { throughTime: at(1) });
+    const latest = await readCut(dir, 's1');
+    assert.deepEqual(latest.keep, { throughTime: at(1) });
+    await clearCut(dir, 's1', latest);
+  }
+});
+
+test('a waiting cut that cannot be read fails instead of passing as none', async (t) => {
+  const { dir, native, toClientLog } = await harness(t);
+  await mkdir(path.join(dir, 'cuts', 's1'), { recursive: true });
+  await writeFile(path.join(dir, 'cuts', 's1', '999999999999999-000000001-x.json'), '{ not json');
+  const prompt = { jsonrpc: '2.0', id: 9, method: 'session/prompt', params: { sessionId: 's1', prompt: [] } };
+  assert.equal(await native.fromClient(prompt), null);
+  assert.match(toClientLog.at(-1).error.message, /could not be read/);
+});

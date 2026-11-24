@@ -12,6 +12,8 @@ import path from "node:path";
 // agy-native.mjs's `writeCut` and `writeBatches`.
 
 export const AGY_NATIVE_DIR_ENV = "RUBATO_AGY_NATIVE_DIR";
+// This process's cut writes, so two within one millisecond still sort in order.
+let cutSequence = 0;
 /** What a step rewind's "continue" sends agy, which runs on from the kept tool results. */
 export const AGY_STEP_CONTINUE_TEXT = "Continue from the rewound step.";
 const SESSION_ID = /^[0-9A-Za-z][0-9A-Za-z._-]{0,127}$/;
@@ -42,7 +44,8 @@ export async function writeAgyCut(sessionId: string, keep: AgyCut, dir = agyNati
   if (!SESSION_ID.test(sessionId)) throw new Error(`Not an agy session id: ${sessionId}`);
   const id = randomUUID();
   // @effect-diagnostics-next-line globalDate:off -- a plain helper outside Effect; the name orders cuts.
-  const file = path.join(dir, "cuts", sessionId, `${String(Date.now()).padStart(15, "0")}-${id}.json`);
+  const name = `${String(Date.now()).padStart(15, "0")}-${String(++cutSequence).padStart(9, "0")}-${id}.json`;
+  const file = path.join(dir, "cuts", sessionId, name);
   await mkdir(path.dirname(file), { recursive: true });
   // @effect-diagnostics-next-line globalDate:off -- a plain helper outside Effect; only a unique name.
   const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;

@@ -27,8 +27,13 @@ function cutFolder(dir, sessionId) {
   if (!SESSION_ID.test(sessionId)) throw new Error(`Not an agy session id: ${sessionId}`);
   return path.join(dir, 'cuts', sessionId);
 }
-/** A cut's file name: later writes sort after earlier ones. */
-export const cutFileName = (now, id) => `${String(now).padStart(15, '0')}-${id}.json`;
+/**
+ * A cut's file name: later writes from one process sort after earlier ones, even within one
+ * millisecond (`sequence` counts this process's writes).
+ */
+export const cutFileName = (now, sequence, id) =>
+  `${String(now).padStart(15, '0')}-${String(sequence).padStart(9, '0')}-${id}.json`;
+let cutSequence = 0;
 
 async function writeJson(file, value) {
   await mkdir(path.dirname(file), { recursive: true });
@@ -53,18 +58,21 @@ export async function writeCut(dir, sessionId, keep) {
   if (typeof keep?.throughTime !== 'string' && typeof keep?.throughToolCallId !== 'string')
     throw new Error('A cut keeps through a time or a tool call.');
   const id = randomUUID();
-  return writeJson(path.join(cutFolder(dir, sessionId), cutFileName(Date.now(), id)),
+  return writeJson(path.join(cutFolder(dir, sessionId), cutFileName(Date.now(), ++cutSequence, id)),
     { sessionId, keep, id, writtenAt: new Date().toISOString() });
 }
-/** The session's latest cut and the cut files that stood when it was read; null when none waits. */
+/**
+ * The session's latest cut and the cut files that stood when it was read; null when none waits.
+ * A latest cut that cannot be read fails, rather than letting the session run on uncut.
+ */
 export async function readCut(dir, sessionId) {
   const folder = cutFolder(dir, sessionId);
   const names = (await readdir(folder).catch(() => [])).filter((name) => name.endsWith('.json')).toSorted();
-  for (let at = names.length - 1; at >= 0; at--) {
-    const cut = await readJson(path.join(folder, names[at])).catch(() => null);
-    if (cut) return { ...cut, files: names.slice(0, at + 1) };
-  }
-  return null;
+  if (!names.length) return null;
+  let cut;
+  try { cut = await readJson(path.join(folder, names.at(-1))); } catch {}
+  if (!cut?.keep) throw new Error(`The rewind waiting for this conversation could not be read (${names.at(-1)}).`);
+  return { ...cut, files: names };
 }
 /** Clears the files a landed cut was read with; a cut written since then stays. */
 export async function clearCut(dir, sessionId, landed) {
