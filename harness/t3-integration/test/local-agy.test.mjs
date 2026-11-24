@@ -8,6 +8,7 @@ import {
   linkLocalAgyProfileConfig,
   localAgyAgent,
   localAgyIsolated,
+  localAgyLoginOwner,
   localAgyModels,
   localAgySpawn,
   localAgyWithAgentArgs,
@@ -75,6 +76,10 @@ test('isolated local agy flag, agent args, and user config symlinks work for ext
   assert.equal(localAgyIsolated([]), false);
   assert.equal(localAgyIsolated([{ name: 'RUBATO_LOCAL_AGY_ISOLATED', value: '1' }]), true);
   assert.equal(localAgyIsolated([{ name: 'RUBATO_LOCAL_AGY_ISOLATED', value: 'true' }]), true);
+  // Another agent on an isolated login names the instance that holds the sign-in.
+  assert.equal(localAgyLoginOwner([]), undefined);
+  assert.equal(localAgyLoginOwner([{ name: 'RUBATO_LOCAL_AGY_LOGIN', value: ' agy-rubato-lead-sub ' }]), 'agy-rubato-lead-sub');
+  assert.equal(localAgyLoginOwner([{ name: 'RUBATO_LOCAL_AGY_LOGIN', value: { secret: 'x' } }]), undefined);
 
   const spawn = localAgyWithAgentArgs(
     { command: '/usr/bin/agy', args: ['acp', '--gemini-dir', '/tmp/p', '--app-data-dir', 'antigravity-acp'] },

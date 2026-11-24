@@ -2,11 +2,13 @@
 // (agy agents) run on them. One T3 Antigravity instance pairs one agy agent with one login.
 // Instances without RUBATO_LOCAL_AGY_ISOLATED all use the login the official agy CLI holds;
 // each isolated instance keeps its own Google profile (server RubatoLocalAgy.ts), as does a plain
-// T3 Antigravity instance that names no agy agent. So the lead
-// and another agent on the CLI login are one account with two system prompts, not two accounts.
+// T3 Antigravity instance that names no agy agent, unless RUBATO_LOCAL_AGY_LOGIN names the isolated
+// instance whose profile it runs on. So the lead and another agent on one login are one account
+// with two system prompts, not two accounts.
 
 const LOCAL_AGY_AGENT = "RUBATO_LOCAL_AGY_AGENT";
 const LOCAL_AGY_ISOLATED = "RUBATO_LOCAL_AGY_ISOLATED";
+export const LOCAL_AGY_LOGIN = "RUBATO_LOCAL_AGY_LOGIN";
 
 // A value may also be a secret reference; only plain strings name an agent or the isolated flag.
 type Environment = ReadonlyArray<{ readonly name: string; readonly value: unknown }> | undefined;
@@ -36,7 +38,7 @@ export interface AgyPrompt {
 export type AgyAccountState = "connected" | "checking" | "signin" | "absent" | "off";
 
 export interface AgyAccount {
-  /** "agy-cli" for the CLI login; the instance id for an isolated login. */
+  /** "agy-cli" for the CLI login; for an isolated login, the instance that holds the sign-in. */
   readonly key: string;
   readonly isolated: boolean;
   /** The isolated login's name; null for the CLI login, which the page names itself. */
@@ -56,6 +58,11 @@ const valueOf = (environment: Environment, name: string) => {
 /** Its own Google profile: flagged isolated, or a plain T3 Antigravity instance without an agy agent. */
 export function isIsolatedAgy(environment: Environment): boolean {
   return !valueOf(environment, LOCAL_AGY_AGENT) || /^(1|true)$/i.test(valueOf(environment, LOCAL_AGY_ISOLATED));
+}
+
+/** The isolated instance whose sign-in this one runs on: itself unless it names another. */
+export function agyLoginOwner(instanceId: string, environment: Environment): string {
+  return valueOf(environment, LOCAL_AGY_LOGIN) || instanceId;
 }
 
 function promptOf(instanceId: string, instance: AgyInstanceInput): AgyPrompt {
@@ -105,16 +112,27 @@ export function agyAccounts(
       prompts: cli,
     });
   }
+  // Each isolated login, at its first instance; the owner's prompt leads it and names it.
+  const logins = new Map<string, { owner: AgyPrompt | undefined; prompts: AgyPrompt[] }>();
   for (const [id, instance] of entries) {
     if (!isIsolatedAgy(instance.environment)) continue;
+    const key = agyLoginOwner(id, instance.environment);
+    const login = logins.get(key) ?? { owner: undefined, prompts: [] };
     const prompt = promptOf(id, instance);
+    if (id === key) login.owner = prompt;
+    else login.prompts.push(prompt);
+    logins.set(key, login);
+  }
+  for (const [key, login] of logins) {
+    const prompts = login.owner ? [login.owner, ...login.prompts] : login.prompts;
+    const holder = login.owner ?? prompts[0]!;
     accounts.push({
-      key: id,
+      key,
       isolated: true,
-      name: prompt.name,
-      state: isolatedState(prompt, live.get(id)),
-      models: modelsOf([prompt], live),
-      prompts: [prompt],
+      name: holder.name,
+      state: isolatedState(holder, live.get(holder.instanceId)),
+      models: modelsOf(prompts, live),
+      prompts,
     });
   }
   return accounts;

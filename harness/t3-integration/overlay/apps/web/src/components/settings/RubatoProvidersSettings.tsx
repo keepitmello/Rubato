@@ -54,6 +54,7 @@ const ANTIGRAVITY_ACP_NAV_ID = "antigravity-acp";
 const ANTIGRAVITY_DRIVER = "antigravity";
 const LOCAL_AGY_AGENT_ENV = "RUBATO_LOCAL_AGY_AGENT";
 const LOCAL_AGY_ISOLATED_ENV = "RUBATO_LOCAL_AGY_ISOLATED";
+const LOCAL_AGY_LOGIN_ENV = "RUBATO_LOCAL_AGY_LOGIN";
 
 // `rubato auth` names providers for the terminal; the page names what people pick.
 const DISPLAY_NAME: Record<string, string> = {
@@ -873,6 +874,17 @@ function nextAgyAccountSlot(existingIds: ReadonlySet<string>): { id: string; def
   return { id: `agy-rubato-lead-${suffix}`, defaultLabel: `Antigravity [${suffix}]` };
 }
 
+/** A free instance id for `agent` on the login `base` names: ASCII as typed, else its code points. */
+function agyAgentInstanceId(base: string, agent: string, existingIds: ReadonlySet<string>): string {
+  const ascii = agent.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+  const part = ascii || [...agent].map((char) => char.codePointAt(0)!.toString(36)).join("");
+  const stem = `${base}-${part}`.slice(0, 60);
+  if (!existingIds.has(stem)) return stem;
+  for (let index = 2; ; index += 1) {
+    if (!existingIds.has(`${stem}${index}`)) return `${stem}${index}`;
+  }
+}
+
 function AntigravityAcpDetail({
   environmentId,
   entries,
@@ -918,17 +930,20 @@ function AntigravityAcpDetail({
     }
   };
 
-  const removeAccount = async (id: string, name: string) => {
+  // An isolated login goes with the other agents that run on it; the sign-in's holder goes last.
+  const removeAccount = async (id: string, name: string, alsoIds: ReadonlyArray<string> = []) => {
     if (!(await confirm(`Remove ${name}?`))) return;
     setBusyId(id);
     try {
-      const result = await persistInstance({
-        operation: "remove",
-        instanceId: ProviderInstanceId.make(id),
-      });
-      if (result._tag !== "Success") {
-        reportError("Could not remove from Antigravity", "Settings update failed.");
-        return;
+      for (const instanceId of [...alsoIds, id]) {
+        const result = await persistInstance({
+          operation: "remove",
+          instanceId: ProviderInstanceId.make(instanceId),
+        });
+        if (result._tag !== "Success") {
+          reportError("Could not remove from Antigravity", "Settings update failed.");
+          return;
+        }
       }
       toastManager.add({ type: "info", title: `Removed ${name}` });
       onChanged();
@@ -986,6 +1001,53 @@ function AntigravityAcpDetail({
   };
 
   const accounts = agyAccounts(entries, liveById);
+  // Every agy agent some account runs; each account can add the ones it lacks.
+  const knownAgents = [
+    ...new Set(accounts.flatMap((account) => account.prompts.flatMap((prompt) => (prompt.agent ? [prompt.agent] : [])))),
+  ];
+
+  const addAgent = async (account: AgyAccount, agent: string) => {
+    const holder = entries.find(([id]) => id === (account.isolated ? account.key : account.prompts[0]?.instanceId))?.[1];
+    const holderConfig = holder?.config as { readonly binaryPath?: unknown } | undefined;
+    const resolvedBinary =
+      (typeof holderConfig?.binaryPath === "string" && holderConfig.binaryPath.trim()) || detectedBinary;
+    if (!resolvedBinary) {
+      reportError("Official agy path required", "Install official agy and enter its full path (for example ~/.local/bin/agy).");
+      return;
+    }
+    const instanceId = agyAgentInstanceId(account.isolated ? account.key : "agy", agent, existingIds);
+    setBusyId(instanceId);
+    try {
+      const result = await persistInstance({
+        operation: "create",
+        instanceId: ProviderInstanceId.make(instanceId),
+        instance: {
+          driver: ProviderDriverKind.make(ANTIGRAVITY_DRIVER),
+          displayName: agent,
+          enabled: true,
+          environment: [
+            { name: LOCAL_AGY_AGENT_ENV, value: agent, sensitive: false },
+            ...(account.isolated
+              ? [
+                  { name: LOCAL_AGY_ISOLATED_ENV, value: "1", sensitive: false },
+                  { name: LOCAL_AGY_LOGIN_ENV, value: account.key, sensitive: false },
+                ]
+              : []),
+          ],
+          config: { authMethod: "oauth-personal", binaryPath: resolvedBinary },
+        },
+      });
+      if (result._tag !== "Success") {
+        reportError("Could not update Antigravity", "Settings update failed.");
+        return;
+      }
+      onChanged();
+    } catch (error) {
+      reportError("Could not update Antigravity", error);
+    } finally {
+      setBusyId(null);
+    }
+  };
   const headerBadge: ConnectionState = agyAccountsSummary(accounts).connected > 0 ? "connected" : "absent";
   const promptCount = accounts.reduce((sum, account) => sum + account.prompts.length, 0);
 
@@ -1010,7 +1072,7 @@ function AntigravityAcpDetail({
               onCheckedChange={(checked) => void toggleEnabled(prompt.instanceId, instance, Boolean(checked))}
               aria-label={`Use ${prompt.name}`}
             />
-            {account.isolated ? null : (
+            {account.isolated && prompt.instanceId === account.key ? null : (
               <Button
                 size="icon-xs"
                 variant="ghost"
@@ -1047,7 +1109,10 @@ function AntigravityAcpDetail({
         ) : (
           accounts.map((account) => {
             const view = AGY_STATE_VIEW[account.state];
-            const isolatedId = account.isolated ? account.prompts[0]!.instanceId : null;
+            const isolatedId = account.isolated ? account.key : null;
+            const missingAgents = knownAgents.filter(
+              (agent) => !account.prompts.some((prompt) => prompt.agent === agent),
+            );
             const live = isolatedId ? liveById.get(isolatedId as ProviderInstanceId) : undefined;
             const name = account.name ?? "agy CLI login";
             return (
@@ -1073,7 +1138,15 @@ function AntigravityAcpDetail({
                         size="icon-xs"
                         variant="ghost"
                         disabled={busyId === isolatedId}
-                        onClick={() => void removeAccount(isolatedId, name)}
+                        onClick={() =>
+                          void removeAccount(
+                            isolatedId,
+                            name,
+                            account.prompts.flatMap((prompt) =>
+                              prompt.instanceId === isolatedId ? [] : [prompt.instanceId],
+                            ),
+                          )
+                        }
                         aria-label={`Remove ${name}`}
                       >
                         <Trash2Icon className="size-3.5" />
@@ -1082,6 +1155,27 @@ function AntigravityAcpDetail({
                   }
                 />
                 {account.prompts.map((prompt) => promptRow(account, prompt))}
+                {missingAgents.length > 0 ? (
+                  <SettingsRow
+                    title={<span className="pl-3 text-muted-foreground">Add system prompt</span>}
+                    control={
+                      <div className="flex flex-wrap items-center justify-end gap-1">
+                        {missingAgents.map((agent) => (
+                          <Button
+                            key={agent}
+                            size="xs"
+                            variant="outline"
+                            disabled={busyId !== null}
+                            onClick={() => void addAgent(account, agent)}
+                          >
+                            <PlusIcon className="size-3" />
+                            {agent}
+                          </Button>
+                        ))}
+                      </div>
+                    }
+                  />
+                ) : null}
                 {isolatedId && account.state !== "off" && live ? (
                   <ProviderAuthenticationSection
                     environmentId={environmentId}
@@ -1097,7 +1191,7 @@ function AntigravityAcpDetail({
         )}
         {promptCount > 1 ? (
           <p className="px-1 text-xs text-muted-foreground">
-            Each system prompt is its own group in the composer&apos;s model picker. Pick one there before starting a new thread.
+            The composer&apos;s model picker shows each account once and lets you pick its system prompt there before starting a new thread.
           </p>
         ) : null}
       </div>

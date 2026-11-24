@@ -146,7 +146,7 @@ export const localAgyEdits = {
   [driver]: [
     [
       'import { discoverAntigravitySkills, resolveAntigravityUserHome } from "./AntigravitySkills.ts";\n',
-      'import { hasLocalAgyAgent, linkLocalAgyProfileConfig, localAgyAgent, localAgyApprovalSpawn, localAgyIsolated, localAgyModels, localAgySpawn, localAgyWithAgentArgs } from "../RubatoLocalAgy.ts";\n',
+      'import { hasLocalAgyAgent, linkLocalAgyProfileConfig, localAgyAgent, localAgyApprovalSpawn, localAgyIsolated, localAgyLoginOwner, localAgyModels, localAgySpawn, localAgyWithAgentArgs } from "../RubatoLocalAgy.ts";\n',
     ],
     [
       '    const settings = { ...config, enabled } satisfies AntigravitySettings;\n',
@@ -154,6 +154,11 @@ export const localAgyEdits = {
       '    const localAgent = localAgyAgent(environment);\n' +
       '    const localIsolated = Boolean(localAgent) && localAgyIsolated(environment);\n' +
       '    const localExistingLogin = Boolean(localAgent) && !localIsolated;\n',
+      'replace',
+    ],
+    [
+      "    const profileDirectory = directories.profile;\n",
+      "    // Rubato: another agy agent on an isolated Google login keeps that login's profile, so the\n    // sign-in is shared and the usage page counts one account (RubatoLocalAgy.ts).\n    const loginOwner = localIsolated ? localAgyLoginOwner(environment) : undefined;\n    const profileDirectory =\n      loginOwner !== undefined && loginOwner !== instanceId\n        ? (yield* resolveAntigravityInstanceDirectories(\n            host.paths.stateDir,\n            loginOwner as typeof instanceId,\n          ).pipe(\n            Effect.provideService(Digest.Digest, digest),\n            Effect.provideService(Path.Path, path),\n            Effect.orElseSucceed(() => directories),\n          )).profile\n        : directories.profile;\n",
       'replace',
     ],
     [

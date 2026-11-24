@@ -43,11 +43,20 @@ it("offers the agy CLI login once however many system prompts run on it, and eac
       displayName: "Antigravity [sub]",
       environment: [agent("rubato-lead"), { name: "RUBATO_LOCAL_AGY_ISOLATED", value: "1" }],
     },
+    "agy-helena-sub": {
+      displayName: "헬레나",
+      environment: [
+        agent("헬레나"),
+        { name: "RUBATO_LOCAL_AGY_ISOLATED", value: "1" },
+        { name: "RUBATO_LOCAL_AGY_LOGIN", value: "agy-rubato-lead-sub" },
+      ],
+    },
   } as unknown as ServerSettings["providerInstances"];
   const accounts = companionModelAccounts(
     [
       { ...provider, instanceId: "agy-helena" as never, displayName: "헬레나" },
       { ...provider, instanceId: "agy-rubato-lead" as never, displayName: "Antigravity" },
+      { ...provider, instanceId: "agy-helena-sub" as never, displayName: "헬레나" },
       { ...provider, instanceId: "agy-rubato-lead-sub" as never, displayName: "Antigravity [sub]" },
     ],
     instances,

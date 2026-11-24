@@ -4859,7 +4859,6 @@
   "Uses the login your official agy CLI already holds.": "공식 agy CLI에 이미 로그인된 계정을 씁니다.",
   "Its own Google sign-in, sharing your Rubato skills and MCP tools.": "따로 로그인한 Google 계정입니다. Rubato 스킬과 MCP 도구를 함께 씁니다.",
   "System prompt": "시스템 프롬프트",
-  "Each system prompt is its own group in the composer's model picker. Pick one there before starting a new thread.": "시스템 프롬프트마다 입력창 모델 선택에 따로 묶여 나옵니다. 새 스레드를 시작하기 전에 거기서 고르세요.",
   "Account name (optional)": "계정 이름 (선택 사항)",
   "Add account": "계정 추가",
   "Add Google account": "Google 계정 추가하기",
@@ -4870,7 +4869,10 @@
   "Could not remove from Antigravity": "Antigravity에서 제거할 수 없습니다",
   "Settings update failed.": "설정을 저장할 수 없습니다.",
   "Official agy binary path": "공식 agy 실행 파일 경로",
-  "Shown limits": "표시할 한도"
+  "Shown limits": "표시할 한도",
+  "The composer's model picker shows each account once and lets you pick its system prompt there before starting a new thread.": "입력창 모델 선택에는 계정마다 하나씩 나옵니다. 새 스레드를 시작하기 전에 거기서 시스템 프롬프트를 고르세요.",
+  "Rubato lead": "루바토 리드",
+  "Add system prompt": "시스템 프롬프트 추가"
  },
  "templates": [
   [

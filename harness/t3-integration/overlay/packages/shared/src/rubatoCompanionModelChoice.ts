@@ -11,7 +11,9 @@
 // An account is a Google login, not an instance. Every instance without RUBATO_LOCAL_AGY_ISOLATED
 // uses the one login the agy CLI holds, whatever agy agent (system prompt) it names, and a
 // companion runs only that login with its own prompt (pi-server companion-agy.mjs). So those
-// instances are offered once, as "Antigravity", through the first that qualifies.
+// instances are offered once, as "Antigravity", through the first that qualifies. An isolated
+// instance that names another one's login (RUBATO_LOCAL_AGY_LOGIN) is that login again, so only the
+// instance holding the sign-in is offered.
 //
 //   Rubato default        → {}                                     (the request as before)
 //   Gemini on an account  → { modelSelection: { instanceId, model } }
@@ -23,6 +25,7 @@ import type { ServerProvider, ServerSettings } from "@t3tools/contracts";
 export const COMPANION_GEMINI_DEFAULT_MODEL = "gemini-4-hydrogen";
 const LOCAL_AGY_AGENT = "RUBATO_LOCAL_AGY_AGENT";
 const LOCAL_AGY_ISOLATED = "RUBATO_LOCAL_AGY_ISOLATED";
+const LOCAL_AGY_LOGIN = "RUBATO_LOCAL_AGY_LOGIN";
 /** What the pickers call the login the official agy CLI holds. */
 export const AGY_CLI_ACCOUNT_LABEL = "Antigravity";
 
@@ -73,6 +76,8 @@ export function companionModelAccounts(
     if (environmentValue(instances, provider.instanceId, LOCAL_AGY_AGENT) === null) continue;
     const isolated = /^(1|true)$/i.test(environmentValue(instances, provider.instanceId, LOCAL_AGY_ISOLATED) ?? "");
     if (!isolated && cliLoginOffered) continue;
+    const loginOwner = environmentValue(instances, provider.instanceId, LOCAL_AGY_LOGIN);
+    if (isolated && loginOwner !== null && loginOwner !== provider.instanceId) continue;
     const models = provider.models
       .filter((model) => isGemini(model.slug))
       .map((model) => ({ slug: model.slug, name: model.name }));

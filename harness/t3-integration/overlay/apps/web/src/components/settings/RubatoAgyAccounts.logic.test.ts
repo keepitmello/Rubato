@@ -44,6 +44,23 @@ describe("agyAccounts", () => {
     expect(agyAccountsSummary(accounts)).toEqual({ connected: 1, total: 3, off: false });
   });
 
+  it("puts another agent on an isolated login under that login's account", () => {
+    const login = { name: "RUBATO_LOCAL_AGY_LOGIN", value: "agy-rubato-lead-sub" };
+    const accounts = agyAccounts(
+      [
+        ["agy-helena-sub", { displayName: "헬레나", environment: [agent("헬레나"), isolated, login] }],
+        ["agy-rubato-lead-sub", { displayName: "Antigravity [sub]", environment: [agent("rubato-lead"), isolated] }],
+      ],
+      new Map([["agy-rubato-lead-sub", ready()]]),
+    );
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({ key: "agy-rubato-lead-sub", name: "Antigravity [sub]", state: "connected" });
+    expect(accounts[0]!.prompts.map((prompt) => [prompt.instanceId, prompt.agent])).toEqual([
+      ["agy-rubato-lead-sub", "rubato-lead"],
+      ["agy-helena-sub", "헬레나"],
+    ]);
+  });
+
   it("turns the CLI login off only when every system prompt on it is off", () => {
     const entries = [
       ["agy-rubato-lead", { environment: [agent("rubato-lead")], enabled: false }],

@@ -4,6 +4,8 @@ import path from "node:path";
 
 export const LOCAL_AGY_AGENT = "RUBATO_LOCAL_AGY_AGENT";
 export const LOCAL_AGY_ISOLATED = "RUBATO_LOCAL_AGY_ISOLATED";
+/** On an isolated instance: the instance whose Google login (profile) it runs on, instead of its own. */
+export const LOCAL_AGY_LOGIN = "RUBATO_LOCAL_AGY_LOGIN";
 export const LOCAL_AGY_APPROVAL_BRIDGE = "RUBATO_LOCAL_AGY_APPROVAL_BRIDGE";
 
 /** A provider instance's environment: a value is a string or a reference to a stored secret. */
@@ -33,6 +35,11 @@ export function localAgyAgent(environment: InstanceEnvironment) {
 export function localAgyIsolated(environment: InstanceEnvironment) {
   const raw = plainValue(environment, LOCAL_AGY_ISOLATED)?.toLowerCase();
   return raw === "1" || raw === "true";
+}
+
+/** The instance whose isolated login this one shares, or undefined for its own login. */
+export function localAgyLoginOwner(environment: InstanceEnvironment) {
+  return plainValue(environment, LOCAL_AGY_LOGIN);
 }
 
 export function localAgySpawn(
