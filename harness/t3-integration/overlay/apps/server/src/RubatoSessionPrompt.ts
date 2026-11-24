@@ -10,7 +10,8 @@ import { authorized } from "./RubatoServiceRoute.ts";
 import { ServerConfig } from "./config.ts";
 import { ServerSettingsService } from "./serverSettings.ts";
 import { localAgyAgent } from "./provider/RubatoLocalAgy.ts";
-import { savePrompt, readPrompt } from "./provider/agyPrompt.mjs";
+import { savePrompt } from "./provider/agyPrompt.mjs";
+import { agyThreadPrompt } from "./provider/RubatoAgyThreadPrompt.ts";
 import { listSessionPrompts, openSessionPromptFolder, resolveSessionPrompt } from "./provider/session-prompts.mjs";
 
 // The new-thread screen's "시스템 프롬프트" chip: a new conversation can open with another prompt
@@ -94,8 +95,11 @@ export const rubatoSessionPromptRouteLayer = Layer.unwrap(
         WHERE t.thread_id = ${threadId}`.pipe(Effect.orElseSucceed(() => []));
       if (active[0]?.driver === "antigravity") {
         const instance = active[0].provider_instance_id;
-        return yield* call(() => readPrompt(stateDir, instance, threadId), (prompt) =>
-          ({ started: true, prompt: prompt ? { label: prompt.label, source: prompt.source, createdAt: prompt.createdAt } : null }));
+        const instances = (yield* settings.getSettings.pipe(Effect.orElseSucceed(() => null)))?.providerInstances;
+        const config = Object.entries(instances ?? {}).find(([id]) => id === instance)?.[1];
+        const prompt = config && localAgyAgent(config.environment)
+          ? yield* agyThreadPrompt(sql, stateDir, threadId).pipe(Effect.orElseSucceed(() => null)) : null;
+        return HttpServerResponse.jsonUnsafe({ started: true, prompt: prompt ? { label: prompt.label, source: prompt.source, createdAt: prompt.createdAt } : null });
       }
       // `started: false` until the thread's first message opens a session; the badge asks again.
       const session = yield* piSessionOfThread(threadId).pipe(
@@ -130,7 +134,7 @@ export const rubatoSessionPromptRouteLayer = Layer.unwrap(
               const existing = yield* sql`SELECT 1 FROM orchestration_v2_projection_provider_threads WHERE thread_id = ${threadId} LIMIT 1`
                 .pipe(Effect.orElseSucceed(() => [true]));
               if (existing.length) return failure(409, "started", "This thread already started.");
-              return yield* call(async () => savePrompt(stateDir, instanceId, threadId, await resolveSessionPrompt(input)), (prompt) => ({ prompt }));
+              return yield* call(async () => savePrompt(stateDir, threadId, await resolveSessionPrompt(input)), (prompt) => ({ prompt }));
             }
           }
           return yield* handle(input);

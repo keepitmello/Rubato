@@ -14,6 +14,8 @@
 export const sessionPromptOverlays = [
   'apps/server/src/provider/agyPrompt.mjs',
   'apps/server/src/provider/agyPrompt.d.mts',
+  'apps/server/src/provider/RubatoAgyThreadPrompt.ts',
+  'apps/server/src/provider/RubatoAgyThreadPrompt.test.ts',
   'apps/server/src/provider/session-prompts.mjs',
   'apps/server/src/provider/session-prompts.d.mts',
   'apps/server/src/RubatoSessionPrompt.ts',

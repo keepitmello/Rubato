@@ -1228,9 +1228,7 @@ export async function applyIntegration({t3,check=false,remove=false}) {
       if (!recorded && current!==original && current!==next) throw new Error(`Partial external edit in T3 target: ${relative}`);
     } else {
       original = priorOf(relative)?.original ?? null;
-      const source = relative === 'apps/server/src/provider/session-prompts.mjs'
-        ? path.join(root,'src/session-prompts.mjs') : path.join(root,'overlay',relative);
-      next = await readFile(source,fileEncoding(relative));
+      next = await readFile(path.join(root,'overlay',relative),fileEncoding(relative));
       if (current!==null && !equalContent(current,next) && hash(current)!==priorOf(relative)?.installedHash)
         throw new Error(`Refusing to overwrite a different provider file: ${relative}`);
     }

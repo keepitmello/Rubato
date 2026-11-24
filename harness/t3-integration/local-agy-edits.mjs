@@ -147,13 +147,17 @@ export const localAgyEdits = {
     [
       'import { discoverAntigravitySkills, resolveAntigravityUserHome } from "./AntigravitySkills.ts";\n',
       'import { AgentScopeThreadId } from "@t3tools/shared/AgentScope";\n' +
-      'import { installPromptAgent, readPrompt, verifyProfileAgent } from "../agyPrompt.mjs";\n' +
+      'import * as SqlClient from "effect/sql/SqlClient";\n' +
+      'import * as Option from "effect/Option";\n' +
+      'import { agyThreadPrompt, AgyPromptFileError } from "../RubatoAgyThreadPrompt.ts";\n' +
+      'import { installPromptAgent, verifyProfileAgent } from "../agyPrompt.mjs";\n' +
       'import { hasLocalAgyAgent, linkLocalAgyProfileConfig, localAgyAgent, localAgyApprovalSpawn, localAgyIsolated, localAgyLoginOwner, localAgyModels, localAgySpawn, localAgyWithAgentArgs } from "../RubatoLocalAgy.ts";\n',
     ],
     [
       '    const settings = { ...config, enabled } satisfies AntigravitySettings;\n',
       '    const settings = { ...config, enabled } satisfies AntigravitySettings;\n' +
       '    const localAgent = localAgyAgent(environment);\n' +
+      '    const promptSql = localAgent ? Option.getOrUndefined(yield* Effect.serviceOption(SqlClient.SqlClient)) : undefined;\n' +
       '    const localIsolated = Boolean(localAgent) && localAgyIsolated(environment);\n' +
       '    const localExistingLogin = Boolean(localAgent) && !localIsolated;\n',
       'replace',
@@ -297,14 +301,14 @@ export const localAgyEdits = {
       '      const { processEnvironment: threadEnvironment, sessionSystemPromptAppend, ...runtimeInput } = input;\n', 'replace'],
     ['        ...runtimeInput,\n', '        ...runtimeInput,\n        ...(!promptAgent && sessionSystemPromptAppend !== undefined ? { sessionSystemPromptAppend } : {}),\n', 'replace'],
     ['      const { executable, spawn } = yield* prepareSpawn(\n', `      const appThread = yield* AgentScopeThreadId;
-      const promptAgent = localAgent && appThread
-        ? yield* Effect.tryPromise({
-            try: async () => {
-              const prompt = await readPrompt(host.paths.stateDir, instanceId, appThread);
-              return prompt ? installPromptAgent(userHome, prompt.text) : undefined;
-            },
-            catch: (cause) => new ProviderSetupError({ instanceId, operation: "start", detail: "Could not prepare the conversation's agy prompt.", cause }),
-          })
+      if (localAgent && appThread && !promptSql) {
+        return yield* new ProviderSetupError({ instanceId, operation: "start", detail: "The conversation prompt database is unavailable." });
+      }
+      const promptAgent = promptSql && appThread
+        ? yield* agyThreadPrompt(promptSql, host.paths.stateDir, appThread).pipe(
+            Effect.flatMap((prompt) => prompt ? Effect.tryPromise({ try: () => installPromptAgent(userHome, prompt.text), catch: (cause) => new AgyPromptFileError({ cause }) }) : Effect.undefined),
+            Effect.mapError((cause) => new ProviderSetupError({ instanceId, operation: "start", detail: "Could not prepare the conversation's agy prompt.", cause })),
+          )
         : undefined;
 `],
     ['          : { ...processEnvironment, ...threadEnvironment },\n', '          : { ...processEnvironment, ...threadEnvironment },\n        promptAgent,\n', 'replace'],

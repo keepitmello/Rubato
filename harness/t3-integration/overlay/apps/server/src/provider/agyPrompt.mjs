@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export const GENERATED_MARK =
@@ -16,17 +16,17 @@ export function agentHeader(name, description, generated = false) {
 }
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
-const recordFile = (state, instance, thread) =>
-  path.join(state, "rubato-agy-prompts", hash(JSON.stringify([instance, thread])) + ".json");
+const recordFile = (state, thread) =>
+  path.join(state, "rubato-agy-prompts", hash(thread) + ".json");
 
 // Snapshot at prepare. The state directory belongs to this T3 environment, not to a Google login.
-export async function savePrompt(state, instance, thread, prompt) {
-  const file = recordFile(state, instance, thread);
+export async function savePrompt(state, thread, prompt) {
+  const file = recordFile(state, thread);
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   const value = { ...prompt, createdAt: new Date().toISOString() };
   await writeFile(file, JSON.stringify(value), { flag: "wx", mode: 0o600 }).catch(async error => {
     if (error.code !== "EEXIST") throw error;
-    const saved = await readPrompt(state, instance, thread);
+    const saved = await readPrompt(state, thread);
     if (saved.text !== prompt.text || saved.label !== prompt.label || saved.source !== prompt.source)
       throw new Error("This conversation already has a different prompt.");
     value.createdAt = saved.createdAt;
@@ -35,13 +35,13 @@ export async function savePrompt(state, instance, thread, prompt) {
   return summary;
 }
 
-export async function readPrompt(state, instance, thread) {
-  try { return JSON.parse(await readFile(recordFile(state, instance, thread), "utf8")); }
+export async function readPrompt(state, thread) {
+  try { return JSON.parse(await readFile(recordFile(state, thread), "utf8")); }
   catch (error) { if (error.code === "ENOENT") return null; throw error; }
 }
 
 // Use the runtime's real home; isolated profiles link this directory before ACP starts.
-// Never rewrite an existing file, including one whose owner removed the generated mark.
+// Refresh our generated header without treating a mark in someone's prompt body as ownership.
 export async function installPromptAgent(home, text) {
   const name = `rubato-prompt-${hash(text)}`;
   const file = path.join(home, ".gemini", "config", "agents", `${name}.md`);
@@ -49,8 +49,16 @@ export async function installPromptAgent(home, text) {
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, content, { flag: "wx", mode: 0o600 }).catch(async error => {
     if (error.code !== "EEXIST") throw error;
-    if (await readFile(file, "utf8") !== content)
+    const current = await readFile(file, "utf8");
+    if (current === content) return;
+    const header = current.split(/\r?\n---\r?\n/, 1)[0];
+    if (!(await lstat(file)).isFile() || !header.startsWith("---\n") || !header.split(/\r?\n/).includes(`# ${GENERATED_MARK}`))
       throw new Error(`The agy agent ${name} belongs to another file.`);
+    const temp = `${file}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temp, content, { flag: "wx", mode: 0o600 });
+      await rename(temp, file);
+    } finally { await rm(temp, { force: true }); }
   });
   return name;
 }
