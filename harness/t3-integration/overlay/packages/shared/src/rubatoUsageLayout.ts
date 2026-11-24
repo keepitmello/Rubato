@@ -18,6 +18,35 @@ export interface UsageLayout {
 
 export const EMPTY_USAGE_LAYOUT: UsageLayout = { order: [], collapsed: [] };
 
+/** A stored arrangement, or undefined when it is not one; unreadable entries are dropped. */
+export function parseUsageLayout(raw: unknown): UsageLayout | undefined {
+  const value = raw as Record<string, unknown> | null | undefined;
+  if (!value || !Array.isArray(value.order) || !Array.isArray(value.collapsed)) return undefined;
+  const strings = (values: ReadonlyArray<unknown>) =>
+    values.filter((entry): entry is string => typeof entry === "string");
+  const records = <T>(input: unknown, read: (entry: unknown) => T | undefined) => {
+    if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+    const out: Record<string, T> = {};
+    for (const [key, entry] of Object.entries(input)) {
+      const parsed = read(entry);
+      if (parsed !== undefined) out[key] = parsed;
+    }
+    return out;
+  };
+  const windows = records(value.windows, (entry) =>
+    records(entry, (shown) => (typeof shown === "boolean" ? shown : undefined)),
+  );
+  const windowOrder = records(value.windowOrder, (entry) =>
+    Array.isArray(entry) ? strings(entry) : undefined,
+  );
+  return {
+    order: strings(value.order),
+    collapsed: strings(value.collapsed),
+    ...(windows ? { windows } : {}),
+    ...(windowOrder ? { windowOrder } : {}),
+  };
+}
+
 /** Shown until switched off: the long windows and Gemini's shared five-hour quota. */
 function shownByDefault(driver: string, window: Pick<LimitPoolWindow, "id" | "kind">) {
   return window.kind !== "session" || (driver === "antigravity" && window.id === "gemini-5h");

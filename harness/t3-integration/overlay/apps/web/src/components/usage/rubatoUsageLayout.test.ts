@@ -7,6 +7,7 @@ import {
   hasWindowChoices,
   limitWindowChoices,
   moveWindow,
+  parseUsageLayout,
   setWindowShown,
   visibleLimitWindows,
 } from "@t3tools/shared/rubatoUsageLayout";
@@ -71,6 +72,25 @@ describe("rubatoUsageLayout", () => {
       const shownAgain = setWindowShown(moved, "antigravity", "gemini-5h", true);
       expect(ids(visibleLimitWindows(antigravity, shownAgain))).toEqual(["3p-weekly", "gemini-weekly", "gemini-5h"]);
       expect(moveWindow(moved, "antigravity", ["3p-weekly", "gemini-weekly"], "3p-weekly", -1)).toEqual(moved);
+    });
+  });
+
+  it("reads a stored arrangement, keeping what it can read", () => {
+    expect(parseUsageLayout(undefined)).toBeUndefined();
+    expect(parseUsageLayout({ order: ["codex"] })).toBeUndefined();
+    expect(parseUsageLayout({ order: ["codex", 3], collapsed: [] })).toEqual({ order: ["codex"], collapsed: [] });
+    expect(
+      parseUsageLayout({
+        order: [],
+        collapsed: ["grok"],
+        windows: { antigravity: { "gemini-5h": false, broken: "yes" }, bad: 1 },
+        windowOrder: { antigravity: ["3p-weekly", 2], bad: "x" },
+      }),
+    ).toEqual({
+      order: [],
+      collapsed: ["grok"],
+      windows: { antigravity: { "gemini-5h": false } },
+      windowOrder: { antigravity: ["3p-weekly"] },
     });
   });
 
