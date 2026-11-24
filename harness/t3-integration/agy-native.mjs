@@ -23,6 +23,12 @@ function sessionFile(dir, kind, sessionId) {
   if (!SESSION_ID.test(sessionId)) throw new Error(`Not an agy session id: ${sessionId}`);
   return path.join(dir, kind, `${sessionId}.json`);
 }
+function cutFolder(dir, sessionId) {
+  if (!SESSION_ID.test(sessionId)) throw new Error(`Not an agy session id: ${sessionId}`);
+  return path.join(dir, 'cuts', sessionId);
+}
+/** A cut's file name: later writes sort after earlier ones. */
+export const cutFileName = (now, id) => `${String(now).padStart(15, '0')}-${id}.json`;
 
 async function writeJson(file, value) {
   await mkdir(path.dirname(file), { recursive: true });
@@ -39,22 +45,31 @@ async function readJson(file) {
 /**
  * A cut keeps the session up to one point: `{ throughTime }` keeps every step made by then (the end
  * of a turn that stays), `{ throughToolCallId, batchEnd }` keeps through the batch that tool call
- * is in, which must end at `batchEnd`, the call the GUI cut after. A later cut replaces an earlier
- * one that has not landed; each carries its own id, so landing one never clears a newer one.
+ * is in, which must end at `batchEnd`, the call the GUI cut after. Each write is its own file in
+ * the session's folder and the latest one counts, so landing one clears only the files it saw
+ * and never a cut written meanwhile.
  */
 export async function writeCut(dir, sessionId, keep) {
   if (typeof keep?.throughTime !== 'string' && typeof keep?.throughToolCallId !== 'string')
     throw new Error('A cut keeps through a time or a tool call.');
-  return writeJson(sessionFile(dir, 'cuts', sessionId),
-    { sessionId, keep, id: randomUUID(), writtenAt: new Date().toISOString() });
+  const id = randomUUID();
+  return writeJson(path.join(cutFolder(dir, sessionId), cutFileName(Date.now(), id)),
+    { sessionId, keep, id, writtenAt: new Date().toISOString() });
 }
-export const readCut = async (dir, sessionId) => readJson(sessionFile(dir, 'cuts', sessionId));
-/** Clears the session's cut if it is still `landed` (by its id); a newer cut stays. */
+/** The session's latest cut and the cut files that stood when it was read; null when none waits. */
+export async function readCut(dir, sessionId) {
+  const folder = cutFolder(dir, sessionId);
+  const names = (await readdir(folder).catch(() => [])).filter((name) => name.endsWith('.json')).toSorted();
+  for (let at = names.length - 1; at >= 0; at--) {
+    const cut = await readJson(path.join(folder, names[at])).catch(() => null);
+    if (cut) return { ...cut, files: names.slice(0, at + 1) };
+  }
+  return null;
+}
+/** Clears the files a landed cut was read with; a cut written since then stays. */
 export async function clearCut(dir, sessionId, landed) {
-  const current = await readCut(dir, sessionId);
-  if (current && landed && current.id !== landed.id) return false;
-  await rm(sessionFile(dir, 'cuts', sessionId), { force: true });
-  return true;
+  const folder = cutFolder(dir, sessionId);
+  await Promise.all((landed?.files ?? []).map((name) => rm(path.join(folder, name), { force: true })));
 }
 
 export const writeBatches = async (dir, sessionId, batches) =>
@@ -238,7 +253,7 @@ export function createAgyNative({ dir, logDir, pid, toAgent, toClient, prefix,
         open.add(sessionId);
         await replaySettings(sessionId);
       }
-      if (await clearCut(dir, sessionId, cut)) return;
+      await clearCut(dir, sessionId, cut);
     }
   });
 

@@ -113,6 +113,9 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
       const end = yield* Effect.promise(() => agyBatchEnd(sessionId, toolCallId));
       if (end === undefined)
         return yield* refuse("engine-refused", "Antigravity has not reported this step's batch yet. Open the thread and try again.");
+      // The thread must show the batch's last call: the rows hidden and the files restored land there.
+      if (!projection.turnItems.some((candidate) => candidate.runId === item.runId && candidate.nativeItemRef?.nativeId === end))
+        return yield* refuse("engine-refused", "This step's batch ends at a call this thread does not show.");
       engine = {
         batch: async () => [toolCallId, end],
         rewindToStep: () => writeAgyCut(sessionId, { throughToolCallId: toolCallId, batchEnd: end }),

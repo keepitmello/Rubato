@@ -2,7 +2,7 @@
 // The GUI's half of rewind on agy's own store: the files it leaves for the approval bridge
 // (harness/t3-integration/agy-native.mjs reads `cuts/<session>.json` and writes
 // `batches/<session>.json`), and how a session shows it rewinds natively.
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -27,11 +27,14 @@ it("the folder is the configured one, else under the user's Rubato home", () => 
   expect(agyNativeDir({})).toBe(path.join(os.homedir(), ".rubato", "agy-native"));
 });
 
-it("a cut is the session's file the bridge reads, and a later one replaces it", async () => {
+it("each cut is its own file in the session's folder, the latest sorting last", async () => {
   const dir = await tempDir();
   await writeAgyCut("s-1", { throughTime: "2026-11-24T11:00:05.000Z" }, dir);
+  await new Promise((resolve) => setTimeout(resolve, 2));
   await writeAgyCut("s-1", { throughToolCallId: "call_1", batchEnd: "call_2" }, dir);
-  const saved = JSON.parse(await readFile(path.join(dir, "cuts", "s-1.json"), "utf8"));
+  const names = (await readdir(path.join(dir, "cuts", "s-1"))).toSorted();
+  expect(names).toHaveLength(2);
+  const saved = JSON.parse(await readFile(path.join(dir, "cuts", "s-1", names[1]!), "utf8"));
   expect(saved).toMatchObject({ sessionId: "s-1", keep: { throughToolCallId: "call_1", batchEnd: "call_2" } });
   expect(typeof saved.id).toBe("string");
   await expect(writeAgyCut("../escape", { throughTime: "x" }, dir)).rejects.toThrow(/Not an agy session id/);
@@ -68,6 +71,7 @@ it("the adapter's cut keeps the session through a turn's end", async () => {
     if (previous === undefined) delete process.env.RUBATO_AGY_NATIVE_DIR;
     else process.env.RUBATO_AGY_NATIVE_DIR = previous;
   }
-  const saved = JSON.parse(await readFile(path.join(dir, "cuts", "s-3.json"), "utf8"));
+  const [name] = await readdir(path.join(dir, "cuts", "s-3"));
+  const saved = JSON.parse(await readFile(path.join(dir, "cuts", "s-3", name!), "utf8"));
   expect(saved.keep).toEqual({ throughTime: "2026-11-24T11:00:05.000Z" });
 });

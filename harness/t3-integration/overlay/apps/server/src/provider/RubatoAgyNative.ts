@@ -21,7 +21,7 @@ export function agyNativeDir(environment: NodeJS.ProcessEnv = process.env): stri
   return configured || path.join(os.homedir(), ".rubato", "agy-native");
 }
 
-function sessionFile(kind: "cuts" | "batches", sessionId: string, dir: string): string {
+function sessionFile(kind: "batches", sessionId: string, dir: string): string {
   if (!SESSION_ID.test(sessionId)) throw new Error(`Not an agy session id: ${sessionId}`);
   return path.join(dir, kind, `${sessionId}.json`);
 }
@@ -34,16 +34,22 @@ export type AgyCut =
   | { readonly throughTime: string }
   | { readonly throughToolCallId: string; readonly batchEnd: string };
 
-/** Keeps the agy session through `keep` from its next load, resume, fork or prompt on; a later cut replaces it. */
+/**
+ * Keeps the agy session through `keep` from its next load, resume, fork or prompt on. Each cut is
+ * its own file in the session's folder, named so a later one sorts last and counts.
+ */
 export async function writeAgyCut(sessionId: string, keep: AgyCut, dir = agyNativeDir()): Promise<void> {
-  const file = sessionFile("cuts", sessionId, dir);
+  if (!SESSION_ID.test(sessionId)) throw new Error(`Not an agy session id: ${sessionId}`);
+  const id = randomUUID();
+  // @effect-diagnostics-next-line globalDate:off -- a plain helper outside Effect; the name orders cuts.
+  const file = path.join(dir, "cuts", sessionId, `${String(Date.now()).padStart(15, "0")}-${id}.json`);
   await mkdir(path.dirname(file), { recursive: true });
   // @effect-diagnostics-next-line globalDate:off -- a plain helper outside Effect; only a unique name.
   const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
   await writeFile(
     temporary,
     // @effect-diagnostics-next-line globalDate:off -- read by people, not by the bridge.
-    `${JSON.stringify({ sessionId, keep, id: randomUUID(), writtenAt: new Date().toISOString() })}\n`,
+    `${JSON.stringify({ sessionId, keep, id, writtenAt: new Date().toISOString() })}\n`,
     { mode: 0o600 },
   );
   await rename(temporary, file);

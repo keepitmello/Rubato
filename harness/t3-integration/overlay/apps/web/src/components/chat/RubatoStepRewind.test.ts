@@ -138,6 +138,11 @@ describe("step rewind on V2 rows", () => {
     expect(rewindOffered({ ...thread, nativeAgyThreads: sessions(true) }, at, agy)).toBe(true);
     expect(rewindOffered({ ...thread, nativeAgyThreads: sessions(false) }, at, agy)).toBe(false);
     expect(rewindOffered(null, at, agy)).toBe(false);
+    // A provider thread that arrives after its session still counts once it is there.
+    const providerSessions = [{ id: "ps-agy", capabilities: { checkpointing: { providerCanRollbackConversation: true } } }];
+    expect(nativeAgyThreadsOf({ providerThreads: [], providerSessions }).has("pt-agy")).toBe(false);
+    expect(nativeAgyThreadsOf({ providerThreads: [{ id: "pt-agy", driver: "antigravity", providerSessionId: "ps-agy" }],
+      providerSessions }).has("pt-agy")).toBe(true);
   });
 
   it("a reply rewinds to the run boundary through T3's revert", () => {

@@ -115,18 +115,18 @@ type ProviderRecords = {
     readonly capabilities: { readonly checkpointing: { readonly providerCanRollbackConversation: boolean } };
   }>;
 };
-const nativeAgyCache = new WeakMap<object, ReadonlySet<string>>();
-/** The agy provider threads whose session negotiated native rewind; the same set while the records stay. */
+const nativeAgyCache = new WeakMap<object, { readonly threads: object; readonly native: ReadonlySet<string> }>();
+/** The agy provider threads whose session negotiated native rewind; the same set while both records stay. */
 export function nativeAgyThreadsOf(records: ProviderRecords): ReadonlySet<string> {
   const cached = nativeAgyCache.get(records.providerSessions);
-  if (cached) return cached;
+  if (cached?.threads === records.providerThreads) return cached.native;
   const native = new Set(records.providerSessions
     .filter((session) => session.capabilities.checkpointing.providerCanRollbackConversation)
     .map((session) => session.id));
   const threads = new Set(records.providerThreads
     .filter((thread) => thread.driver === AGY_DRIVER && thread.providerSessionId !== null && native.has(thread.providerSessionId))
     .map((thread) => thread.id));
-  nativeAgyCache.set(records.providerSessions, threads);
+  nativeAgyCache.set(records.providerSessions, { threads: records.providerThreads, native: threads });
   return threads;
 }
 

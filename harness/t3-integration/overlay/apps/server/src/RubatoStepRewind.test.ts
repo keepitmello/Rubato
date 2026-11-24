@@ -184,6 +184,13 @@ it("an agy step whose batch the bridge has not reported is refused before anythi
   expect(((await response.json()) as { error: { code: string } }).error.code).toBe("engine-refused");
   expect({ cuts: state.agyCuts, effects: f.effects }).toEqual({ cuts: [], effects: [] });
 });
+it("an agy batch that ends at a call the thread does not show is refused before anything moves", async () => {
+  const f = fixture({ agy: true, agyBatchEnd: "unseen-call", later: true });
+  const response = await f.request();
+  expect(response.status).toBe(409);
+  expect(((await response.json()) as { error: { message: string } }).error.message).toMatch(/does not show/);
+  expect({ cuts: state.agyCuts, effects: f.effects }).toEqual({ cuts: [], effects: [] });
+});
 it("an agy session that did not negotiate native rewind is refused before anything moves", async () => {
   const f = fixture({ agy: true, agyNative: false });
   const response = await f.request();

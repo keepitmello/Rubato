@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import {
-  agyLogDirectory, batchEnd, createAgyNative, keptThrough, languageServerPort, readCut, toolBatches,
+  agyLogDirectory, batchEnd, clearCut, createAgyNative, keptThrough, languageServerPort, readCut, toolBatches,
   writeBatches, writeCut,
 } from '../agy-native.mjs';
 
@@ -191,4 +191,17 @@ test('a reply\'s end reaches the client only after its batches are saved', async
   const usage = { jsonrpc: '2.0', method: 'session/update', params: { sessionId: 's1', update: { sessionUpdate: 'usage_update' } } };
   assert.equal(await h.native.fromAgent(usage), usage);
   assert.equal(await batchEnd(h.dir, 's1', 'a'), 'b');
+});
+
+test('clearing a landed cut leaves a cut written between its read and its clearing', async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'agy-native-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await writeCut(dir, 's1', { throughTime: at(5) });
+  const landed = await readCut(dir, 's1');
+  await new Promise((resolve) => setTimeout(resolve, 2));
+  await writeCut(dir, 's1', { throughTime: at(1) });
+  await clearCut(dir, 's1', landed);
+  assert.deepEqual((await readCut(dir, 's1'))?.keep, { throughTime: at(1) });
+  await clearCut(dir, 's1', await readCut(dir, 's1'));
+  assert.equal(await readCut(dir, 's1'), null);
 });
