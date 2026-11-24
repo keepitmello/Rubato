@@ -20,7 +20,8 @@
  *
  * An Antigravity step (its native ref is agy's tool call) rewinds on agy's own store: the thread's
  * agy session gets a cut through the step's batch, which the approval bridge lands before the
- * session's next turn (RubatoAgyNative.ts), and the batch is the one the bridge last saw agy make.
+ * session's next turn (RubatoAgyNative.ts). The batch is the one the bridge saw agy make; a step
+ * whose batch it has not reported is refused, and the bridge refuses a cut whose batch ends elsewhere.
  * Only a session that negotiated native rewind through the bridge takes one. Continue sends the
  * same text as an ordinary message, from which agy runs on.
  */
@@ -108,9 +109,13 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
     let engine: StepEngine;
     if (driver === AGY_DRIVER) {
       const sessionId = yield* agySessionOf(projection, item.providerThreadId ?? run.providerThreadId ?? null);
+      // The rows hidden and the steps agy keeps must end at the same call, so an unknown batch refuses.
+      const end = yield* Effect.promise(() => agyBatchEnd(sessionId, toolCallId));
+      if (end === undefined)
+        return yield* refuse("engine-refused", "Antigravity has not reported this step's batch yet. Open the thread and try again.");
       engine = {
-        batch: async () => [toolCallId, await agyBatchEnd(sessionId, toolCallId)],
-        rewindToStep: () => writeAgyCut(sessionId, { throughToolCallId: toolCallId }),
+        batch: async () => [toolCallId, end],
+        rewindToStep: () => writeAgyCut(sessionId, { throughToolCallId: toolCallId, batchEnd: end }),
       };
     } else {
       const session = yield* piSessionOfThread(threadId).pipe(Effect.mapError((cause) => refuse("no-session", describe(cause))));

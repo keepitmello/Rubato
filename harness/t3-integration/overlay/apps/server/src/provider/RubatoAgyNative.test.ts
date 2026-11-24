@@ -30,19 +30,20 @@ it("the folder is the configured one, else under the user's Rubato home", () => 
 it("a cut is the session's file the bridge reads, and a later one replaces it", async () => {
   const dir = await tempDir();
   await writeAgyCut("s-1", { throughTime: "2026-11-24T11:00:05.000Z" }, dir);
-  await writeAgyCut("s-1", { throughToolCallId: "call_1" }, dir);
+  await writeAgyCut("s-1", { throughToolCallId: "call_1", batchEnd: "call_2" }, dir);
   const saved = JSON.parse(await readFile(path.join(dir, "cuts", "s-1.json"), "utf8"));
-  expect(saved).toMatchObject({ sessionId: "s-1", keep: { throughToolCallId: "call_1" } });
+  expect(saved).toMatchObject({ sessionId: "s-1", keep: { throughToolCallId: "call_1", batchEnd: "call_2" } });
+  expect(typeof saved.id).toBe("string");
   await expect(writeAgyCut("../escape", { throughTime: "x" }, dir)).rejects.toThrow(/Not an agy session id/);
 });
 
-it("a batch end is the bridge's answer, or the call itself", async () => {
+it("a batch end is the bridge's answer, and unknown otherwise", async () => {
   const dir = await tempDir();
   await mkdir(path.join(dir, "batches"), { recursive: true });
   await writeFile(path.join(dir, "batches", "s-1.json"), JSON.stringify({ batches: { a: "b", b: "b" } }));
   expect(await agyBatchEnd("s-1", "a", dir)).toBe("b");
-  expect(await agyBatchEnd("s-1", "c", dir)).toBe("c");
-  expect(await agyBatchEnd("s-2", "a", dir)).toBe("a");
+  expect(await agyBatchEnd("s-1", "c", dir)).toBeUndefined();
+  expect(await agyBatchEnd("s-2", "a", dir)).toBeUndefined();
 });
 
 it("only an agy answered through the bridge rewinds natively", () => {

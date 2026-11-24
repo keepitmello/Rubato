@@ -1,3 +1,4 @@
+import type { OrchestrationV2ProviderCapabilities } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as EffectAcpErrors from "effect-acp/errors";
 
@@ -18,3 +19,17 @@ export const rubatoAgyNativeRollback = {
     }),
   forkMeta: (keepThroughTime: string) => ({ rubato: { keepThroughTime } }),
 };
+
+/**
+ * An instance behind the bridge before any session opens: T3 decides forks and rollbacks from
+ * these, and a session that negotiates otherwise still answers for itself.
+ */
+export function withAgyNativeRewind(
+  capabilities: OrchestrationV2ProviderCapabilities,
+): OrchestrationV2ProviderCapabilities {
+  return {
+    ...capabilities,
+    threads: { ...capabilities.threads, canForkThread: true, canForkFromTurn: true },
+    checkpointing: { ...capabilities.checkpointing, providerCanRollbackConversation: true },
+  };
+}

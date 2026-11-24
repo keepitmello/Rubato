@@ -35,6 +35,12 @@ export function localAgyAgent(environment: InstanceEnvironment) {
   return plainValue(environment, LOCAL_AGY_AGENT);
 }
 
+/** Whether a local agy instance runs behind the approval bridge, which rewinds and forks on agy's own store. */
+export function localAgyRewindsNatively(environment: InstanceEnvironment) {
+  const bridge = plainValue(environment, LOCAL_AGY_APPROVAL_BRIDGE);
+  return localAgyAgent(environment) !== undefined && bridge !== undefined && path.isAbsolute(bridge);
+}
+
 export function localAgyIsolated(environment: InstanceEnvironment) {
   const raw = plainValue(environment, LOCAL_AGY_ISOLATED)?.toLowerCase();
   return raw === "1" || raw === "true";

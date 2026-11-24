@@ -13,6 +13,7 @@
 const adapter = 'packages/provider-acp/src/server/adapter.ts';
 const adapterTest = 'apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts';
 const antigravity = 'apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.ts';
+const driver = 'apps/server/src/provider/Drivers/AntigravityDriver.ts';
 
 export const agyNativeOverlays = [
   'apps/server/src/provider/RubatoAgyNative.ts',
@@ -79,15 +80,17 @@ export const agyNativeEdits = {
           flavor.forkFromTurn?.supported(started.initializeResult) === true || rollsBackNatively,
           steersWithPrompt,
         );
-        const capabilities = rollsBackNatively
-          ? {
-              ...negotiated,
-              checkpointing: {
-                ...negotiated.checkpointing,
-                providerCanRollbackConversation: true,
-              },
-            }
-          : negotiated;
+        // The session's own answer decides; an instance may promise it before any session opens.
+        const capabilities =
+          flavor.nativeRollback === undefined
+            ? negotiated
+            : {
+                ...negotiated,
+                checkpointing: {
+                  ...negotiated.checkpointing,
+                  providerCanRollbackConversation: rollsBackNatively,
+                },
+              };
 `,
       'replace',
     ],
@@ -134,11 +137,32 @@ export const agyNativeEdits = {
   [antigravity]: [
     [
       'import { readAntigravityClientTextFile } from "../../provider/acp/AntigravityClientFiles.ts";\n',
-      'import { rubatoAgyNativeRollback } from "../../provider/RubatoAgyNativeRollback.ts";\n',
+      'import { rubatoAgyNativeRollback, withAgyNativeRewind } from "../../provider/RubatoAgyNativeRollback.ts";\n',
+    ],
+    [
+      '  readonly profileDirectory?: string;\n}\n',
+      '  readonly profileDirectory?: string;\n  /** Rubato: the instance runs behind the approval bridge (RubatoLocalAgy.ts localAgyRewindsNatively). */\n  readonly rubatoNativeRewind?: boolean;\n}\n',
+      'replace',
+    ],
+    [
+      '    capabilities: AntigravityProviderCapabilitiesV2,\n',
+      '    // Rubato: T3 decides forks and rollbacks before a session opens, from these.\n    capabilities:\n      options.rubatoNativeRewind === true\n        ? withAgyNativeRewind(AntigravityProviderCapabilitiesV2)\n        : AntigravityProviderCapabilitiesV2,\n',
+      'replace',
     ],
     [
       '    makeRuntime,\n    buildAttachmentPrompt:',
       '    // Rubato: agy rewinds and forks its own conversation through the approval bridge.\n    nativeRollback: rubatoAgyNativeRollback,\n',
+    ],
+  ],
+  // The driver knows from the instance whether its agy runs behind the bridge.
+  [driver]: [
+    [
+      'import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";\n',
+      'import { localAgyRewindsNatively } from "../RubatoLocalAgy.ts";\n',
+    ],
+    [
+      '      profileDirectory,\n      onSessionStarted: (started, cwd) =>',
+      '      rubatoNativeRewind: localAgyRewindsNatively(environment),\n',
     ],
   ],
   // Beside upstream's rollback tests, on the same mock agent: a flavor that rolls back natively

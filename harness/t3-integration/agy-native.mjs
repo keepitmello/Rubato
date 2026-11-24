@@ -8,8 +8,10 @@
 //
 // The GUI never holds a live agy to call: a rewind leaves a cut for the session here (`writeCut`),
 // and the approval bridge (agy-acp-approval.mjs) lands it before that session next loads,
-// resumes, forks or takes a prompt. After each prompt the bridge writes which tool calls one model
-// response made together (`batches`), so the GUI can cut after a whole batch.
+// resumes, forks or takes a prompt. Before agy's end of a reply reaches the GUI, the bridge writes
+// which tool calls one model response made together (`batches`), so the GUI cuts after the same
+// whole batch agy keeps.
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -36,24 +38,32 @@ async function readJson(file) {
 
 /**
  * A cut keeps the session up to one point: `{ throughTime }` keeps every step made by then (the end
- * of a turn that stays), `{ throughToolCallId }` keeps through the batch that tool call is in.
- * A later cut replaces an earlier one that has not landed.
+ * of a turn that stays), `{ throughToolCallId, batchEnd }` keeps through the batch that tool call
+ * is in, which must end at `batchEnd`, the call the GUI cut after. A later cut replaces an earlier
+ * one that has not landed; each carries its own id, so landing one never clears a newer one.
  */
 export async function writeCut(dir, sessionId, keep) {
   if (typeof keep?.throughTime !== 'string' && typeof keep?.throughToolCallId !== 'string')
     throw new Error('A cut keeps through a time or a tool call.');
-  return writeJson(sessionFile(dir, 'cuts', sessionId), { sessionId, keep, writtenAt: new Date().toISOString() });
+  return writeJson(sessionFile(dir, 'cuts', sessionId),
+    { sessionId, keep, id: randomUUID(), writtenAt: new Date().toISOString() });
 }
 export const readCut = async (dir, sessionId) => readJson(sessionFile(dir, 'cuts', sessionId));
-export const clearCut = async (dir, sessionId) => rm(sessionFile(dir, 'cuts', sessionId), { force: true });
+/** Clears the session's cut if it is still `landed` (by its id); a newer cut stays. */
+export async function clearCut(dir, sessionId, landed) {
+  const current = await readCut(dir, sessionId);
+  if (current && landed && current.id !== landed.id) return false;
+  await rm(sessionFile(dir, 'cuts', sessionId), { force: true });
+  return true;
+}
 
 export const writeBatches = async (dir, sessionId, batches) =>
   writeJson(sessionFile(dir, 'batches', sessionId), { sessionId, batches, writtenAt: new Date().toISOString() });
-/** The last tool call in `toolCallId`'s batch, as the bridge last saw the session; itself when unknown. */
+/** The last tool call in `toolCallId`'s batch, as the bridge last saw the session; undefined when unknown. */
 export async function batchEnd(dir, sessionId, toolCallId) {
   const saved = await readJson(sessionFile(dir, 'batches', sessionId)).catch(() => null);
   const end = saved?.batches?.[toolCallId];
-  return typeof end === 'string' ? end : toolCallId;
+  return typeof end === 'string' ? end : undefined;
 }
 
 /** Where `agy` writes its logs for the given arguments: `--gemini-dir` and `--app-data-dir`, else its defaults. */
@@ -148,6 +158,8 @@ export function keptThrough(steps, keep) {
   const at = steps.findIndex((step) => toolCallOf(step) === keep?.throughToolCallId);
   if (at < 0) throw new Error(`agy has no step for tool call ${keep?.throughToolCallId}.`);
   const end = toolBatches(steps)[keep.throughToolCallId] ?? keep.throughToolCallId;
+  if (typeof keep.batchEnd === 'string' && keep.batchEnd !== end)
+    throw new Error(`agy's batch for ${keep.throughToolCallId} ends at ${end}, not at ${keep.batchEnd} where the thread was cut.`);
   let last = at;
   steps.forEach((step, index) => { if (toolCallOf(step) === end && index > last) last = index; });
   return last < steps.length - 1 ? last : undefined;
@@ -168,14 +180,15 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  *   and options, since a live session keeps the old conversation in memory.
  * - `session/fork` copies the source conversation (to `_meta.rubato.keepThroughTime`, else all
  *   of it) and resumes the copy under the client's request id.
- * - After a prompt, and when agy reports usage, the tool batches are saved for the GUI.
+ * - Before agy's usage report or prompt answer reaches the client, and when a session opens, the
+ *   tool batches are saved for the GUI.
  * The bridge's own requests to agy, and the updates they cause, never reach the client.
  */
 export function createAgyNative({ dir, logDir, pid, toAgent, toClient, prefix,
   languageServer = languageServerClient, languageServerWaitMs = 15_000 }) {
   let sequence = 0, server;
   const ownRequests = new Map(), quiet = new Map(), clientRequests = new Map();
-  const open = new Set(), sessionParams = new Map(), sessionSettings = new Map(), batchTimers = new Map();
+  const open = new Set(), sessionParams = new Map(), sessionSettings = new Map();
 
   const languageServerReady = async () => {
     if (server) return server;
@@ -209,24 +222,24 @@ export function createAgyNative({ dir, logDir, pid, toAgent, toClient, prefix,
     for (const setting of sessionSettings.get(sessionId)?.values() ?? []) await ask(setting.method, setting.params);
   };
 
-  /** Lands a waiting cut for `sessionId`; `request` is the client message it precedes. */
+  /** Lands the waiting cuts for `sessionId`, a newer one written meanwhile too; `request` is the client message they precede. */
   const landCut = (sessionId, request) => hush(sessionId, async () => {
-    const cut = await readCut(dir, sessionId);
-    if (!cut) return;
-    const wasOpen = open.has(sessionId);
-    // The language server comes up with agy's first session; a closed one opens without replay.
-    if (!wasOpen) await ask('session/resume', { ...resumeParams(sessionId, request?.params), mcpServers: [] });
-    const steps = await (await languageServerReady()).steps(sessionId);
-    const last = keptThrough(steps, cut.keep);
-    if (last !== undefined) await server.revert(sessionId, last);
-    await ask('session/close', { sessionId });
-    open.delete(sessionId);
-    if (wasOpen) {
-      await ask('session/resume', resumeParams(sessionId));
-      open.add(sessionId);
-      await replaySettings(sessionId);
+    for (let cut = await readCut(dir, sessionId); cut; cut = await readCut(dir, sessionId)) {
+      const wasOpen = open.has(sessionId);
+      // The language server comes up with agy's first session; a closed one opens without replay.
+      if (!wasOpen) await ask('session/resume', { ...resumeParams(sessionId, request?.params), mcpServers: [] });
+      const steps = await (await languageServerReady()).steps(sessionId);
+      const last = keptThrough(steps, cut.keep);
+      if (last !== undefined) await server.revert(sessionId, last);
+      await ask('session/close', { sessionId });
+      open.delete(sessionId);
+      if (wasOpen) {
+        await ask('session/resume', resumeParams(sessionId));
+        open.add(sessionId);
+        await replaySettings(sessionId);
+      }
+      if (await clearCut(dir, sessionId, cut)) return;
     }
-    await clearCut(dir, sessionId);
   });
 
   const fork = async (wire) => {
@@ -250,15 +263,18 @@ export function createAgyNative({ dir, logDir, pid, toAgent, toClient, prefix,
     return { ...wire, method: 'session/resume', params };
   };
 
-  const saveBatches = (sessionId) => {
-    clearTimeout(batchTimers.get(sessionId));
-    batchTimers.set(sessionId, setTimeout(() => {
-      batchTimers.delete(sessionId);
-      languageServerReady()
-        .then((ready) => ready.steps(sessionId))
-        .then((steps) => writeBatches(dir, sessionId, toolBatches(steps)))
-        .catch(() => {});
-    }, 500));
+  /** Saves the session's batches as agy holds them now; never fails the stream it runs in. */
+  const saveBatches = async (sessionId) => {
+    if (typeof sessionId !== 'string') return;
+    try {
+      // An open session means agy has logged its port; look once rather than wait on the stream.
+      if (!server) {
+        const port = await findLanguageServerPort(logDir, pid);
+        if (!port) return;
+        server = languageServer(port);
+      }
+      await writeBatches(dir, sessionId, toolBatches(await server.steps(sessionId)));
+    } catch {}
   };
 
   const fail = (wire, error) => {
@@ -274,20 +290,16 @@ export function createAgyNative({ dir, logDir, pid, toAgent, toClient, prefix,
       const sessionId = wire.params?.sessionId;
       try {
         if (method === 'session/fork') return await fork(wire);
-        if (SETTINGS.has(method) && typeof sessionId === 'string') {
-          const key = method === 'session/set_config_option' ? `${method}:${wire.params.configId}` : method;
-          const settings = sessionSettings.get(sessionId) ?? new Map();
-          settings.set(key, { method, params: wire.params });
-          sessionSettings.set(sessionId, settings);
-        }
         if ((method === 'session/load' || method === 'session/resume' || method === 'session/prompt') &&
             typeof sessionId === 'string') await landCut(sessionId, wire);
       } catch (error) { return fail(wire, error); }
-      if (['initialize', 'session/new', 'session/load', 'session/resume', 'session/prompt', 'session/close'].includes(method))
+      if (['initialize', 'session/new', 'session/load', 'session/resume', 'session/prompt', 'session/close'].includes(method) ||
+          SETTINGS.has(method))
         clientRequests.set(wire.id, { method, params: wire.params });
       return wire;
     },
-    fromAgent(wire) {
+    /** What reaches the client for one agy message; a reply's end waits until its batches are saved. */
+    async fromAgent(wire) {
       if (wire?.id !== undefined && !wire.method && ownRequests.has(wire.id)) {
         const own = ownRequests.get(wire.id);
         ownRequests.delete(wire.id);
@@ -298,13 +310,22 @@ export function createAgyNative({ dir, logDir, pid, toAgent, toClient, prefix,
       const sessionId = wire?.params?.sessionId;
       if (wire?.method === 'session/update' && typeof sessionId === 'string') {
         if (quiet.has(sessionId)) return null;
-        if (wire.params.update?.sessionUpdate === 'usage_update') saveBatches(sessionId);
+        // The GUI may end the turn on this update, so the batches it reads must already be there.
+        if (wire.params.update?.sessionUpdate === 'usage_update') await saveBatches(sessionId);
         return wire;
       }
       if (wire?.id === undefined || wire.method || !clientRequests.has(wire.id)) return wire;
       const { method, params } = clientRequests.get(wire.id);
       clientRequests.delete(wire.id);
       if (wire.error) return wire;
+      if (SETTINGS.has(method) && typeof params?.sessionId === 'string') {
+        // Only what agy took is restored after a cut; a value it refused stays refused.
+        const key = method === 'session/set_config_option' ? `${method}:${params.configId}` : method;
+        const settings = sessionSettings.get(params.sessionId) ?? new Map();
+        settings.set(key, { method, params });
+        sessionSettings.set(params.sessionId, settings);
+        return wire;
+      }
       if (method === 'initialize') {
         const capabilities = wire.result?.agentCapabilities ?? {};
         return { ...wire, result: { ...wire.result, agentCapabilities: { ...capabilities,
@@ -313,16 +334,17 @@ export function createAgyNative({ dir, logDir, pid, toAgent, toClient, prefix,
       }
       const opened = method === 'session/new' ? wire.result?.sessionId : params?.sessionId;
       if (method === 'session/close') { open.delete(params?.sessionId); return wire; }
-      if (method === 'session/prompt') { saveBatches(params?.sessionId); return wire; }
+      if (method === 'session/prompt') { await saveBatches(params?.sessionId); return wire; }
       if (typeof opened === 'string') {
         open.add(opened);
+        // A session opened before the bridge kept batches gets them now; the GUI reads them later.
+        languageServerReady().then(() => saveBatches(opened), () => {});
         sessionParams.set(opened, { cwd: params?.cwd, mcpServers: params?.mcpServers ?? [],
           ...(params?.additionalDirectories ? { additionalDirectories: params.additionalDirectories } : {}) });
       }
       return wire;
     },
     close() {
-      for (const timer of batchTimers.values()) clearTimeout(timer);
       for (const own of ownRequests.values()) own.reject(new Error('agy stopped.'));
       ownRequests.clear();
     },

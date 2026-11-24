@@ -33,6 +33,9 @@ test('a time keeps the steps agy made by then; a tool call keeps through its bat
   assert.equal(keptThrough(steps, { throughToolCallId: 'a' }), 5);
   assert.equal(keptThrough(steps, { throughToolCallId: 'b' }), 5);
   assert.equal(keptThrough(steps, { throughToolCallId: 'c' }), 7);
+  // The GUI cut after the batch's end; agy's own batch must end there too.
+  assert.equal(keptThrough(steps, { throughToolCallId: 'a', batchEnd: 'b' }), 5);
+  assert.throws(() => keptThrough(steps, { throughToolCallId: 'a', batchEnd: 'a' }), /ends at b, not at a/);
   assert.throws(() => keptThrough(steps, { throughToolCallId: 'gone' }), /no step for tool call gone/);
 });
 
@@ -55,19 +58,19 @@ test('a cut waits per session, a later one replaces it, and batches answer the G
   await assert.rejects(writeCut(dir, '../x', { throughTime: at(1) }), /Not an agy session id/);
   await writeBatches(dir, 's1', toolBatches(steps));
   assert.equal(await batchEnd(dir, 's1', 'a'), 'b');
-  assert.equal(await batchEnd(dir, 's1', 'unknown'), 'unknown');
-  assert.equal(await batchEnd(dir, 's9', 'a'), 'a');
+  assert.equal(await batchEnd(dir, 's1', 'unknown'), undefined);
+  assert.equal(await batchEnd(dir, 's9', 'a'), undefined);
 });
 
 /** A bridge wired to a scripted agy: it answers the bridge's own requests and records them. */
-async function harness(t, { conversation = steps } = {}) {
+async function harness(t, { conversation = steps, onAgentRequest } = {}) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'agy-native-'));
   const logDir = path.join(dir, 'log');
   await mkdir(logDir, { recursive: true });
   await writeFile(path.join(logDir, 'acp-server-20261124_110000-4242.log'),
     'Language server listening on random port at 7777 for HTTP\n');
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const toAgentLog = [], toClientLog = [], calls = [];
+  const toAgentLog = [], toClientLog = [], calls = [], hidden = [];
   let stored = [...conversation];
   let native;
   const languageServer = (port) => {
@@ -83,36 +86,42 @@ async function harness(t, { conversation = steps } = {}) {
     toAgent: (value) => {
       toAgentLog.push(value);
       // agy answers the bridge's own requests; an update it sends meanwhile must stay hidden.
-      queueMicrotask(() => {
+      queueMicrotask(async () => {
+        await onAgentRequest?.(value);
         if (value.method === 'session/resume')
-          assert.equal(native.fromAgent({ jsonrpc: '2.0', method: 'session/update',
-            params: { sessionId: value.params.sessionId, update: { sessionUpdate: 'available_commands_update' } } }), null);
-        native.fromAgent({ jsonrpc: '2.0', id: value.id, result: {} });
+          hidden.push(await native.fromAgent({ jsonrpc: '2.0', method: 'session/update',
+            params: { sessionId: value.params.sessionId, update: { sessionUpdate: 'available_commands_update' } } }));
+        await native.fromAgent({ jsonrpc: '2.0', id: value.id, result: {} });
       });
     } });
-  return { dir, native, toAgentLog, toClientLog, calls, stored: () => stored };
+  return { dir, native, toAgentLog, toClientLog, calls, hidden, stored: () => stored };
 }
 
 test('initialize advertises session/fork and native rewind to the client', async (t) => {
   const { native } = await harness(t);
   const request = { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} };
   assert.equal(await native.fromClient(request), request);
-  const answer = native.fromAgent({ jsonrpc: '2.0', id: 1, result: { agentCapabilities: {
+  const answer = await native.fromAgent({ jsonrpc: '2.0', id: 1, result: { agentCapabilities: {
     loadSession: true, sessionCapabilities: { resume: {} }, _meta: { antigravity: { tier: true } } } } });
   assert.deepEqual(answer.result.agentCapabilities.sessionCapabilities, { resume: {}, fork: {} });
   assert.deepEqual(answer.result.agentCapabilities._meta, { antigravity: { tier: true }, rubato: { nativeRewind: true } });
 });
 
 test('an open session lands its cut before the next prompt and keeps the client settings', async (t) => {
-  const { dir, native, toAgentLog, calls, stored } = await harness(t);
+  const { dir, native, toAgentLog, calls, hidden, stored } = await harness(t);
   const load = { jsonrpc: '2.0', id: 2, method: 'session/load', params: { sessionId: 's1', cwd: '/w', mcpServers: [{ name: 'rubato' }] } };
   assert.equal(await native.fromClient(load), load);
-  native.fromAgent({ jsonrpc: '2.0', id: 2, result: {} });
+  await native.fromAgent({ jsonrpc: '2.0', id: 2, result: {} });
+  // agy took the mode and refused a model; only what it took comes back after the cut.
   await native.fromClient({ jsonrpc: '2.0', id: 3, method: 'session/set_mode', params: { sessionId: 's1', modeId: 'plan' } });
+  await native.fromAgent({ jsonrpc: '2.0', id: 3, result: {} });
+  await native.fromClient({ jsonrpc: '2.0', id: 4, method: 'session/set_model', params: { sessionId: 's1', modelId: 'nope' } });
+  await native.fromAgent({ jsonrpc: '2.0', id: 4, error: { code: -32602, message: 'unknown model' } });
   await writeCut(dir, 's1', { throughTime: '2026-11-24T11:00:05.000Z' });
   toAgentLog.length = 0;
-  const prompt = { jsonrpc: '2.0', id: 4, method: 'session/prompt', params: { sessionId: 's1', prompt: [] } };
+  const prompt = { jsonrpc: '2.0', id: 5, method: 'session/prompt', params: { sessionId: 's1', prompt: [] } };
   assert.equal(await native.fromClient(prompt), prompt);
+  assert.deepEqual(hidden, [null]);
   assert.deepEqual(calls, [['revert', 's1', 1]]);
   assert.equal(stored().length, 2);
   assert.deepEqual(toAgentLog.map((wire) => wire.method), ['session/close', 'session/resume', 'session/set_mode']);
@@ -120,7 +129,7 @@ test('an open session lands its cut before the next prompt and keeps the client 
   assert.equal(await readCut(dir, 's1'), null);
   // Nothing waits, so the next prompt goes straight on.
   toAgentLog.length = 0;
-  await native.fromClient({ ...prompt, id: 5 });
+  await native.fromClient({ ...prompt, id: 6 });
   assert.deepEqual(toAgentLog, []);
 });
 
@@ -142,7 +151,7 @@ test('session/fork copies through the kept turn and resumes the copy under the c
   assert.deepEqual(toAgentLog.map((wire) => wire.method), ['session/resume', 'session/close']);
   assert.deepEqual(sent, { jsonrpc: '2.0', id: 7, method: 'session/resume', params: { sessionId: 'forked-1', cwd: '/w', mcpServers: [] } });
   // The copy is open once agy answers, and a fork without a kept turn copies all of it.
-  native.fromAgent({ jsonrpc: '2.0', id: 7, result: { sessionId: 'forked-1' } });
+  await native.fromAgent({ jsonrpc: '2.0', id: 7, result: { sessionId: 'forked-1' } });
   await native.fromClient({ jsonrpc: '2.0', id: 8, method: 'session/fork', params: { sessionId: 'forked-1', cwd: '/w' } });
   assert.deepEqual(calls.at(-1), ['fork', 'forked-1', steps.length - 1]);
 });
@@ -156,4 +165,30 @@ test('a cut that cannot land fails the client request instead of running on the 
   assert.match(toClientLog.at(-1).error.message, /no step for tool call gone/);
   assert.notEqual(await readCut(dir, 's1'), null);
   assert.deepEqual((await readdir(dir)).toSorted(), ['cuts', 'log']);
+});
+
+test('a cut written while another lands is not cleared with it; it lands next', async (t) => {
+  let h, rewrote = false;
+  h = await harness(t, { onAgentRequest: async (request) => {
+    // While the first cut lands, the GUI writes a stricter one.
+    if (request.method === 'session/close' && !rewrote) {
+      rewrote = true;
+      await writeCut(h.dir, 's1', { throughTime: '2026-11-24T11:00:01.500Z' });
+    }
+  } });
+  await writeCut(h.dir, 's1', { throughTime: '2026-11-24T11:00:05.000Z' });
+  const load = { jsonrpc: '2.0', id: 2, method: 'session/load', params: { sessionId: 's1', cwd: '/w', mcpServers: [] } };
+  assert.equal(await h.native.fromClient(load), load);
+  assert.deepEqual(h.calls, [['revert', 's1', 1], ['revert', 's1', 0]]);
+  assert.equal(await readCut(h.dir, 's1'), null);
+});
+
+test('a reply\'s end reaches the client only after its batches are saved', async (t) => {
+  const h = await harness(t);
+  const load = { jsonrpc: '2.0', id: 2, method: 'session/load', params: { sessionId: 's1', cwd: '/w', mcpServers: [] } };
+  await h.native.fromClient(load);
+  await h.native.fromAgent({ jsonrpc: '2.0', id: 2, result: {} });
+  const usage = { jsonrpc: '2.0', method: 'session/update', params: { sessionId: 's1', update: { sessionUpdate: 'usage_update' } } };
+  assert.equal(await h.native.fromAgent(usage), usage);
+  assert.equal(await batchEnd(h.dir, 's1', 'a'), 'b');
 });

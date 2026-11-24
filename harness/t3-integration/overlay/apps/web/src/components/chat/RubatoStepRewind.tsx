@@ -104,6 +104,30 @@ export interface RewindThread {
     readonly appRunOrdinal: number | null;
     readonly status: string;
   }>;
+  /** agy provider threads whose session rewinds on agy's own store (through Rubato's bridge). */
+  readonly nativeAgyThreads?: ReadonlySet<string>;
+}
+
+type ProviderRecords = {
+  readonly providerThreads: ReadonlyArray<{ readonly id: string; readonly driver: string; readonly providerSessionId: string | null }>;
+  readonly providerSessions: ReadonlyArray<{
+    readonly id: string;
+    readonly capabilities: { readonly checkpointing: { readonly providerCanRollbackConversation: boolean } };
+  }>;
+};
+const nativeAgyCache = new WeakMap<object, ReadonlySet<string>>();
+/** The agy provider threads whose session negotiated native rewind; the same set while the records stay. */
+export function nativeAgyThreadsOf(records: ProviderRecords): ReadonlySet<string> {
+  const cached = nativeAgyCache.get(records.providerSessions);
+  if (cached) return cached;
+  const native = new Set(records.providerSessions
+    .filter((session) => session.capabilities.checkpointing.providerCanRollbackConversation)
+    .map((session) => session.id));
+  const threads = new Set(records.providerThreads
+    .filter((thread) => thread.driver === AGY_DRIVER && thread.providerSessionId !== null && native.has(thread.providerSessionId))
+    .map((thread) => thread.id));
+  nativeAgyCache.set(records.providerSessions, threads);
+  return threads;
 }
 
 function readThread(threadRef: ScopedThreadRef): RewindThread | null {
@@ -113,6 +137,7 @@ function readThread(threadRef: ScopedThreadRef): RewindThread | null {
     items: appAtomRegistry.get(environmentThreadDetails.visibleTurnItemsAtom(threadRef)),
     runs: detail.projection.runs,
     checkpoints: detail.projection.checkpoints,
+    nativeAgyThreads: nativeAgyThreadsOf(detail.projection as unknown as ProviderRecords),
   };
 }
 
@@ -124,13 +149,16 @@ const TOOL_TYPES = new Set<OrchestrationV2TurnItem["type"]>([
   "web_search",
 ]);
 const isTool = (item: OrchestrationV2TurnItem) => TOOL_TYPES.has(item.type);
-/** Drivers whose finished tool steps rewind: Rubato's engine, and agy through its bridge. */
-const STEP_DRIVERS: ReadonlySet<string> = new Set(["rubato-pi", "antigravity"]);
-// A tool that ended in an error is a finished step too: its result is what the model saw.
-const isStep = (item: OrchestrationV2TurnItem) =>
-  isTool(item) &&
-  (item.status === "completed" || item.status === "failed") &&
-  STEP_DRIVERS.has(item.nativeItemRef?.driver ?? "");
+const AGY_DRIVER = "antigravity";
+// A tool that ended in an error is a finished step too: its result is what the model saw. Rubato's
+// engine holds every step; an agy step rewinds only where its session goes through Rubato's bridge.
+const isStep = (item: OrchestrationV2TurnItem, thread: RewindThread | null) => {
+  if (!isTool(item) || (item.status !== "completed" && item.status !== "failed")) return false;
+  const driver = item.nativeItemRef?.driver;
+  if (driver === "rubato-pi") return true;
+  return driver === AGY_DRIVER && item.providerThreadId != null &&
+    thread?.nativeAgyThreads?.has(item.providerThreadId) === true;
+};
 const messageIdOf = (item: OrchestrationV2TurnItem): string | undefined =>
   item.type === "user_message" || item.type === "assistant_message" ? item.messageId : undefined;
 
@@ -185,7 +213,7 @@ function droppedAfter(thread: RewindThread, runId: string, ordinal: number, posi
 export function stepRefusal(thread: RewindThread, itemId: string): string | undefined {
   const row = thread.items.find((entry) => entry.item.id === itemId);
   if (!row) return "This step is not in the thread any more.";
-  if (!isStep(row.item)) return "Only a finished tool step can be rewound to.";
+  if (!isStep(row.item, thread)) return "Only a finished tool step can be rewound to.";
   if (row.item.runId === null || !settledRun(thread, row.item.runId)) return "This run has not finished yet.";
   return undefined;
 }
@@ -225,7 +253,7 @@ export function lastStepOf(
 ): { readonly itemId: string; readonly label: string } | string {
   const within = scope.itemIds ? new Set(scope.itemIds) : undefined;
   const last = thread.items.findLast(
-    (row) => row.item.runId === scope.runId && isStep(row.item) && (within === undefined || within.has(row.item.id)),
+    (row) => row.item.runId === scope.runId && isStep(row.item, thread) && (within === undefined || within.has(row.item.id)),
   );
   if (!last) return "There is no finished step to rewind to here.";
   return { itemId: last.item.id, label: last.item.title ?? "this step" };
@@ -313,13 +341,14 @@ async function resolveTarget(
 /** Per visible rows: which steps each run has, and the latest run that has rows. */
 interface OfferIndex {
   readonly runs: RewindThread["runs"];
+  readonly nativeAgyThreads: RewindThread["nativeAgyThreads"];
   readonly steps: ReadonlyMap<string, ReadonlySet<string>>;
   readonly latestOrdinal: number;
 }
 const offerIndexes = new WeakMap<RewindThread["items"], OfferIndex>();
 function offerIndexOf(thread: RewindThread): OfferIndex {
   const cached = offerIndexes.get(thread.items);
-  if (cached && cached.runs === thread.runs) return cached;
+  if (cached && cached.runs === thread.runs && cached.nativeAgyThreads === thread.nativeAgyThreads) return cached;
   const ordinals = new Map(thread.runs.map((run) => [run.id, run.ordinal]));
   const steps = new Map<string, Set<string>>();
   let latestOrdinal = Number.NEGATIVE_INFINITY;
@@ -327,12 +356,12 @@ function offerIndexOf(thread: RewindThread): OfferIndex {
     const runId = row.item.runId;
     if (runId === null) continue;
     latestOrdinal = Math.max(latestOrdinal, ordinals.get(runId) ?? Number.NEGATIVE_INFINITY);
-    if (!isStep(row.item)) continue;
+    if (!isStep(row.item, thread)) continue;
     const ids = steps.get(runId) ?? new Set<string>();
     ids.add(row.item.id);
     steps.set(runId, ids);
   }
-  const index = { runs: thread.runs, steps, latestOrdinal };
+  const index = { runs: thread.runs, nativeAgyThreads: thread.nativeAgyThreads, steps, latestOrdinal };
   offerIndexes.set(thread.items, index);
   return index;
 }
@@ -344,7 +373,7 @@ export function rewindOffered(
   item?: OrchestrationV2TurnItem,
 ): boolean {
   if (!target.runId) return false;
-  if (target.kind === "step") return item !== undefined && isStep(item);
+  if (target.kind === "step") return item !== undefined && isStep(item, thread);
   if (!thread) return false;
   const index = offerIndexOf(thread);
   if (target.kind === "reply") {
@@ -364,7 +393,8 @@ function useRewindOffered(
 ): boolean {
   const environmentId = threadRef?.environmentId;
   const threadId = threadRef?.threadId;
-  // Steps need no thread: whether the row is a step is on the row itself.
+  // A Rubato step needs no thread: whether its row is a step is on the row itself. An agy step
+  // also needs its thread's sessions, to know whether they rewind through the bridge.
   const subscribeThread = useCallback((listener: () => void) => {
     if (!threadRef) return () => {};
     const stopItems = appAtomRegistry.subscribe(environmentThreadDetails.visibleTurnItemsAtom(threadRef), listener);
@@ -376,9 +406,9 @@ function useRewindOffered(
     // The ref's identity changes with every render; the thread it names does not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [environmentId, threadId]);
-  const read = () =>
-    rewindOffered(target.kind === "step" || !threadRef ? null : readThread(threadRef), target, item);
-  return useSyncExternalStore(target.kind === "step" ? noSubscription : subscribeThread, read, read);
+  const ownRow = target.kind === "step" && item?.nativeItemRef?.driver !== AGY_DRIVER;
+  const read = () => rewindOffered(ownRow || !threadRef ? null : readThread(threadRef), target, item);
+  return useSyncExternalStore(ownRow ? noSubscription : subscribeThread, read, read);
 }
 
 export interface StepRewindSummary {

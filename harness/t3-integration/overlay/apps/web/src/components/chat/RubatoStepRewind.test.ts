@@ -4,6 +4,7 @@ import {
   describeDropped,
   isStepCutRun,
   lastStepOf,
+  nativeAgyThreadsOf,
   replyCutFor,
   rewindOffered,
   type RewindThread,
@@ -126,9 +127,17 @@ describe("step rewind on V2 rows", () => {
     const codex = { ...step, nativeItemRef: { driver: "codex", nativeId: "x", strength: "strong" } };
     expect(rewindOffered(null, { kind: "step", itemId: "a", runId: "r1" }, codex as never)).toBe(false);
     expect(rewindOffered(null, { kind: "step", itemId: "a", runId: "r1" }, step)).toBe(true);
-    // agy's tool rows rewind too, on its own store through the approval bridge.
-    const agy = { ...step, nativeItemRef: { driver: "antigravity", nativeId: "call_1", strength: "strong" } };
-    expect(rewindOffered(null, { kind: "step", itemId: "a", runId: "r1" }, agy as never)).toBe(true);
+    // agy's tool rows rewind too, on its own store, where the thread's session goes through the bridge.
+    const agy = { ...step, providerThreadId: "pt-agy",
+      nativeItemRef: { driver: "antigravity", nativeId: "call_1", strength: "strong" } } as never;
+    const sessions = (native: boolean) => nativeAgyThreadsOf({
+      providerThreads: [{ id: "pt-agy", driver: "antigravity", providerSessionId: "ps-agy" }],
+      providerSessions: [{ id: "ps-agy", capabilities: { checkpointing: { providerCanRollbackConversation: native } } }],
+    });
+    const at = { kind: "step", itemId: "a", runId: "r1" } as const;
+    expect(rewindOffered({ ...thread, nativeAgyThreads: sessions(true) }, at, agy)).toBe(true);
+    expect(rewindOffered({ ...thread, nativeAgyThreads: sessions(false) }, at, agy)).toBe(false);
+    expect(rewindOffered(null, at, agy)).toBe(false);
   });
 
   it("a reply rewinds to the run boundary through T3's revert", () => {

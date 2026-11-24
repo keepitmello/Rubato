@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off -- cuts are small files the agy approval bridge reads.
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -7,7 +8,8 @@ import path from "node:path";
 // rewind leaves a cut for the agy session in this folder and the approval bridge
 // (harness/t3-integration/agy-acp-approval.mjs over agy-native.mjs) lands it before that session
 // next loads, resumes, forks or takes a prompt. The bridge writes back which tool calls one model
-// response made together. The file shapes are agy-native.mjs's `writeCut` and `writeBatches`.
+// response made together, before that reply's end reaches the GUI. The file shapes are
+// agy-native.mjs's `writeCut` and `writeBatches`.
 
 export const AGY_NATIVE_DIR_ENV = "RUBATO_AGY_NATIVE_DIR";
 /** What a step rewind's "continue" sends agy, which runs on from the kept tool results. */
@@ -24,9 +26,15 @@ function sessionFile(kind: "cuts" | "batches", sessionId: string, dir: string): 
   return path.join(dir, kind, `${sessionId}.json`);
 }
 
-export type AgyCut = { readonly throughTime: string } | { readonly throughToolCallId: string };
+/**
+ * `throughTime` keeps the steps agy made by then; `throughToolCallId` keeps through that call's
+ * batch, which must end at `batchEnd`, the call the thread was cut after (else the bridge refuses).
+ */
+export type AgyCut =
+  | { readonly throughTime: string }
+  | { readonly throughToolCallId: string; readonly batchEnd: string };
 
-/** Keeps the agy session through `keep` from its next load, resume, fork or prompt on. */
+/** Keeps the agy session through `keep` from its next load, resume, fork or prompt on; a later cut replaces it. */
 export async function writeAgyCut(sessionId: string, keep: AgyCut, dir = agyNativeDir()): Promise<void> {
   const file = sessionFile("cuts", sessionId, dir);
   await mkdir(path.dirname(file), { recursive: true });
@@ -35,22 +43,26 @@ export async function writeAgyCut(sessionId: string, keep: AgyCut, dir = agyNati
   await writeFile(
     temporary,
     // @effect-diagnostics-next-line globalDate:off -- read by people, not by the bridge.
-    `${JSON.stringify({ sessionId, keep, writtenAt: new Date().toISOString() })}\n`,
+    `${JSON.stringify({ sessionId, keep, id: randomUUID(), writtenAt: new Date().toISOString() })}\n`,
     { mode: 0o600 },
   );
   await rename(temporary, file);
 }
 
-/** The last tool call in `toolCallId`'s batch as the bridge last saw it; itself when unknown. */
-export async function agyBatchEnd(sessionId: string, toolCallId: string, dir = agyNativeDir()): Promise<string> {
+/** The last tool call in `toolCallId`'s batch as the bridge saw agy make it; undefined when unknown. */
+export async function agyBatchEnd(
+  sessionId: string,
+  toolCallId: string,
+  dir = agyNativeDir(),
+): Promise<string | undefined> {
   try {
     const saved = JSON.parse(await readFile(sessionFile("batches", sessionId, dir), "utf8")) as {
       batches?: Record<string, unknown>;
     };
     const end = saved.batches?.[toolCallId];
-    return typeof end === "string" ? end : toolCallId;
+    return typeof end === "string" ? end : undefined;
   } catch {
-    return toolCallId;
+    return undefined;
   }
 }
 

@@ -18,7 +18,7 @@ import { rubatoStepRewindRouteLayer } from "./RubatoStepRewind.ts";
 
 const state = vi.hoisted(() => ({
   engineCut: false, nativeStepMissing: false, marks: [] as string[], batch: ["first-call"],
-  agyCuts: [] as Array<{ sessionId: string; keep: unknown }>, agyBatchEnd: "first-call",
+  agyCuts: [] as Array<{ sessionId: string; keep: unknown }>, agyBatchEnd: "first-call" as string | undefined,
 }));
 vi.mock("./provider/RubatoAgyNative.ts", () => ({
   AGY_STEP_CONTINUE_TEXT: "agy continue words",
@@ -48,10 +48,10 @@ const disposers: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const dispose of disposers.splice(0)) await dispose(); });
 
 function fixture(options: { runStatus?: string; status?: string; later?: boolean; fileError?: boolean; nativeStepMissing?: boolean; batch?: string[];
-  agy?: boolean; agyNative?: boolean; agyBatchEnd?: string } = {}) {
+  agy?: boolean; agyNative?: boolean; agyBatchEnd?: string | null } = {}) {
   state.engineCut = false;
   state.agyCuts = [];
-  state.agyBatchEnd = options.agyBatchEnd ?? "first-call";
+  state.agyBatchEnd = options.agyBatchEnd === null ? undefined : options.agyBatchEnd ?? "first-call";
   const driver = options.agy ? "antigravity" : "rubato-pi";
   state.batch = options.batch ?? ["first-call"];
   state.nativeStepMissing = options.nativeStepMissing ?? false;
@@ -167,7 +167,7 @@ it("an agy step leaves a cut through its batch for the bridge, then cuts the dis
   const f = fixture({ agy: true });
   const response = await f.request();
   expect(response.status).toBe(200);
-  expect(state.agyCuts).toEqual([{ sessionId: "agy-session", keep: { throughToolCallId: "first-call" } }]);
+  expect(state.agyCuts).toEqual([{ sessionId: "agy-session", keep: { throughToolCallId: "first-call", batchEnd: "first-call" } }]);
   expect({ engineCut: state.engineCut, effects: f.effects }).toEqual({ engineCut: false, effects: ["projection-cut"] });
   expect(((await response.json()) as { hiddenItemIds: string[] }).hiddenItemIds).toEqual(["item-two", "after"]);
 });
@@ -176,6 +176,13 @@ it("an agy step's batch is the one the bridge last saw agy make", async () => {
   const response = await f.post("/rubato/step-rewind/batch", { threadId: "thread-one", itemId: "item-one" });
   expect((await response.json()) as unknown).toEqual({ cutAfterItemId: "item-two" });
   expect(state.agyCuts).toEqual([]);
+});
+it("an agy step whose batch the bridge has not reported is refused before anything moves", async () => {
+  const f = fixture({ agy: true, agyBatchEnd: null, later: true });
+  const response = await f.request();
+  expect(response.status).toBe(409);
+  expect(((await response.json()) as { error: { code: string } }).error.code).toBe("engine-refused");
+  expect({ cuts: state.agyCuts, effects: f.effects }).toEqual({ cuts: [], effects: [] });
 });
 it("an agy session that did not negotiate native rewind is refused before anything moves", async () => {
   const f = fixture({ agy: true, agyNative: false });

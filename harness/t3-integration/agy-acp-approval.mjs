@@ -92,13 +92,13 @@ export async function runAgyApprovalBridge(command, args, { input = process.stdi
     // A cut or fork answers agy before the client's message goes on, so client messages keep their order.
     let forwarding = Promise.resolve();
     clientLines.on('line', line => { forwarding = forwarding.then(() => forward(line)).catch(() => {}); });
-    agentLines.on('line', line => {
+    const deliver = async (line) => {
       let wire;
       try {
         wire = JSON.parse(line);
       } catch {}
       if (wire && native) {
-        const next = native.fromAgent(wire);
+        const next = await native.fromAgent(wire);
         if (next === null) return;
         if (next !== wire) { wire = next; line = JSON.stringify(next); }
       }
@@ -106,7 +106,11 @@ export async function runAgyApprovalBridge(command, args, { input = process.stdi
         if (!wire.method && turnIds.has(wire.id)) cancel(wire.id);
       }
       output.write(`${line}\n`);
-    });
+    };
+    // A reply's end can wait on its saved batches, so agy messages keep their order behind it.
+    // The bridge's own answers from agy settle at once: a cut waiting on them holds client lines, not these.
+    let delivering = Promise.resolve();
+    agentLines.on('line', line => { delivering = delivering.then(() => deliver(line)).catch(() => {}); });
     clientLines.once('close', () => { forwarding.finally(() => { child.stdin.end(); child.kill(); }); });
     const stop = () => child.kill();
     process.once('SIGTERM', stop);
