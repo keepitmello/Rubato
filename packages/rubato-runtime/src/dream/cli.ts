@@ -40,6 +40,7 @@ import { languageMigrationDue, runLanguageMigration } from "./migrate-language"
 import { companionOnlyStore, countStoreFiles, createStoreNameResolver, listExistingStores, sameFolder, scanStoreSessions, type SessionFile } from "./stores"
 import { resolveLaunch } from "./launch"
 import { runUserDream, userDreamDue } from "../user-memory/user-dream"
+import { exitAfterFlush } from "../exit-after-flush"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, "..", "..", "..", "..")
@@ -286,9 +287,9 @@ async function companionProfiles(env: NodeJS.ProcessEnv): Promise<Array<{ id: st
 }
 
 main(process.argv.slice(2)).then(
-  (code) => process.exit(code),
+  (code) => exitAfterFlush(code),
   (error: unknown) => {
     process.stderr.write(`rubato dream: ${error instanceof Error ? error.stack ?? error.message : String(error)}\n`)
-    process.exit(1)
+    exitAfterFlush(1)
   },
 )

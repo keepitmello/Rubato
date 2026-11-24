@@ -22,6 +22,7 @@ import { liveMemoryVerdict } from "../dream/live-guard"
 import { ASK_ID, recordForgetsAgain, runUserAsk } from "./ask"
 import { composeUserView } from "./view"
 import { confirmedRuleLines, setRuleChoice } from "./rule-choices"
+import { exitAfterFlush } from "../exit-after-flush"
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -88,9 +89,9 @@ async function main(argv: readonly string[]): Promise<number> {
 }
 
 main(process.argv.slice(2)).then(
-  (code) => process.exit(code),
+  (code) => exitAfterFlush(code),
   (error: unknown) => {
     process.stderr.write(`rubato memory: ${error instanceof Error ? error.stack ?? error.message : String(error)}\n`)
-    process.exit(1)
+    exitAfterFlush(1)
   },
 )
