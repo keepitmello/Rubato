@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { readDesktopPrimaryBearerToken } from "../environments/primary/desktopAuth";
 import { readPreparedConnection } from "./session";
 
@@ -47,15 +48,15 @@ function isSameOriginPage(baseUrl: string): boolean {
   }
 }
 
-export class RubatoRequestError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-    /** The input the server blamed, when it named one. */
-    readonly field?: string,
-  ) {
-    super(message);
-  }
+export class RubatoRequestError extends Schema.TaggedError<RubatoRequestError>()(
+  "RubatoRequestError",
+  { code: Schema.String, message: Schema.String, field: Schema.optionalKey(Schema.String) },
+) {}
+
+export const isRubatoRequestError = Schema.is(RubatoRequestError);
+
+function requestError(code: string, message: string, field?: string) {
+  return new RubatoRequestError({ code, message, ...(field === undefined ? {} : { field }) });
 }
 
 /**
@@ -72,10 +73,10 @@ export async function postRubato<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   const prepared = environmentId === null ? null : readPreparedConnection(environmentId);
-  if (!prepared) throw new RubatoRequestError("unavailable", "This Mac is not connected.");
+  if (!prepared) throw requestError("unavailable", "This Mac is not connected.");
   const access = await rubatoHttpAccess(prepared);
   if (!access)
-    throw new RubatoRequestError("unavailable", `${what[0]!.toUpperCase()}${what.slice(1)} are not available on this connection.`);
+    throw requestError("unavailable", `${what[0]!.toUpperCase()}${what.slice(1)} are not available on this connection.`);
   const response = await fetch(`${access.baseUrl}${route}/${action}`, {
     method: "POST",
     ...(signal ? { signal } : {}),
@@ -83,7 +84,7 @@ export async function postRubato<T>(
     headers: { ...access.headers, "content-type": "application/json" },
     body: JSON.stringify(body),
   }).catch((cause: unknown) => {
-    throw new RubatoRequestError(
+    throw requestError(
       "network",
       cause instanceof Error ? `Could not reach this Mac: ${cause.message}` : "Could not reach this Mac.",
     );
@@ -95,8 +96,8 @@ export async function postRubato<T>(
   if (!response.ok || payload === null || (payload as { error?: unknown }).error) {
     const error = (payload as { error?: { code?: string; message?: string; field?: string } } | null)?.error;
     if (response.status === 401)
-      throw new RubatoRequestError("unauthorized", `This connection is not allowed to change ${what}.`);
-    throw new RubatoRequestError(
+      throw requestError("unauthorized", `This connection is not allowed to change ${what}.`);
+    throw requestError(
       error?.code ?? `http-${response.status}`,
       error?.message ?? `Request failed (HTTP ${response.status}).`,
       typeof error?.field === "string" ? error.field : undefined,

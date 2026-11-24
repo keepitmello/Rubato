@@ -27,6 +27,10 @@ export async function resolveCompanionAgy(selection, env = process.env) {
     throw new Error('The selected Antigravity account is not configured for official AGY.');
   }
   const isolated = /^(1|true)$/i.test(flags.get('RUBATO_LOCAL_AGY_ISOLATED') ?? '');
+  if (selection.isolated !== undefined && (isolated !== selection.isolated ||
+      (isolated && (flags.get('RUBATO_LOCAL_AGY_LOGIN') || selection.instanceId) !== selection.instanceId))) {
+    throw new Error('The selected Antigravity instance no longer holds the scheduled login.');
+  }
   const profile = isolated ? path.join(state, 'providers', 'antigravity',
     createHash('sha256').update(selection.instanceId).digest('hex')) : path.join(home, '.gemini');
   return { home, profile, isolated, command: config.binaryPath, model: selection.model };
@@ -102,13 +106,24 @@ function connect(child, { signal, onUpdate }) {
   };
 }
 
-export function acpModelSelection(session, requested) {
+export function acpModelSelection(session, requested, scheduled) {
   const config = session.configOptions?.find(c => c.category === 'model' || c.id === 'model');
   const current = config?.currentValue ?? session.models?.currentModelId;
   const options = config?.options?.flatMap(option => option.options ?? [option]).map(o => o.value) ??
     session.models?.availableModels?.map(o => o.modelId) ?? [];
   const effortSuffix = /^(gemini-.+)-(low|medium|high|xhigh|max)$/.exec(requested);
   const base = effortSuffix?.[1] ?? requested;
+  if (scheduled) {
+    // Some catalogs encode effort in the model id; others expose a thought_level
+    // option after selecting the model. Never substitute a different variant.
+    const effort = scheduled.thinking ?? effortSuffix?.[2];
+    if (effortSuffix && effort !== effortSuffix[2]) throw new Error(`Thinking level conflicts with ${requested}`);
+    const variant = effort && `${base}-${effort}`;
+    const offered = value => options.includes(value) || current === value;
+    if (variant && offered(variant)) return { model: variant, current, config };
+    if (offered(base)) return { model: base, current, config, effort };
+    throw new Error(`The selected Antigravity account does not offer ${requested}.`);
+  }
   const model = options.includes(requested) || current === requested ? requested
     : options.includes(base) ? base
     : base === 'gemini-4-hydrogen' && options.includes(HYDROGEN) ? HYDROGEN : null;
@@ -117,7 +132,7 @@ export function acpModelSelection(session, requested) {
   return { model, current, config, effort };
 }
 
-export async function runCompanionAgy({ account, cwd, systemPrompt, prompt, mcp, signal, onUpdate, spawnProcess = spawn }) {
+export async function runCompanionAgy({ account, scheduled, cwd, systemPrompt, prompt, mcp, signal, onUpdate, spawnProcess = spawn }) {
   signal?.throwIfAborted();
   const name = `rubato-companion-${randomUUID()}`;
   const folder = path.join(account.profile, 'config', 'agents');
@@ -126,6 +141,7 @@ export async function runCompanionAgy({ account, cwd, systemPrompt, prompt, mcp,
   await writeFile(agentFile, [
     '---', `name: ${name}`, 'description: Rubato companion', 'mainAgent: true', 'subagent: false',
     'excludeDefaultComponents: true', 'mcpServers: [rubato_session]', 'tools: []', 'commandExecutionPolicy: sandbox', '---', '',
+    scheduled ? 'Use the Rubato tools on the session-scoped MCP server `rubato_session`.' :
     'Rubato tools for this conversation are on the session-scoped MCP server `rubato_session`. ' +
       'Use its `reply` tool to deliver user-visible messages. Other MCP servers are not part of this companion’s toolset.',
     '', systemPrompt, '',
@@ -136,14 +152,17 @@ export async function runCompanionAgy({ account, cwd, systemPrompt, prompt, mcp,
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => envKeys.has(key.toUpperCase())));
     env.HOME = account.home;
     if (account.isolated) env.AGY_ACP_FORCE_FILE_STORAGE = '1';
-    const args = ['acp', '--sandbox', '--gemini-dir', account.profile, '--agent', name];
+    if (scheduled && account.isolated) env.AGY_CLI_FORCE_FILE_TOKEN_STORAGE = '1';
+    const profileArgs = !scheduled ? ['--gemini-dir', account.profile] :
+      account.isolated ? ['--gemini-dir', account.profile, '--app-data-dir', 'antigravity-acp'] : [];
+    const args = ['acp', '--sandbox', ...profileArgs, '--agent', name];
     connection = connect(spawnProcess(account.command, args, { env, cwd, stdio: 'pipe' }), { signal, onUpdate });
     await connection.request('initialize', { protocolVersion: 1, clientCapabilities: {},
-      clientInfo: { name: 'rubato-companion', version: '1.0.0' } });
+      clientInfo: { name: scheduled ? 't3-code' : 'rubato-companion', version: '1.0.0' } });
     const session = await connection.request('session/new', { cwd, mcpServers: [mcp] });
     if (!session?.sessionId) throw new Error('Antigravity did not open a conversation');
     connection.bind(session.sessionId);
-    const { model, current, config, effort } = acpModelSelection(session, account.model);
+    const { model, current, config, effort } = acpModelSelection(session, account.model, scheduled);
     let configOptions = session.configOptions;
     if (model !== current) {
       if (config) {
@@ -205,10 +224,10 @@ function transcriptPrompt(messages) {
   return blocks;
 }
 
-export function createCompanionAgyProvider({ account, companionId, createAssistantMessageEventStream, getCurrentSystemPrompt,
+export function createCompanionAgyProvider({ account, companionId, scheduled, resolveAccount, createAssistantMessageEventStream, getCurrentSystemPrompt,
   run = runCompanionAgy, markResolved }) {
-  const provider = `${COMPANION_AGY_PROVIDER}-${companionId}`;
-  const api = COMPANION_AGY_PROVIDER;
+  const provider = scheduled?.provider ?? `${COMPANION_AGY_PROVIDER}-${companionId}`;
+  const api = scheduled ? `rubato-scheduled-acp-${scheduled.instanceId}` : COMPANION_AGY_PROVIDER;
   const cost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   return {
     provider,
@@ -216,7 +235,7 @@ export function createCompanionAgyProvider({ account, companionId, createAssista
       name: 'Antigravity ACP', api, baseUrl: 'http://127.0.0.1',
       // Local transport marker; authentication happens in the selected official CLI profile.
       apiKey: 'rubato-local-acp',
-      models: [{ id: account.model, name: account.model, input: ['text', 'image'], reasoning: false,
+      models: [{ id: scheduled ? `${scheduled.instanceId}/${scheduled.model}` : account.model, name: account.model, input: ['text', 'image'], reasoning: false,
         contextWindow: 128_000, maxTokens: 8192, cost }],
       streamSimple(model, context, options = {}) {
         const stream = createAssistantMessageEventStream();
@@ -250,7 +269,7 @@ export function createCompanionAgyProvider({ account, companionId, createAssista
             }
           };
           const endpoint = await options.providerOpenSessionMcp({ signal: options.signal, executeTool,
-            alwaysLoad: ['reply', 'tool_search'] });
+            alwaysLoad: scheduled ? ['tool_search'] : ['reply', 'tool_search'] });
           const mcp = { name: 'rubato_session', command: process.execPath,
             args: [fileURLToPath(new URL('./agy-stdio-proxy.mjs', import.meta.url))],
             env: [{ name: 'RUBATO_SESSION_MCP_URL', value: endpoint.url },
@@ -258,7 +277,7 @@ export function createCompanionAgyProvider({ account, companionId, createAssista
           try {
             stream.push({ type: 'start', partial: output });
             let index;
-            await run({ account, cwd: options.providerExecCwd, systemPrompt, prompt, mcp, signal: options.signal, onUpdate(update) {
+            await run({ account: resolveAccount ? await resolveAccount() : account, scheduled, cwd: options.providerExecCwd, systemPrompt, prompt, mcp, signal: options.signal, onUpdate(update) {
               if (update.sessionUpdate !== 'agent_message_chunk' || update.content?.type !== 'text') return;
               if (index === undefined) {
                 index = output.content.length;

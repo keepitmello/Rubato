@@ -1,4 +1,5 @@
 import type { EnvironmentId } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 
 import { rubatoHttpAccess } from "./rubatoHttp";
 import { readPreparedConnection } from "./session";
@@ -299,13 +300,13 @@ export interface UserMemoryView {
   readonly asks: readonly UserMemoryAsk[];
 }
 
-export class MemoryRequestError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-  }
+export class MemoryRequestError extends Schema.TaggedError<MemoryRequestError>()(
+  "MemoryRequestError",
+  { code: Schema.String, message: Schema.String },
+) {}
+
+function requestError(code: string, message: string) {
+  return new MemoryRequestError({ code, message });
 }
 
 async function call<T>(
@@ -314,17 +315,17 @@ async function call<T>(
   body: Record<string, unknown> = {},
 ): Promise<T> {
   const prepared = environmentId === null ? null : readPreparedConnection(environmentId);
-  if (!prepared) throw new MemoryRequestError("unavailable", "This Mac is not connected.");
+  if (!prepared) throw requestError("unavailable", "This Mac is not connected.");
   const access = await rubatoHttpAccess(prepared);
   if (!access)
-    throw new MemoryRequestError("unavailable", "Memory settings are not available on this connection.");
+    throw requestError("unavailable", "Memory settings are not available on this connection.");
   const response = await fetch(`${access.baseUrl}${MEMORY_ROUTE}/${action}`, {
     method: "POST",
     credentials: access.credentials,
     headers: { ...access.headers, "content-type": "application/json" },
     body: JSON.stringify(body),
   }).catch((cause: unknown) => {
-    throw new MemoryRequestError(
+    throw requestError(
       "network",
       cause instanceof Error ? `Could not reach this Mac: ${cause.message}` : "Could not reach this Mac.",
     );
@@ -336,8 +337,8 @@ async function call<T>(
   if (!response.ok || payload === null || (payload as { error?: unknown }).error) {
     const error = (payload as { error?: { code?: string; message?: string } } | null)?.error;
     if (response.status === 401)
-      throw new MemoryRequestError("unauthorized", "This connection is not allowed to change memory settings.");
-    throw new MemoryRequestError(
+      throw requestError("unauthorized", "This connection is not allowed to change memory settings.");
+    throw requestError(
       error?.code ?? `http-${response.status}`,
       error?.message ?? `Request failed (HTTP ${response.status}).`,
     );

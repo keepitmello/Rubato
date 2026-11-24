@@ -9,13 +9,7 @@ const fake = vi.hoisted(() => ({
   focus: vi.fn(),
   accept: vi.fn(),
 }));
-vi.mock("../../state/rubatoHttp", () => ({
-  RubatoRequestError: class extends Error {
-    constructor(readonly code: string, message: string) {
-      super(message);
-    }
-  },
-}));
+vi.mock("../../state/session", () => ({ readPreparedConnection: () => null }));
 vi.mock("../../state/rubatoCompanion", () => ({
   acceptCompanionAvatar: fake.accept,
   rubatoCompanion: {
@@ -92,7 +86,7 @@ it("Rewrite more only puts the caret in the composer; nothing is sent or saved",
 
 it("a stale answer turns the card into a gentle ask-again that drafts the request", async () => {
   const onUpdate = vi.fn();
-  fake.apply.mockRejectedValue(new RubatoRequestError("stale", "The excerpt moved."));
+  fake.apply.mockRejectedValue(new RubatoRequestError({ code: "stale", message: "The excerpt moved." }));
   const host = mount(
     <RubatoProposalCard proposal={proposal} companionId="segno" environmentId={"env" as never} threadId="t1" onUpdate={onUpdate} onRefresh={vi.fn()} />,
   );

@@ -120,7 +120,7 @@ export const companionEdits = {
   // v0.1.11 starts the turn in useComposerSend.ts, so the suppression sits there.
   'apps/web/src/components/chat/useComposerSend.ts': [
     ['          modelSelection: ctxSelectedModelSelection,\n          titleSeed: title,\n          runtimeMode,\n          interactionMode: DEFAULT_INTERACTION_MODE,\n',
-      '          modelSelection: isCompanionThread(threadIdForSend) ? undefined : ctxSelectedModelSelection,\n          ...(isCompanionThread(threadIdForSend) ? {} : { titleSeed: title }),\n          runtimeMode,\n          interactionMode: DEFAULT_INTERACTION_MODE,\n',
+      '          ...(isCompanionThread(threadIdForSend) ? {} : { modelSelection: ctxSelectedModelSelection, titleSeed: title }),\n          runtimeMode,\n          interactionMode: DEFAULT_INTERACTION_MODE,\n',
       'replace'],
     ['import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";\n',
       'import { isCompanionThread } from "../../state/rubatoCompanion";\n'],

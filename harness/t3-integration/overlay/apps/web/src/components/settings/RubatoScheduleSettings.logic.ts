@@ -1,3 +1,6 @@
+import type { ServerProvider, ServerSettings } from "@t3tools/contracts";
+import { companionModelAccounts } from "@t3tools/shared/rubatoCompanionModelChoice";
+import { isIsolatedAgy } from "./RubatoAgyAccounts.logic";
 import type {
   RunStatus,
   Schedule,
@@ -435,4 +438,35 @@ export const STATUS_BADGE: Record<RunStatus, BadgeVariant> = {
 export function tildePath(value: string | null, home: string | null): string {
   if (value === null) return "";
   return home && (value === home || value.startsWith(`${home}/`)) ? `~${value.slice(home.length)}` : value;
+}
+
+export interface RubatoModel {
+  readonly slug: string;
+  readonly name: string;
+  readonly reasoning: ReadonlyArray<{ readonly id: string; readonly label: string }>;
+}
+
+/** Preserve Rubato's catalog, then offer agy's own catalog once per eligible login. */
+export function scheduleModels(providers: readonly ServerProvider[], instances: ServerSettings["providerInstances"] | undefined): readonly RubatoModel[] {
+  const choice = (model: ServerProvider["models"][number]) => {
+    const descriptor = model.capabilities?.optionDescriptors?.find(
+      (entry) => entry.id === "reasoningEffort" && entry.type === "select",
+    );
+    return {
+      slug: model.slug,
+      name: model.name,
+      reasoning: descriptor && descriptor.type === "select" ? descriptor.options : [],
+    };
+  };
+  const rubato = (providers.find((provider) => provider.driver === "rubato-pi")?.models ?? []).map(choice);
+  const accounts = companionModelAccounts(providers, instances);
+  return [...rubato, ...accounts.flatMap((account) => {
+    const provider = providers.find((item) => item.instanceId === account.instanceId)!;
+    const isolated = isIsolatedAgy(instances?.[provider.instanceId]?.environment);
+    return provider.models.filter((model) => /^gemini-(?:[4-9]|[1-9]\d+)(?:[.-]|$)/i.test(model.slug)).map((model) => ({
+      ...choice(model),
+      slug: `rubato-agy-${isolated ? "profile" : "cli"}/${provider.instanceId}/${model.slug}`,
+      name: `${account.label} · ${model.name}`,
+    }));
+  })];
 }
