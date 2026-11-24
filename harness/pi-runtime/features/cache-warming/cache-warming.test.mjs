@@ -150,20 +150,25 @@ test("a budget-thinking Claude request is warmed: the replay keeps the budget it
   assert.equal(warmer.status.state, "scheduled");
 });
 
-test("Codex warms every 20 minutes and stops each refresh after prefill", async (t) => {
+// The user came back to Codex threads mostly within 70 minutes; later refreshes cost more than
+// they rescued, so by default Codex sends the first two.
+test("Codex sends two refreshes 20 minutes apart after a turn and stops each after prefill", async (t) => {
   mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
   t.after(() => mock.timers.reset());
   const { warmer, warms } = harness("openai-codex", 0);
   warmer.start({ model: model("openai-codex"), context: {}, options: {} }, () => true);
   warmer.onAgentSettled();
   assert.equal(warmer.status.nextWarmAt, 20 * MIN);
+  // The second refresh plus the 5-minute late-timer allowance.
+  assert.equal(warmer.status.until, 45 * MIN);
   await advance(20 * MIN);
   assert.equal(warms.length, 1);
   assert.equal(warms[0].note, "stopped after prefill");
   for (let step = 0; step < 4; step += 1) await advance(20 * MIN);
-  assert.equal(warms.length, 5, "20, 40, 60, 80, 100 minutes");
+  assert.equal(warms.length, 2, "20 and 40 minutes");
+  assert.match(warmer.status.reason, /warming window ended/);
   await advance(20 * MIN);
-  assert.equal(warms.length, 5);
+  assert.equal(warms.length, 2);
 });
 
 test("a request that disabled caching is not warmed", () => {

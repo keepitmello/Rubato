@@ -414,7 +414,7 @@ function sessionTools(getLink, { companion }) {
       label: "Conversation cache warmer",
       description: "Keep another conversation's prompt cache warm for longer, or stop warming it: the same switch as the context ring in the app. " +
         "By default a conversation the user writes in is kept warm within two hours after their latest message; " +
-        "on Claude that is one refresh after each turn, which keeps its cache about 100 minutes past the turn. " +
+        "that is one refresh after each turn on Claude (cache alive about 100 minutes past the turn) and two on Codex (about 70 minutes). " +
         "A conversation no person has written in, such as a lead you started and drive with session_send, is not warmed until an end is set, " +
         "since most are never opened again: set hours on a lead you mean to message again soon (for example once the user answers), and leave one whose work is done. " +
         "hours warms through that many hours from now (1 to 24, shorter than the default too); a later user message still gets the default. " +

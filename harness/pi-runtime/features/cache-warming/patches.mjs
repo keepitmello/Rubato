@@ -13,11 +13,13 @@
 // plans on 15 and stops at the first refresh that reads nothing (`warmMissedCache`). Inside that window every refresh is sent; outside it none is. Other
 // providers keep stock behaviour.
 //
-// Inside that default window Claude sends only the first refresh after a turn
-// (`RUBATO_DEFAULT_REFRESHES`). The second, 80 minutes after the turn, rescued 8 of 108 idle
-// stretches on the user's threads (2026-11-11..24) while 16 of them found the 1h entry already
+// Inside that default window Claude sends only the first refresh after a turn and Codex the first
+// two (`RUBATO_DEFAULT_REFRESHES`). Claude's second, 80 minutes after the turn, rescued 8 of 108
+// idle stretches on the user's threads (2026-11-11..24) while 16 of them found the 1h entry already
 // evicted by the provider and re-wrote the whole thread, so it cost more than the cold starts it
-// saved. An end the person or the companion sets is warmed to the end.
+// saved. The user came back to Codex threads mostly within 70 minutes, so refreshes past the
+// second cost more than they rescued (2026-10-03..11-24). An end the person or the companion sets
+// is warmed to the end.
 //
 // A conversation no person has written in (a lead a companion started and drives by session
 // messages) has no input to count from, so it is not warmed until someone sets an end: most are
@@ -123,6 +125,7 @@ export const RUBATO_WARMING_HORIZON_MS = 2 * 60 * 60_000;
  */
 export const RUBATO_DEFAULT_REFRESHES = Object.freeze({
     anthropic: 1,
+    "openai-codex": 2,
 });
 /** The longest a session may ask for from now: warming keeps its runtime loaded that long. */
 export const RUBATO_WARMING_MAX_HOURS = 24;
