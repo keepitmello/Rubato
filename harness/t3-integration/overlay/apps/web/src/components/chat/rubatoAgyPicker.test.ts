@@ -36,7 +36,7 @@ describe("agyPickerAccounts", () => {
         railId: "agy-rubato-lead",
         label: "Antigravity",
         agents: [
-          { instanceId: "agy-rubato-lead", label: "Rubato lead" },
+          { instanceId: "agy-rubato-lead", label: "Rubato" },
           { instanceId: "agy-helena", label: "헬레나" },
         ],
       },
@@ -44,7 +44,7 @@ describe("agyPickerAccounts", () => {
         railId: "agy-rubato-lead-sub",
         label: "Antigravity [sub]",
         agents: [
-          { instanceId: "agy-rubato-lead-sub", label: "Rubato lead" },
+          { instanceId: "agy-rubato-lead-sub", label: "Rubato" },
           { instanceId: "agy-rubato-lead-sub-helena", label: "헬레나" },
         ],
       },

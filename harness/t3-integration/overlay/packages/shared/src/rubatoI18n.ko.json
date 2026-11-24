@@ -4871,7 +4871,6 @@
   "Official agy binary path": "공식 agy 실행 파일 경로",
   "Shown limits": "표시할 한도",
   "The composer's model picker shows each account once and lets you pick its system prompt there before starting a new thread.": "입력창 모델 선택에는 계정마다 하나씩 나옵니다. 새 스레드를 시작하기 전에 거기서 시스템 프롬프트를 고르세요.",
-  "Rubato lead": "루바토 리드",
   "Add system prompt": "시스템 프롬프트 추가"
  },
  "templates": [

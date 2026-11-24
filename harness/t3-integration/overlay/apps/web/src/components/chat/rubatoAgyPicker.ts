@@ -41,7 +41,7 @@ export function agyPickerAccounts(
     const agents = account.prompts
       .map((prompt) => ({
         instanceId: prompt.instanceId,
-        label: prompt.agent === LEAD_AGENT ? "Rubato lead" : (prompt.agent ?? prompt.name),
+        label: prompt.agent === LEAD_AGENT ? "Rubato" : (prompt.agent ?? prompt.name),
         lead: prompt.agent === LEAD_AGENT,
       }))
       // .sort() on a fresh array keeps the settings order among the rest.
