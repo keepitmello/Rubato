@@ -14,7 +14,7 @@ const webParameters = Type.Object({
 	account: optionalString("Aside account, when a specific account is needed."),
 	profile: optionalString("Aside browser profile, when a specific profile is needed."),
 	host: optionalString("Aside host, when a specific host is needed."),
-	model: optionalString("Exact configured provider/model ID. Omit unless the user requested a different model or provider route."),
+	model: optionalString("Exact provider/model ID. Omit unless the user requested a different model or route. The user's ChatGPT/Codex subscription is `openai-codex/<model>` (for example `openai-codex/gpt-6.1-terra`); `openai/...` and bare names are not on this account. Read the `aside` skill before choosing."),
 	effort: Type.Optional(choice("off", "minimal", "low", "medium", "high", "xhigh", "max", "ultrabrowse")),
 }, { additionalProperties: false });
 const deepParameters = Type.Object({
@@ -77,7 +77,18 @@ export function registerResearchTools(pi, jobs = researchJobs()) {
 		async execute(toolCallId, params, signal, _onUpdate, ctx) {
 			try {
 				signal?.throwIfAborted();
-				const job = await jobs.submit(ctx.sessionManager.getSessionFile(), name, params, ctx.cwd, toolCallId, signal);
+				const transcript = ctx.sessionManager.getSessionFile();
+				if (!transcript) {
+					// No saved conversation to bring the result back to (for example an MCP bridge
+					// session), so the caller waits and receives it as this tool's result.
+					const { job, result } = await jobs.run(name, params, ctx.cwd, signal);
+					return {
+						content: [{ type: "text", text: completion(job, result) }],
+						details: { id: job.id, tool: name, ...result },
+						...(result.ok ? {} : { isError: true }),
+					};
+				}
+				const job = await jobs.submit(transcript, name, params, ctx.cwd, toolCallId, signal);
 				return {
 					content: [{ type: "text", text: job.existing
 						? `${label} (${job.id}) was already queued in this conversation. Rubato did not send it again.`
@@ -90,7 +101,7 @@ export function registerResearchTools(pi, jobs = researchJobs()) {
 		},
 	});
 	pi.registerTool(tool(BROWSER_AGENT, "Browser Agent",
-		"Delegate a browser task to Aside: broad fresh web search, multi-site evidence collection, and work on signed-in sites. Give the whole browser task, scope, and needed evidence. Leave unrequested posts, messages, purchases, and other changes outside the task. Separate tasks run in parallel, so start independent ones together.",
+		"Delegate a browser task to Aside (read the `aside` skill first; it covers choosing a model): broad fresh web search, multi-site evidence collection, and work on signed-in sites. Give the whole browser task, scope, and needed evidence. Leave unrequested posts, messages, purchases, and other changes outside the task. Separate tasks run in parallel, so start independent ones together.",
 		webParameters));
 	pi.registerTool(tool(DEEP_RESEARCH, "Deep Research",
 		"Ask ChatGPT Pro for deep research, independent judgment, synthesis, or diagnosis. Provide the question and optionally the exact files to send. Rubato packages and submits them and returns the result asynchronously. After a possible submission it recovers the same run, rather than resending. Different questions each open their own conversation and can run at the same time; two or three at once is reliable.",

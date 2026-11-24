@@ -27,6 +27,7 @@ function fixture(t) {
 	const jobHarness = () => {
 		const harness = researchJobs({
 			interval: 10,
+			inlineRoot: () => join(cwd, "inline"),
 			isAlive: (pid) => pids.has(pid),
 			start(command, args, _cwd, out, err, done) {
 				const pid = calls.length + 100;
@@ -251,4 +252,56 @@ printf '%s\\n' '${JSON.stringify({ session: { id: asideId, status: "idle" }, ans
 	await until(() => delivered.length === 1);
 	assert.equal(delivered[0].job.id, id);
 	assert.equal(readFileSync(delivered[0].result.response, "utf8"), "durable answer");
+});
+
+function inlineTools(t) {
+	const f = fixture(t);
+	const tools = new Map();
+	registerResearchTools({
+		on() {}, registerTool: (value) => tools.set(value.name, value), sendMessage() {},
+	}, f.jobHarness());
+	// A session without a transcript file, as in the MCP bridge.
+	const ctx = { cwd: f.cwd, sessionManager: { getSessionFile: () => undefined, getEntries: () => [] } };
+	return { ...f, tools, ctx };
+}
+
+test("a session with no saved transcript waits and returns the browser result", async (t) => {
+	const { calls, tools, ctx } = inlineTools(t);
+	const pending = tools.get(BROWSER_AGENT).execute("call", { prompt: "read the page" }, undefined, undefined, ctx);
+	await until(() => calls.length === 1);
+	put(calls[0].out, { session: { id: asideId, status: "idle" }, answer: "page says hello" });
+	calls[0].finish();
+	const result = await pending;
+	assert.equal(result.isError, undefined);
+	assert.match(result.content[0].text, /browser_agent completed\./);
+	assert.match(result.content[0].text, /page says hello/);
+	assert.equal(calls.length, 1);
+});
+
+test("a failed research run without a transcript is an error result, not a hang", async (t) => {
+	const { calls, tools, ctx } = inlineTools(t);
+	const pending = tools.get(BROWSER_AGENT).execute("call", { prompt: "read" }, undefined, undefined, ctx);
+	await until(() => calls.length === 1);
+	calls[0].finish(1);
+	const result = await pending;
+	assert.equal(result.isError, true);
+	assert.match(result.content[0].text, /did not complete/);
+});
+
+test("cancelling a waiting browser task stops waiting", async (t) => {
+	const { calls, tools, ctx } = inlineTools(t);
+	const abort = new AbortController();
+	const pending = tools.get(BROWSER_AGENT).execute("call", { prompt: "read" }, abort.signal, undefined, ctx);
+	await until(() => calls.length === 1);
+	abort.abort();
+	const result = await pending;
+	assert.equal(result.isError, true);
+});
+
+test("the browser tool tells models how to name the subscription model route", () => {
+	const tools = new Map();
+	registerResearchTools({ on() {}, registerTool: (value) => tools.set(value.name, value), sendMessage() {} });
+	const tool = tools.get(BROWSER_AGENT);
+	assert.match(tool.description, /`aside` skill/);
+	assert.match(JSON.stringify(tool.parameters.properties.model), /openai-codex\//);
 });

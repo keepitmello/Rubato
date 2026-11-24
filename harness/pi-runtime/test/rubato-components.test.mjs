@@ -18,7 +18,7 @@ test("current Rubato builds without Senpi and binds actual task/memory/MCP compo
   const scratch = await mkdtemp(join(tmpdir(), "rubato-component-integration-"));
   t.after(() => rm(scratch, { recursive: true, force: true }));
   const build = await buildRubatoComponents({ outputRoot: join(scratch, "build") });
-  assert.equal(build.receipt.bundles.length, 6);
+  assert.equal(build.receipt.bundles.length, 7);
   assert.ok(build.receipt.sources.length > 100);
   assert.deepEqual(build.receipt.externalImports, ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui", "typebox"]);
   assert.equal(build.receipt.fullRubatoParity, false);

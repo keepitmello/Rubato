@@ -76,7 +76,7 @@ export const TOOLS = Object.freeze([
   {
     name: "browser_agent",
     description:
-      "Delegate a browser or broad fresh web research task to Aside Browser (`aside exec`). Request source links, dates, and quotations when collecting evidence.",
+      "Delegate a browser or broad fresh web research task to Aside Browser (`aside exec`; read the `aside` skill first, it covers choosing a model). Request source links, dates, and quotations when collecting evidence.",
     inputSchema: {
       type: "object",
       properties: {
@@ -84,7 +84,11 @@ export const TOOLS = Object.freeze([
         account: { type: "string", description: "Optional Aside account (e.g. u0, u1)." },
         profile: { type: "string", description: "Optional Aside browser profile ID." },
         host: { type: "string", description: "Optional Aside host ID or name." },
-        model: { type: "string", description: "Optional exact configured provider/model ID." },
+        model: {
+          type: "string",
+          description:
+            "Optional exact provider/model ID. The user's ChatGPT/Codex subscription is `openai-codex/<model>` (e.g. `openai-codex/gpt-6.1-terra`); `openai/...` and bare names are not on this account.",
+        },
         effort: {
           type: "string",
           enum: ["off", "minimal", "low", "medium", "high", "xhigh", "max", "ultrabrowse"],

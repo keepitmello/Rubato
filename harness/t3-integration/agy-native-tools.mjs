@@ -9,6 +9,12 @@ import { clearCompanionEnv } from '../companion/registry.mjs';
 import { stockPiSupportEnv } from '../rubato-pi/src/launch.mjs';
 import { createSessionMcpTools, listSessionMcpTools } from '../pi-runtime/features/provider-execution/session-mcp.mjs';
 
+// This bridge session lives in memory, with no transcript, so tools that read or write a
+// session's saved notes and history window can only refuse or return nothing. agy keeps
+// its own conversation record.
+export const isSessionRecordTool = name => /^(history_|notes_)/.test(name) ||
+  name === 'new_context' || name === 'get_context_remaining';
+
 /** The official AGY MCP process owns one ordinary Rubato workspace session.
  * No model is run by this session. Tools resolve through its live registry and policies.
  */
@@ -91,7 +97,7 @@ export async function openAgyNativeTools({ cwd = process.cwd(), env = process.en
     });
     const tools = createSessionMcpTools({
       signal: active.signal,
-      listTools: () => listSessionMcpTools(session),
+      listTools: () => listSessionMcpTools(session).filter(tool => !isSessionRecordTool(tool.name)),
       executeTool: (name, args, options) => session.executeTool(name, args, options),
       alwaysLoad: ['tool_search'],
     });

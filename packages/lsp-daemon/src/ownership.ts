@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, statSync, unlinkSync } from "node:fs";
+import { connect } from "node:net";
 import { dirname } from "node:path";
 
 import { tryAcquireLock, type LockHandle, isProcessAlive, unlinkQuietly } from "./lock.js";
@@ -134,7 +135,10 @@ async function validateExistingOwner(
 	let token = readOrCreateAuthToken(paths);
 	for (let attempt = 0; attempt < 2; attempt += 1) {
 		const owner = readDaemonOwner(paths);
-		if (!owner) return token;
+		if (!owner) {
+			await removeOrphanSocket(paths);
+			return token;
+		}
 		const ping = await pingOwner(token);
 		if (ping && owner.nonce === ping.nonce && sameEndpoint(owner.endpoint, ping.endpoint)) {
 			throw new DaemonAlreadyRunningError("LSP daemon already running");
@@ -151,6 +155,28 @@ async function validateExistingOwner(
 		return token;
 	}
 	throw new DaemonStartupDeferredError("reachable_owner_mismatch");
+}
+
+// A socket file with no owner record comes from a daemon that died (or predates owner
+// records). Binding over it fails with EADDRINUSE, so remove it, but only when nothing listens.
+async function removeOrphanSocket(paths: DaemonPaths): Promise<void> {
+	if (process.platform === "win32" || !existsSync(paths.socket) || !lstatSync(paths.socket).isSocket()) return;
+	const outcome = await new Promise<string>((resolve) => {
+		const probe = connect(paths.socket);
+		const finish = (result: string): void => {
+			probe.destroy();
+			resolve(result);
+		};
+		probe.setTimeout(1_000, () => finish("unknown"));
+		probe.once("connect", () => finish("live"));
+		probe.once("error", (error: NodeJS.ErrnoException) => finish(error.code ?? "unknown"));
+	});
+	if (outcome === "ECONNREFUSED" || outcome === "ENOENT") {
+		unlinkQuietly(paths.socket);
+		unlinkQuietly(paths.pid);
+		return;
+	}
+	throw new DaemonStartupDeferredError("unowned_socket_not_stale");
 }
 
 function cleanupDeadOwner(paths: DaemonPaths, owner: DaemonOwner): void {

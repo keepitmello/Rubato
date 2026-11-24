@@ -1,6 +1,6 @@
 ---
 name: "aside"
-version: 4
+version: 5
 description: "Use when research quality depends on broad, fresh, high-recall evidence collection, or for any browser automation."
 ---
 
@@ -50,7 +50,9 @@ credits; `openai-codex/gpt-6.1-terra` uses the connected ChatGPT subscription.
 Check Aside Settings → Task models for the exact configured provider and model
 ID. From the CLI, `aside repl 'console.log(JSON.stringify(aside.settings.get("modelCategories")))'`
 shows the configured Task model routes. A configured route does not prove the
-subscription is still signed in.
+subscription is still signed in. If a run fails with "is not available for this
+account", the provider prefix is wrong: the subscription route is always
+`openai-codex/<model>`, never `openai/<model>` or a bare model name.
 
 For a new task:
 

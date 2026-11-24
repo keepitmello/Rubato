@@ -11,6 +11,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
@@ -267,6 +268,24 @@ describe("daemon IPC authentication and ownership", () => {
 
 		expect(readFileSync(paths.auth, "utf8").trim()).not.toBe("old-token");
 		expect(readDaemonOwner(paths)?.nonce).not.toBe("dead");
+	});
+
+	it("given a leftover socket with no owner record and nothing listening when candidate starts then it replaces the socket", async () => {
+		const paths = tempPaths();
+		mkdirSync(paths.dir, { recursive: true });
+		// A daemon killed without cleanup leaves its socket file behind.
+		try {
+			execFileSync(process.execPath, ["-e",
+				"require('net').createServer().listen(process.argv[1], () => process.kill(process.pid, 'SIGKILL'))", paths.socket]);
+		} catch {
+			// The child kills itself on purpose.
+		}
+		expect(lstatSync(paths.socket).isSocket()).toBe(true);
+		writeFileSync(paths.pid, "1\n", { mode: 0o600 });
+		const server = await startDaemonServer(paths, { onIdleShutdown: () => {} });
+		openServers.push(server);
+
+		expect(readDaemonOwner(paths)?.pid).toBe(process.pid);
 	});
 
 	it("given a stale close from an old owner when a new owner exists then winner metadata survives", async () => {

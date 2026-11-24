@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { handleMcpRequest } from '../agy-mcp-server.mjs';
+import { isSessionRecordTool } from '../agy-native-tools.mjs';
 import { createSessionMcpTools, listSessionMcpTools, openSessionMcpEndpoint } from '../../pi-runtime/features/provider-execution/session-mcp.mjs';
 
 const schema = { type: 'object', properties: { value: { type: 'string' } } };
@@ -73,4 +74,11 @@ test('provider MCP endpoints isolate turns and close on cancellation', async () 
     a.close();
     b.close();
   }
+});
+
+test('the in-memory bridge session hides tools that need a saved transcript', () => {
+  for (const name of ['notes_write_file', 'notes_read_file', 'history_list_items', 'history_read_item', 'new_context', 'get_context_remaining']) {
+    assert.equal(isSessionRecordTool(name), true, name);
+  }
+  for (const name of ['read', 'bash', 'session_list', 'memory_search', 'todo']) assert.equal(isSessionRecordTool(name), false, name);
 });

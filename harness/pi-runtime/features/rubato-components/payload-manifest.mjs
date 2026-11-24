@@ -6,6 +6,8 @@ export const BUNDLE_ENTRIES = Object.freeze({
   "extensions/rubato-memory-mcp.js": "packages/rubato-runtime/src/mcp/memory-server.ts",
   "runtime/ast-grep-mcp/cli.js": "packages/ast-grep-mcp/src/cli.ts",
   "runtime/lsp-daemon/dist/cli.js": "packages/lsp-daemon/src/cli.ts",
+  // The LSP tools load this client from beside cli.js.
+  "runtime/lsp-daemon/dist/client.js": "packages/lsp-daemon/src/client.ts",
 });
 export const SOURCE_ASSETS = Object.freeze({
   "LICENSE.md": "LICENSE.md",

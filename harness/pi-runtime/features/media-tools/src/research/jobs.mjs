@@ -5,6 +5,7 @@ import {
 	realpathSync, renameSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { copyFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
@@ -14,6 +15,9 @@ export const DEEP_RESEARCH = "deep_research";
 const RENAMED = { web_agent: BROWSER_AGENT };
 export const RESEARCH_COMPLETION = "rubato:research-completion";
 export const researchArtifacts = (sessionFile) => join(`${sessionFile.replace(/\.jsonl$/, "")}-artifacts`, "research");
+// A session with no saved transcript has nowhere to deliver a result later, so its jobs
+// keep their files here and the tool call waits for the result instead.
+export const inlineResearchRoot = () => join(homedir(), ".rubato", "research", "inline");
 
 const activeAside = new Set(["running", "working", "queued", "starting", "waiting", "streaming", "in_progress"]);
 const recoverableOutpost = new Set(["submitted_pending", "submit_unknown", "submitted_response_unavailable"]);
@@ -158,8 +162,9 @@ function outpostResult(job) {
 	return { receipt, outpostId: result.id, status: result.status ?? "unverified_model_or_response" };
 }
 
-export function researchJobs({ start = launch, isAlive = alive, now = Date.now, interval = 1_000 } = {}) {
+export function researchJobs({ start = launch, isAlive = alive, now = Date.now, interval = 1_000, inlineRoot = inlineResearchRoot } = {}) {
 	const jobs = new Map();
+	const waiters = new Map();
 	let sessionFile;
 	let notify;
 	let timer;
@@ -231,7 +236,9 @@ export function researchJobs({ start = launch, isAlive = alive, now = Date.now, 
 			}
 			// Drop it before notification, which can synchronously ask about pending work.
 			jobs.delete(id);
-			notify(job, result);
+			const waiting = waiters.get(id);
+			if (waiting) { waiters.delete(id); waiting({ job, result }); }
+			else notify?.(job, result);
 		}
 		if (!jobs.size) {
 			clearInterval(timer);
@@ -251,6 +258,10 @@ export function researchJobs({ start = launch, isAlive = alive, now = Date.now, 
 		close() {
 			clearInterval(timer);
 			timer = undefined;
+			for (const [id, waiting] of waiters) {
+				waiting({ job: jobs.get(id), result: { ok: false, error: "The Rubato session closed before the research finished." } });
+			}
+			waiters.clear();
 			jobs.clear();
 			sessionFile = undefined;
 			notify = undefined;
@@ -302,6 +313,34 @@ export function researchJobs({ start = launch, isAlive = alive, now = Date.now, 
 			jobs.set(id, job);
 			watch();
 			return { id, ...(job.run ? { run: job.run } : {}) };
+		},
+		// For a session without a transcript: run the job and resolve with { job, result }.
+		async run(name, params, cwd, signal) {
+			signal?.throwIfAborted();
+			const id = randomUUID();
+			const dir = join(inlineRoot(), id);
+			mkdirSync(dir, { recursive: true, mode: 0o700 });
+			let request;
+			try { request = await prepareResearch(name, params, cwd, dir); signal?.throwIfAborted(); }
+			catch (error) { rmSync(dir, { recursive: true, force: true }); throw error; }
+			const job = { id, name, dir, cwd, ...request.recovery };
+			const outcome = new Promise((done, fail) => {
+				waiters.set(id, done);
+				signal?.addEventListener("abort", () => {
+					if (!waiters.delete(id)) return;
+					jobs.delete(id);
+					// A browser task nobody waits for should not keep running; an Outpost request
+					// may already be sent, so it finishes on its own receipt.
+					if (name === BROWSER_AGENT && job.pid) {
+						try { process.kill(process.platform === "win32" ? job.pid : -job.pid); } catch { /* already gone */ }
+					}
+					fail(signal.reason);
+				}, { once: true });
+			});
+			spawnPhase(job, "send", request.command, request.args);
+			jobs.set(id, job);
+			watch();
+			return outcome;
 		},
 	};
 }
