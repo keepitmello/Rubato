@@ -6,9 +6,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const configs = {
+  providerInstances: { agy: { environment: [{name: "RUBATO_LOCAL_AGY_AGENT", value: "rubato-lead"}] } },
   get: () => ({
     providers: [
       { instanceId: "rubato", driver: "rubato-pi" },
+      { instanceId: "agy", driver: "antigravity" },
+      { instanceId: "plain", driver: "antigravity" },
       { instanceId: "codex", driver: "codex" },
     ],
   }),
@@ -19,14 +22,14 @@ const LIBRARY = [
 
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => configs }));
 vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { get: () => configs } }));
-vi.mock("~/state/server", () => ({ environmentServerConfigsAtom: {} }));
+vi.mock("~/state/server", () => ({ environmentServerConfigsAtom: {}, serverEnvironment: { settingsValueAtom: () => ({}) } }));
 const http = vi.hoisted(() => ({ calls: 0, fail: false, connected: true, hold: null as Promise<void> | null }));
 vi.mock("~/state/rubatoHttp", () => ({
   postRubato: async (_environmentId: string, _route: string, action: string) => {
     http.calls += 1;
     if (http.hold) await http.hold;
     if (http.fail) throw new Error("This Mac is not connected.");
-    return action === "list" ? { prompts: LIBRARY } : {};
+    return action === "list" ? { prompts: LIBRARY } : action === "prepare" ? { prompt: LIBRARY[0] } : {};
   },
 }));
 vi.mock("~/state/session", async () => {
@@ -36,6 +39,8 @@ vi.mock("~/state/session", async () => {
 
 import {
   openRubatoSessionPromptMenu,
+  prepareRubatoSessionPrompt,
+  RubatoSessionPromptBadge,
   rubatoSessionPromptAvailable,
   RubatoSessionPromptPicker,
   sessionPromptChoice,
@@ -73,6 +78,8 @@ async function renderPicker(draftKey: string, instanceId = "rubato") {
 describe("/prompt", () => {
   it("is offered only for a draft that runs on a Rubato model", () => {
     expect(rubatoSessionPromptAvailable(ENV, "draft", "rubato")).toBe(true);
+    expect(rubatoSessionPromptAvailable(ENV, "draft", "agy")).toBe(true);
+    expect(rubatoSessionPromptAvailable(ENV, "draft", "plain")).toBe(false);
     expect(rubatoSessionPromptAvailable(ENV, "draft", "codex")).toBe(false);
     expect(rubatoSessionPromptAvailable(ENV, null, "rubato")).toBe(false);
   });
@@ -151,6 +158,16 @@ describe("RubatoSessionPromptPicker", () => {
     expect(sessionPromptChoice("draft-b")).toEqual({ kind: "default" });
     expect(chip()).toBeNull();
     expect(localStorage.getItem("rubato.sessionPrompt.last")).toBe("default");
+  });
+
+  it("opens a local agy draft with the library choice and keeps its name on the thread", async () => {
+    localStorage.setItem("rubato.sessionPrompt.last", LIBRARY[0]!.id);
+    await renderPicker("draft-agy", "agy");
+    expect(chip()?.textContent).toContain("비망록-v1.3");
+    await prepareRubatoSessionPrompt({ environmentId: ENV, draftKey: "draft-agy", threadId: "thread-agy", instanceId: "agy" });
+    expect(sessionPromptChoice("draft-agy")).toEqual({ kind: "default" });
+    await act(async () => root.render(<RubatoSessionPromptBadge environmentId={ENV} threadId="thread-agy" />));
+    expect(container.querySelector("[data-rubato-session-prompt-badge]")?.textContent).toContain("비망록-v1.3");
   });
 
   it("does not open for another draft or a model that is not Rubato", async () => {

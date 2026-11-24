@@ -12,12 +12,12 @@
 import { access, constants, lstat, mkdir, readFile, readlink, symlink, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { agentHeader, GENERATED_MARK } from './overlay/apps/server/src/provider/agyPrompt.mjs';
+export { GENERATED_MARK };
 
 export const LEAD_AGENT = 'rubato-lead';
 export const LEAD_INSTANCE_ID = 'agy-rubato-lead';
 export const MCP_SERVER_NAME = 'rubato-tools';
-export const GENERATED_MARK =
-  '<!-- Rubato 설치기가 harness/prompts 의 리드 프롬프트로 만든다. 고친 내용을 지키려면 이 줄을 지워라. -->';
 const PROMPTS = fileURLToPath(new URL('../prompts/', import.meta.url));
 const SKILLS = fileURLToPath(new URL('../skills/', import.meta.url));
 const MCP_SERVER = fileURLToPath(new URL('./agy-mcp-server.mjs', import.meta.url));
@@ -46,25 +46,7 @@ export const AGY_SKILLS = Object.freeze([
   'wrapping-sessions',
 ]);
 
-const FRONTMATTER = [
-  '---',
-  `name: ${LEAD_AGENT}`,
-  'description: 루바토 리드 — 방향을 같이 잡고, 맡긴 작업을 확인까지 마무리하는 메인 에이전트',
-  'mainAgent: true',
-  'subagent: false',
-  'excludeDefaultComponents: true',
-  // AGY expects inline server definitions in mcpServers, not names from mcp_config.json.
-  'inheritMcp: true',
-  'tools:',
-  '  - read_file',
-  '  - write_file',
-  '  - edit_file',
-  '  - run_command',
-  '  - invoke_subagent',
-  '  - manage_subagents',
-  'commandExecutionPolicy: sandbox',
-  '---',
-].join('\n');
+const FRONTMATTER = agentHeader(LEAD_AGENT, '루바토 리드 — 방향을 같이 잡고, 맡긴 작업을 확인까지 마무리하는 메인 에이전트');
 
 // agy 안에서 일한다는 것. 리드 프롬프트 정본에서 유일하게 갈라지는 문장이다.
 const AGY_ENVIRONMENT = [
