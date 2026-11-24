@@ -25,7 +25,7 @@ test("MCP initialize, ping, and tools/list expose the four Rubato tools", async 
   const list = await handleMcpRequest({ jsonrpc: "2.0", id: 3, method: "tools/list" });
   assert.deepEqual(
     list.result.tools.map((tool) => tool.name),
-    ["memory_search", "webfetch", "web_agent", "deep_research"],
+    ["memory_search", "webfetch", "browser_agent", "deep_research"],
   );
   assert.equal(TOOLS.length, 4);
 });
@@ -82,12 +82,12 @@ test("webfetch converts HTML to readable markdown and rejects non-HTTP URLs", as
   assert.equal(htmlToReadable("<script>x()</script><p>ok</p>", "text"), "ok");
 });
 
-test("web_agent invokes aside exec and blocks unavailable models", async () => {
+test("browser_agent invokes aside exec and blocks unavailable models", async () => {
   const blocked = await handleMcpRequest({
     jsonrpc: "2.0",
     id: 7,
     method: "tools/call",
-    params: { name: "web_agent", arguments: { prompt: "check", model: "openai/gpt-5.6-sol" } },
+    params: { name: "browser_agent", arguments: { prompt: "check", model: "openai/gpt-5.6-sol" } },
   });
   assert.equal(blocked.result.isError, true);
 
@@ -97,7 +97,7 @@ test("web_agent invokes aside exec and blocks unavailable models", async () => {
       jsonrpc: "2.0",
       id: 8,
       method: "tools/call",
-      params: { name: "web_agent", arguments: { prompt: "find docs", effort: "high" } },
+      params: { name: "browser_agent", arguments: { prompt: "find docs", effort: "high" } },
     },
     {
       findExecutable: async (name) => (name === "aside" ? "/fake/aside" : null),

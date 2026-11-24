@@ -5,7 +5,7 @@
 // Tools:
 //   - memory_search : search Rubato project/user memory via `msearch`
 //   - webfetch      : fetch a URL as markdown, text, or HTML
-//   - web_agent     : run a browser/research task through Aside (`aside exec`)
+//   - browser_agent : run a browser/research task through Aside (`aside exec`)
 //   - deep_research : submit a ChatGPT Pro research run through Outpost (`outpost send`)
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
@@ -74,7 +74,7 @@ export const TOOLS = Object.freeze([
     },
   },
   {
-    name: "web_agent",
+    name: "browser_agent",
     description:
       "Delegate a browser or broad fresh web research task to Aside Browser (`aside exec`). Request source links, dates, and quotations when collecting evidence.",
     inputSchema: {
@@ -287,14 +287,14 @@ async function runWebfetch(args, deps) {
   }
 }
 
-async function runWebAgent(args, deps) {
+async function runBrowserAgent(args, deps) {
   const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
-  if (!prompt) return toolResult("web_agent: prompt is required", true);
+  if (!prompt) return toolResult("browser_agent: prompt is required", true);
   if (typeof args.model === "string" && BLOCKED_ASIDE_MODELS.has(args.model)) {
-    return toolResult("web_agent: that model is not available on the configured Aside account.", true);
+    return toolResult("browser_agent: that model is not available on the configured Aside account.", true);
   }
   const aside = await deps.findExecutable("aside", deps.env);
-  if (!aside) return toolResult("web_agent: `aside` CLI was not found on PATH or ~/.local/bin.", true);
+  if (!aside) return toolResult("browser_agent: `aside` CLI was not found on PATH or ~/.local/bin.", true);
 
   const opt = (name, value) => (typeof value === "string" && value.trim() ? [`--${name}=${value.trim()}`] : []);
   const cliArgs = [
@@ -325,10 +325,10 @@ async function runWebAgent(args, deps) {
       if (answer) return toolResult(truncate(`${session}${answer}`));
     }
     const combined = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
-    return toolResult(truncate(combined || "web_agent completed with empty output."));
+    return toolResult(truncate(combined || "browser_agent completed with empty output."));
   } catch (error) {
     const output = [error.stdout?.trim?.(), error.stderr?.trim?.()].filter(Boolean).join("\n");
-    return toolResult(truncate([`web_agent failed: ${error.message}`, output].filter(Boolean).join("\n")), true);
+    return toolResult(truncate([`browser_agent failed: ${error.message}`, output].filter(Boolean).join("\n")), true);
   }
 }
 
@@ -424,7 +424,7 @@ export async function runTool(name, args = {}, overrides = {}) {
   };
   if (name === "memory_search") return runMemorySearch(args, deps);
   if (name === "webfetch") return runWebfetch(args, deps);
-  if (name === "web_agent") return runWebAgent(args, deps);
+  if (name === "browser_agent") return runBrowserAgent(args, deps);
   if (name === "deep_research") return runDeepResearch(args, deps);
   return toolResult(`Unknown ${SERVER_NAME} tool: ${name}`, true);
 }

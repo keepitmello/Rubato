@@ -15,7 +15,7 @@ Use it when the main quality bottleneck is breadth, recall or freshness. Hand al
 
 Give Aside the whole browser-bound outcome. It plans the steps and controls the browser. When its evidence will feed later analysis, require source links, dates, quotations, contradictions, and collection gaps. Plain text only.
 
-In Rubato, find `web_agent` with `tool_search` and use it for the handoff. Rubato brings the result back to this conversation; do not poll, restart it in Bash, or launch a second browser task. The CLI instructions below cover hosts without the tool and direct session control.
+In Rubato, find `browser_agent` with `tool_search` and use it for the handoff. Rubato brings the result back to this conversation; do not poll it, restart it in Bash, or resend the same task. Separate tasks can run at the same time. The CLI instructions below cover hosts without the tool and direct session control.
 
 Start Aside Browser before running CLI commands. (Use `aside -h` to see how.)
 

@@ -14,7 +14,7 @@ description: "Only when manual browser control is required (direct tab control, 
 
 ## Route
 
-- For whole browser tasks in Rubato, use `web_agent`. Give it the complete outcome, relevant context, constraints, approval boundaries, and evidence required. Rubato brings the result back; do not poll or start a second task.
+- For whole browser tasks in Rubato, use `browser_agent`. Give it the complete outcome, relevant context, constraints, approval boundaries, and evidence required. Rubato brings the result back; do not poll it or resend the same task. Separate tasks can run at the same time.
 - On a CLI-only host, use the Aside skill's background handoff and recovery instructions.
 - Use `aside --session <id> "..."` only to continue a session whose exact ID the CLI returned. Never guess a session ID.
 - Use `aside repl` only when the task explicitly needs direct page inspection, deterministic low-level interaction, screenshots, downloads, or exact browser-state evidence that whole-task delegation cannot provide.

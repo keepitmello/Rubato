@@ -8,7 +8,7 @@ import test from "node:test";
 import { collectPendingWork } from "../extension-rpc/runtime.mjs";
 import { ToolSearchService } from "../tool-search/service.mjs";
 import { registerResearchTools } from "./src/research/index.mjs";
-import { DEEP_RESEARCH, RESEARCH_COMPLETION, WEB_AGENT, researchArtifacts, researchJobs } from "./src/research/jobs.mjs";
+import { DEEP_RESEARCH, RESEARCH_COMPLETION, BROWSER_AGENT, researchArtifacts, researchJobs } from "./src/research/jobs.mjs";
 
 const asideId = "OKVEKoXp6OTEmbpS";
 const outpostId = "outpost-fixture-request";
@@ -69,7 +69,7 @@ test("native tools are search-exposed and research work holds one-shot sessions"
 			entries.push({ type: "custom_message", ...message });
 		},
 	}, jobHarness());
-	assert.deepEqual([...tools.keys()], [WEB_AGENT, DEEP_RESEARCH]);
+	assert.deepEqual([...tools.keys()], [BROWSER_AGENT, DEEP_RESEARCH]);
 	assert.ok([...tools.values()].every((tool) => tool.exposure === "search"));
 	const search = new ToolSearchService();
 	search.bindRuntime({
@@ -78,11 +78,11 @@ test("native tools are search-exposed and research work holds one-shot sessions"
 		})),
 		getActiveTools: () => [],
 	});
-	assert.equal(search.search("web_agent")[0]?.name, WEB_AGENT);
+	assert.equal(search.search("browser_agent")[0]?.name, BROWSER_AGENT);
 	assert.equal(search.search("deep_research")[0]?.name, DEEP_RESEARCH);
 	hooks.get("session_start")({}, ctx);
 	const task = "find the source; echo do not run this as shell";
-	const result = await tools.get(WEB_AGENT).execute("call-1", { prompt: task, effort: "high" }, undefined, undefined, ctx);
+	const result = await tools.get(BROWSER_AGENT).execute("call-1", { prompt: task, effort: "high" }, undefined, undefined, ctx);
 	assert.equal(result.details.status, "running");
 	assert.equal(calls[0].command, "aside");
 	assert.deepEqual(calls[0].args.slice(-3), ["--effort=high", "--", task]);
@@ -113,7 +113,7 @@ test("separate research questions in one conversation run in parallel", async (t
 	}, jobHarness());
 	hooks.get("session_start")({}, ctx);
 	const deep = tools.get(DEEP_RESEARCH);
-	const web = tools.get(WEB_AGENT);
+	const web = tools.get(BROWSER_AGENT);
 	const started = await Promise.all([
 		deep.execute("call-a", { question: "first topic" }, undefined, undefined, ctx),
 		deep.execute("call-b", { question: "second topic" }, undefined, undefined, ctx),
@@ -135,7 +135,7 @@ test("Aside interruption inspects the same session without a second exec", async
 	const harness = jobHarness();
 	const results = [];
 	harness.open(transcript, (_, result) => results.push(result));
-	await harness.submit(transcript, WEB_AGENT, { prompt: "read", account: "u1", host: "local" }, cwd);
+	await harness.submit(transcript, BROWSER_AGENT, { prompt: "read", account: "u1", host: "local" }, cwd);
 	writeFileSync(calls[0].err, `\x1b[90mSession: ${asideId}\x1b[0m\n`);
 	calls[0].finish(1);
 	assert.deepEqual(calls[1].args, ["session", "inspect", "--json", "--account=u1", "--host=local", asideId]);
@@ -188,6 +188,24 @@ test("an interrupted Outpost reopens on its original conversation and only recov
 	assert.equal(calls.length, 2);
 });
 
+test("a browser task saved under the old web_agent name still reports back", async (t) => {
+	const { cwd, transcript, calls, pids, jobHarness } = fixture(t);
+	const first = jobHarness();
+	first.open(transcript, () => assert.fail("closed conversation was notified"));
+	const { id } = await first.submit(transcript, BROWSER_AGENT, { prompt: "read" }, cwd);
+	const saved = join(researchArtifacts(transcript), id, "job.json");
+	put(saved, { ...JSON.parse(readFileSync(saved, "utf8")), name: "web_agent" });
+	first.close();
+	put(calls[0].out, { session: { id: asideId, status: "idle" }, answer: "answer from before the rename" });
+	pids.delete(calls[0].pid);
+	const deliveries = [];
+	jobHarness().open(transcript, (owner, result) => deliveries.push({ owner, result }));
+	await until(() => deliveries.length === 1);
+	assert.equal(deliveries[0].owner.name, BROWSER_AGENT);
+	assert.equal(readFileSync(deliveries[0].result.response, "utf8"), "answer from before the rename");
+	assert.equal(calls.length, 1);
+});
+
 test("an unverified Outpost result is a failure and never resubmits", async (t) => {
 	const { cwd, transcript, calls, jobHarness } = fixture(t);
 	const results = [];
@@ -226,7 +244,7 @@ printf '%s\\n' '${JSON.stringify({ session: { id: asideId, status: "idle" }, ans
 	const after = researchJobs({ interval: 10 });
 	t.after(() => { before.close(); after.close(); });
 	before.open(transcript, () => assert.fail("the original watcher is closed"));
-	const { id } = await before.submit(transcript, WEB_AGENT, { prompt: "check persistence" }, cwd);
+	const { id } = await before.submit(transcript, BROWSER_AGENT, { prompt: "check persistence" }, cwd);
 	before.close();
 	const delivered = [];
 	after.open(transcript, (job, result) => delivered.push({ job, result }));

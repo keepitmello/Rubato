@@ -8,8 +8,10 @@ import { copyFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
-export const WEB_AGENT = "web_agent";
+export const BROWSER_AGENT = "browser_agent";
 export const DEEP_RESEARCH = "deep_research";
+// Jobs saved before the rename still finish and report under the current name.
+const RENAMED = { web_agent: BROWSER_AGENT };
 export const RESEARCH_COMPLETION = "rubato:research-completion";
 export const researchArtifacts = (sessionFile) => join(`${sessionFile.replace(/\.jsonl$/, "")}-artifacts`, "research");
 
@@ -62,7 +64,7 @@ async function packEvidence(run, attachments) {
 }
 
 export async function prepareResearch(name, params, cwd, run) {
-	if (name === WEB_AGENT) {
+	if (name === BROWSER_AGENT) {
 		const target = [...opt("account", params.account), ...opt("host", params.host)];
 		const prompt = params.prompt.trim();
 		if (!prompt) throw new Error("A browser task is required.");
@@ -263,8 +265,9 @@ export function researchJobs({ start = launch, isAlive = alive, now = Date.now, 
 				for (const id of readdirSync(root)) {
 					if (!isId(id) || announced.has(id)) continue;
 					const job = json(join(root, id, "job.json"));
+					if (job && RENAMED[job.name]) job.name = RENAMED[job.name];
 					if (job?.id === id && job.dir === join(root, id)
-						&& (job.name === WEB_AGENT || job.name === DEEP_RESEARCH)) jobs.set(id, job);
+						&& (job.name === BROWSER_AGENT || job.name === DEEP_RESEARCH)) jobs.set(id, job);
 				}
 			}
 			watch();
