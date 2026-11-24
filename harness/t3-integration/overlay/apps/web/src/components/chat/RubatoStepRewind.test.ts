@@ -4,6 +4,7 @@ import {
   describeDropped,
   isStepCutRun,
   lastStepOf,
+  nativeAgyThreadsOf,
   replyCutFor,
   rewindOffered,
   type RewindThread,
@@ -119,13 +120,29 @@ describe("step rewind on V2 rows", () => {
     // The last reply has nothing after it.
     expect(rewindOffered(thread, reply("r2"))).toBe(false);
     expect(rewindOffered(thread, { kind: "last-step", runId: "r1" })).toBe(true);
-    // A run with no Rubato step, or a group of rows none of which is one.
+    // A run with no step, or a group of rows none of which is one.
     expect(rewindOffered(thread, { kind: "last-step", runId: "r2" })).toBe(false);
     expect(rewindOffered(thread, { kind: "last-step", runId: "r1", itemIds: ["th1", "rep1"] })).toBe(false);
     const step = thread.items[2]!.item;
     const codex = { ...step, nativeItemRef: { driver: "codex", nativeId: "x", strength: "strong" } };
     expect(rewindOffered(null, { kind: "step", itemId: "a", runId: "r1" }, codex as never)).toBe(false);
     expect(rewindOffered(null, { kind: "step", itemId: "a", runId: "r1" }, step)).toBe(true);
+    // agy's tool rows rewind too, on its own store, where the thread's session goes through the bridge.
+    const agy = { ...step, providerThreadId: "pt-agy",
+      nativeItemRef: { driver: "antigravity", nativeId: "call_1", strength: "strong" } } as never;
+    const sessions = (native: boolean) => nativeAgyThreadsOf({
+      providerThreads: [{ id: "pt-agy", driver: "antigravity", providerSessionId: "ps-agy" }],
+      providerSessions: [{ id: "ps-agy", capabilities: { checkpointing: { providerCanRollbackConversation: native } } }],
+    });
+    const at = { kind: "step", itemId: "a", runId: "r1" } as const;
+    expect(rewindOffered({ ...thread, nativeAgyThreads: sessions(true) }, at, agy)).toBe(true);
+    expect(rewindOffered({ ...thread, nativeAgyThreads: sessions(false) }, at, agy)).toBe(false);
+    expect(rewindOffered(null, at, agy)).toBe(false);
+    // A provider thread that arrives after its session still counts once it is there.
+    const providerSessions = [{ id: "ps-agy", capabilities: { checkpointing: { providerCanRollbackConversation: true } } }];
+    expect(nativeAgyThreadsOf({ providerThreads: [], providerSessions }).has("pt-agy")).toBe(false);
+    expect(nativeAgyThreadsOf({ providerThreads: [{ id: "pt-agy", driver: "antigravity", providerSessionId: "ps-agy" }],
+      providerSessions }).has("pt-agy")).toBe(true);
   });
 
   it("a reply rewinds to the run boundary through T3's revert", () => {
@@ -136,8 +153,8 @@ describe("step rewind on V2 rows", () => {
     expect(replyCutFor(thread, { runId: "r2", messageId: "m-rep2" })).toBe("Nothing comes after this reply.");
   });
 
-  it("refuses a step that is not a finished Rubato step, or a run still working", () => {
-    expect(stepCutFor(thread, "rep1", "x", "rep1")).toBe("Only a finished Rubato step can be rewound to.");
+  it("refuses a step that is not a finished tool step, or a run still working", () => {
+    expect(stepCutFor(thread, "rep1", "x", "rep1")).toBe("Only a finished tool step can be rewound to.");
     const running = { ...thread, runs: [{ id: "r1", ordinal: 1, status: "running" }, thread.runs[1]!] };
     expect(stepCutFor(running, "a", "x", "b")).toBe("This run has not finished yet.");
   });

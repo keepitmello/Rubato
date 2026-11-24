@@ -21,8 +21,12 @@ import { forkParked } from "./serverActivation.ts";
 // back. Kept as a hidden git ref beside the thread's turn checkpoints, and only for a thread
 // with its own worktree: restoring a shared checkout could erase another thread's work.
 
-/** The Rubato provider's driver; its tool items carry the Pi toolCallId as native id. */
-export const RUBATO_STEP_DRIVER = ProviderDriverKind.make("rubato-pi");
+/**
+ * Drivers whose tool items carry the tool call id a step rewind lands on: the Rubato provider
+ * (Pi's toolCallId) and Antigravity (agy's ACP toolCallId, RubatoStepRewind.ts).
+ */
+const AGY_STEP_DRIVER = ProviderDriverKind.make("antigravity");
+export const STEP_DRIVERS: ReadonlySet<string> = new Set([ProviderDriverKind.make("rubato-pi"), AGY_STEP_DRIVER]);
 
 /** Turn items that stand for one Pi tool call. */
 const STEP_ITEM_TYPES: ReadonlySet<OrchestrationV2TurnItem["type"]> = new Set([
@@ -54,6 +58,8 @@ export function stepCheckpointRef(threadId: ThreadId, toolCallId: string): Check
 export interface StepCompletion {
   readonly threadId: ThreadId;
   readonly toolCallId: string;
+  /** Set for an agy step: the provider thread whose session must rewind through Rubato's bridge. */
+  readonly agyProviderThreadId?: string | null | undefined;
 }
 
 /** The Rubato tool step an event finishes, if it finishes one. */
@@ -63,15 +69,31 @@ export function stepCompletionOf(event: OrchestrationV2DomainEvent): StepComplet
   const ref = item.nativeItemRef;
   if (
     ref === null ||
-    ref.driver !== RUBATO_STEP_DRIVER ||
+    !STEP_DRIVERS.has(ref.driver) ||
     ref.nativeId === null ||
     !STEP_ITEM_TYPES.has(item.type) ||
     !FINISHED_STATUSES.has(item.status)
   ) {
     return undefined;
   }
-  return { threadId: item.threadId, toolCallId: ref.nativeId };
+  return {
+    threadId: item.threadId,
+    toolCallId: ref.nativeId,
+    ...(ref.driver === AGY_STEP_DRIVER ? { agyProviderThreadId: item.providerThreadId } : {}),
+  };
 }
+
+/** Whether an agy step's session rewinds on agy's own store; a step there can never be rewound to otherwise. */
+const agyStepRewinds = Effect.fn("RubatoStepCheckpoints.agyStepRewinds")(function* (
+  threadId: ThreadId,
+  providerThreadId: string | null,
+) {
+  const engine = yield* Orchestrator.OrchestratorV2;
+  const records = yield* engine.getThreadRecords(threadId, ["providerThreads", "providerSessions"]);
+  const providerThread = records.providerThreads.find((candidate) => candidate.id === providerThreadId);
+  const session = records.providerSessions.find((candidate) => candidate.id === providerThread?.providerSessionId);
+  return session?.capabilities.checkpointing.providerCanRollbackConversation === true;
+});
 
 /**
  * Keep the files a finished step left in its thread's worktree. Answers whether a ref was
@@ -84,6 +106,8 @@ export const captureStepCheckpoint = Effect.fn("RubatoStepCheckpoints.capture")(
   const checkpoints = yield* CheckpointStore.CheckpointStore;
   const thread = yield* engine.getThreadShell(step.threadId);
   if (thread === null || thread.worktreePath === null) return false;
+  if (step.agyProviderThreadId !== undefined &&
+      !(yield* agyStepRewinds(step.threadId, step.agyProviderThreadId))) return false;
   const cwd = thread.worktreePath;
   const checkpointRef = stepCheckpointRef(step.threadId, step.toolCallId);
   // A step settles once; a repeated settle must not move its snapshot past later steps.

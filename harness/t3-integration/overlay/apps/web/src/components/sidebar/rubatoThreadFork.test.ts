@@ -2,24 +2,28 @@ import type { EnvironmentId, ModelSelection } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { buildThreadActionMenuItems, type ThreadActionMenuState } from "../threadActionMenu.logic";
-import { forkMenuItems, threadRunsOnRubato } from "./rubatoThreadFork";
+import { forkMenuItems, threadCanFork } from "./rubatoThreadFork";
 
 const env = "env-1" as EnvironmentId;
 const thread = (instanceId: string) => ({
   environmentId: env,
   modelSelection: { instanceId, model: "anthropic/claude-opus-5-5" } as ModelSelection,
 });
-const rubatoOnly = (_: EnvironmentId, instanceId: string) => instanceId === "rubato";
+const forkingInstances = (_: EnvironmentId, instanceId: string) => instanceId === "rubato" || instanceId === "agy-lead";
 
 describe("Fork thread", () => {
   it("is offered for a thread that runs on Rubato", () => {
-    expect(threadRunsOnRubato(thread("rubato"), rubatoOnly)).toBe(true);
-    expect(forkMenuItems(thread("rubato"), rubatoOnly)).toEqual([{ id: "fork", label: "Fork thread" }]);
+    expect(threadCanFork(thread("rubato"), forkingInstances)).toBe(true);
+    expect(forkMenuItems(thread("rubato"), forkingInstances)).toEqual([{ id: "fork", label: "Fork thread" }]);
+  });
+
+  it("is offered for an agy thread, which forks on agy's own store", () => {
+    expect(forkMenuItems(thread("agy-lead"), forkingInstances)).toEqual([{ id: "fork", label: "Fork thread" }]);
   });
 
   it("is not offered for another provider's thread", () => {
-    expect(threadRunsOnRubato(thread("codex"), rubatoOnly)).toBe(false);
-    expect(forkMenuItems(thread("codex"), rubatoOnly)).toEqual([]);
+    expect(threadCanFork(thread("codex"), forkingInstances)).toBe(false);
+    expect(forkMenuItems(thread("codex"), forkingInstances)).toEqual([]);
   });
 
   it("sits in the thread action menu after the title items when the thread can fork", () => {

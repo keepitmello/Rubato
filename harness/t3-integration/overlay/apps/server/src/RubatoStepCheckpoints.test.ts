@@ -41,8 +41,20 @@ const now = DateTime.makeUnsafe("2026-10-16T00:00:00.000Z");
 const layerEngine = (
   worktrees: ReadonlyMap<ThreadId, string | null>,
   events: Stream.Stream<OrchestrationV2DomainEvent> = Stream.empty,
+  agyRewindsNatively = false,
 ) =>
   Layer.succeed(Orchestrator.OrchestratorV2, {
+    // One agy provider thread; its session rewinds through Rubato's bridge when asked.
+    getThreadRecords: () =>
+      Effect.succeed({
+        providerThreads: [{ id: "provider-thread-agy", providerSessionId: "provider-session-agy" }],
+        providerSessions: [
+          {
+            id: "provider-session-agy",
+            capabilities: { checkpointing: { providerCanRollbackConversation: agyRewindsNatively } },
+          },
+        ],
+      }),
     getThreadShell: (threadId: ThreadId) =>
       Effect.succeed(
         worktrees.has(threadId)
@@ -61,6 +73,7 @@ const toolItemEvent = (input: {
   readonly driver?: string;
   readonly status?: OrchestrationV2TurnItem["status"];
   readonly type?: "command_execution" | "file_change";
+  readonly providerThreadId?: string;
 }): OrchestrationV2DomainEvent => {
   const driver = ProviderDriverKind.make(input.driver ?? "rubato-pi");
   const status = input.status ?? "completed";
@@ -69,7 +82,7 @@ const toolItemEvent = (input: {
     threadId: input.threadId,
     runId: null,
     nodeId: null,
-    providerThreadId: null,
+    providerThreadId: (input.providerThreadId ?? null) as never,
     providerTurnId: null,
     nativeItemRef: { driver, nativeId: input.toolCallId, strength: "strong" as const },
     parentItemId: null,
@@ -223,6 +236,28 @@ it.layer(layerCheckpointStore)("RubatoStepCheckpoints", (it) => {
           ),
         ).toEqual({ threadId: SHARED_THREAD, toolCallId: "call-shared" });
       }),
+  );
+
+  it.effect("keeps an agy step only where its session rewinds through Rubato's bridge", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeRepo;
+      const worktrees = new Map([[WORKTREE_THREAD, cwd]]);
+      const agyStep = (toolCallId: string) =>
+        toolItemEvent({
+          threadId: WORKTREE_THREAD,
+          toolCallId,
+          driver: "antigravity",
+          providerThreadId: "provider-thread-agy",
+        });
+      yield* RubatoStepCheckpoints.handleStepEvent(agyStep("call-agy-native")).pipe(
+        Effect.provide(layerEngine(worktrees, Stream.empty, true)),
+      );
+      yield* RubatoStepCheckpoints.handleStepEvent(agyStep("call-agy-plain")).pipe(
+        Effect.provide(layerEngine(worktrees, Stream.empty, false)),
+      );
+      expect(yield* refExists(cwd, WORKTREE_THREAD, "call-agy-native")).toBe(true);
+      expect(yield* refExists(cwd, WORKTREE_THREAD, "call-agy-plain")).toBe(false);
+    }),
   );
 
   it.effect("answers false when the step has no snapshot", () =>

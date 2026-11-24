@@ -1,7 +1,7 @@
 // Rewinding to a finished tool step, not only to a message of mine: the web half
 // (chat/RubatoStepRewind.tsx). The server half is step-rewind-edits.mjs.
 //
-// Every finished Rubato tool row in the timeline offers "rewind to here"; hovering fades
+// Every finished Rubato or agy tool row in the timeline offers "rewind to here"; hovering fades
 // what goes, and the inline card rewinds and then either takes an instruction from the
 // composer or continues on its own (POST /rubato/step-rewind, then /rubato/step-rewind/
 // continue). Folded rows rewind too, with nothing expanded: "Worked for" and a tool

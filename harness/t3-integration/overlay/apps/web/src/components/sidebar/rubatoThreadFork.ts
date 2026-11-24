@@ -17,16 +17,19 @@ import { environmentThreadShells } from "~/state/threads";
 // "Fork thread" in the sidebar's thread menu (the thread action menu and the legacy
 // sidebar's). The server half is /rubato/thread-fork (RubatoThreadFork.ts): it copies the
 // thread's whole Rubato conversation, a last failed or stopped turn included, into a new one
-// and answers with the thread that shows it. Forking at one reply is T3's own
-// "Fork from this response".
+// and answers with the thread that shows it; an agy thread forks with T3's own fork there.
+// Forking at one reply is T3's own "Fork from this response".
 
 const FORK_ROUTE = "/rubato/thread-fork";
 
-function rubatoDriverOf(environmentId: EnvironmentId, instanceId: string): boolean {
+/** Drivers whose whole thread forks: Rubato's engine, and agy through T3's fork on agy's store. */
+const FORKING_DRIVERS: ReadonlySet<string> = new Set(["rubato-pi", "antigravity"]);
+
+function forkingDriverOf(environmentId: EnvironmentId, instanceId: string): boolean {
   const providers =
     appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.providers ?? [];
   return providers.some(
-    (provider) => provider.instanceId === instanceId && provider.driver === "rubato-pi",
+    (provider) => provider.instanceId === instanceId && FORKING_DRIVERS.has(provider.driver),
   );
 }
 
@@ -35,19 +38,19 @@ type ForkableThread = {
   readonly modelSelection: ModelSelection;
 };
 
-/** Fork is offered for a thread that runs on Rubato; other providers keep their own history. */
-export function threadRunsOnRubato(
+/** Fork is offered for a thread that runs on Rubato or agy; other providers keep their own history. */
+export function threadCanFork(
   thread: ForkableThread,
-  runsOnRubato: (environmentId: EnvironmentId, instanceId: string) => boolean = rubatoDriverOf,
+  forks: (environmentId: EnvironmentId, instanceId: string) => boolean = forkingDriverOf,
 ): boolean {
-  return runsOnRubato(thread.environmentId, thread.modelSelection.instanceId);
+  return forks(thread.environmentId, thread.modelSelection.instanceId);
 }
 
 export function forkMenuItems(
   thread: ForkableThread,
-  runsOnRubato: (environmentId: EnvironmentId, instanceId: string) => boolean = rubatoDriverOf,
+  forks: (environmentId: EnvironmentId, instanceId: string) => boolean = forkingDriverOf,
 ): ContextMenuItem<"fork">[] {
-  return threadRunsOnRubato(thread, runsOnRubato) ? [{ id: "fork", label: "Fork thread" }] : [];
+  return threadCanFork(thread, forks) ? [{ id: "fork", label: "Fork thread" }] : [];
 }
 
 /** Resolves when the thread reaches the live client store; the route sends a missing thread home. */
