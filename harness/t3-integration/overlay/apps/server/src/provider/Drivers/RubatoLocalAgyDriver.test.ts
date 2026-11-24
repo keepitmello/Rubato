@@ -53,6 +53,8 @@ const minimalEnvironment = new Set([
   "TMPDIR",
   "LANG",
   "LC_ALL",
+  // The workspace Rubato's agy tools act in (localAgySpawn).
+  "RUBATO_AGY_WORKSPACE",
 ]);
 const quote = (value: string) => `'${value.replaceAll("'", `'"'"'`)}'`;
 

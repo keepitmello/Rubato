@@ -20,6 +20,34 @@ export const localAgyOverlays = [
 ];
 
 export const localAgyEdits = {
+  // agy 1.5.16 keeps a Google sign-in in one OS keyring entry for every profile, and ignores both
+  // switches T3 sets to avoid it (AGY_ACP_FORCE_FILE_STORAGE, a fake SSH_CONNECTION): a second
+  // account's sign-in replaced the first one's. AGY_CLI_FORCE_FILE_TOKEN_STORAGE keeps it in the
+  // profile's own file, where the usage probe reads it.
+  'apps/server/src/provider/antigravityAuthSupport.ts': [
+    [
+      '  "AGY_ACP_FORCE_FILE_STORAGE",\n',
+      '  "AGY_ACP_FORCE_FILE_STORAGE",\n  "AGY_CLI_FORCE_FILE_TOKEN_STORAGE",\n',
+      'replace',
+    ],
+    [
+      '    AGY_ACP_FORCE_FILE_STORAGE: "1",\n',
+      '    AGY_ACP_FORCE_FILE_STORAGE: "1",\n    AGY_CLI_FORCE_FILE_TOKEN_STORAGE: "1",\n',
+      'replace',
+    ],
+  ],
+  'apps/server/src/provider/antigravityAuthSupport.test.ts': [
+    [
+      '      AGY_ACP_FORCE_FILE_STORAGE: "0",\n',
+      '      AGY_ACP_FORCE_FILE_STORAGE: "0",\n      AGY_CLI_FORCE_FILE_TOKEN_STORAGE: "0",\n',
+      'replace',
+    ],
+    [
+      '        AGY_ACP_FORCE_FILE_STORAGE: "1",\n',
+      '        AGY_ACP_FORCE_FILE_STORAGE: "1",\n        AGY_CLI_FORCE_FILE_TOKEN_STORAGE: "1",\n',
+      'replace',
+    ],
+  ],
   'apps/server/src/provider/antigravityUsageLimits.ts': [
     [
       'import * as NodeModule from "node:module";',
