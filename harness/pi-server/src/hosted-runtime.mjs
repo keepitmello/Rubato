@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { RemoteServiceError } from '@earendil-works/chord';
 import { realpath } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -7,7 +8,7 @@ import { createSessionLink } from './session-link.mjs';
 import { COMPANION_ROLE } from '../../companion/companion.mjs';
 import { clearCompanionEnv, companionEnv, companionModelSelection, validModelSelection } from '../../companion/registry.mjs';
 import { COMPANION_AGY_PROVIDER, createCompanionAgyProvider, resolveCompanionAgy } from './companion-agy.mjs';
-import { SCHEDULED_AGY_ENTRY, scheduledAgy } from './scheduled-agy.mjs';
+import { SCHEDULED_AGY_ENTRY, SCHEDULED_ACCOUNT_ERROR, scheduledAgy } from './scheduled-agy.mjs';
 
 const COMPANION_MODEL_ENTRY = 'rubato.companion-model';
 
@@ -76,7 +77,12 @@ export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
   async function configureSessionModel(runtime, metadata, selection, env, scheduled) {
     if (!selection) return;
     const modelRuntime = runtime.services.modelRuntime;
-    const account = await resolveCompanionAgy(selection, env);
+    const account = await resolveCompanionAgy(selection, env).catch(error => {
+      if (!scheduled) throw error;
+      // Plain startup exceptions cross the socket as "Internal server error".
+      // Only account lookup failures warrant telling the scheduler to blame the selection.
+      throw new RemoteServiceError('service_invalid_value', `${SCHEDULED_ACCOUNT_ERROR} ${selection.instanceId}: ${error.message}`);
+    });
     let provider, modelId;
     if (account) {
       const [{ createAssistantMessageEventStream }, { getCurrentSystemPrompt }, { kCursorExecResolved }] = await Promise.all([
@@ -214,6 +220,11 @@ export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
             dispatch: async command => {
               if (command.type === 'set_model' && (scheduled || (metadata.companion &&
                   runtime.session.model?.provider.startsWith(COMPANION_AGY_PROVIDER)))) {
+                const current = runtime.session.model;
+                if (scheduled && (command.provider !== current?.provider || command.modelId !== current?.id)) {
+                  return transport.output({ id: command.id, type: 'response', command: command.type, success: false,
+                    error: `This scheduled thread uses ${scheduled.instanceId}/${scheduled.model}. Start a new thread to use another model.` });
+                }
                 // The room has a native T3 carrier. The adapter can replay its
                 // last Pi choice during reconnect; only the companion model
                 // command can change an active ACP route.

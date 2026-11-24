@@ -1,5 +1,5 @@
 import { statSync } from 'node:fs';
-import { scheduledAgy } from '../../pi-server/src/scheduled-agy.mjs';
+import { SCHEDULED_ACCOUNT_ERROR, scheduledAgy } from '../../pi-server/src/scheduled-agy.mjs';
 import { COMPANION_TARGET } from '../../../packages/schedule-core/src/index.mjs';
 import { readState as readCompanionState } from '../../companion/companion.mjs';
 import { companionEnv } from '../../companion/registry.mjs';
@@ -150,9 +150,11 @@ export async function executeRun({ task, row, engine, update, log = () => {}, si
     await update({ sessionId: created.sessionId, serverId: client.serverId ?? created.serverId ?? null });
     log('run started', { runId: row.id, taskId: task.id, sessionId: created.sessionId });
     try { await client.attach(created.sessionId); }
-    catch (error) { return await finish(selection
-      ? failure('model', `Could not open ${task.model}. Check the selected Antigravity login: ${message(error)}`)
-      : failure('start-failed', message(error))); }
+    catch (error) {
+      const detail = message(error);
+      const accountFailure = selection && error?.code === 'service_invalid_value' && detail.startsWith(SCHEDULED_ACCOUNT_ERROR);
+      return await finish(failure(accountFailure ? 'model' : 'start-failed', detail));
+    }
     try { if (!selection) await configure(client, task); }
     catch (error) { return await finish(failure('model', message(error))); }
     const state = await client.command({ type: 'get_state' });

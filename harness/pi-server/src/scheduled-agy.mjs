@@ -1,5 +1,6 @@
 // This entry is written with the session header, before inventory can open the thread.
 export const SCHEDULED_AGY_ENTRY = 'rubato.scheduled-agy';
+export const SCHEDULED_ACCOUNT_ERROR = 'Could not open scheduled Antigravity account';
 
 export function scheduledAgy(model, thinking) {
   if (!/^rubato-agy-(cli|profile)\//.test(model ?? '')) return null;
