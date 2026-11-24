@@ -33,7 +33,7 @@ import { requestConfirmDialog } from "../../confirmDialog";
 import { readLocalApi } from "../../localApi";
 import { useProjects } from "../../state/entities";
 import { usePrimaryEnvironmentId } from "../../state/environments";
-import { RubatoRequestError } from "../../state/rubatoHttp";
+import { isRubatoRequestError } from "../../state/rubatoHttp";
 import {
   rubatoSchedule,
   type ScheduledTask,
@@ -42,7 +42,7 @@ import {
   type ScheduleRun,
   type TaskList,
 } from "../../state/rubatoSchedule";
-import { primaryServerProvidersAtom } from "../../state/server";
+import { primaryServerProvidersAtom, primaryServerSettingsAtom } from "../../state/server";
 import { usePreparedConnection } from "../../state/session";
 import { cn } from "../../lib/utils";
 import { iconForProviderModel } from "../chat/rubatoModelIcons";
@@ -59,6 +59,8 @@ import { toastManager } from "../ui/toast";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import {
   COPY,
+  scheduleModels,
+  type RubatoModel,
   EVERY_HOURS,
   type Destination,
   STATUS_BADGE,
@@ -119,29 +121,10 @@ function useReadyEnvironmentId(): EnvironmentId {
   return Option.isSome(prepared) ? environmentId : null;
 }
 
-interface RubatoModel {
-  readonly slug: string;
-  readonly name: string;
-  readonly reasoning: ReadonlyArray<{ readonly id: string; readonly label: string }>;
-}
-
-/** The Rubato instance's catalogue: the models T3 lists for Rubato, with their reasoning levels. */
-function useRubatoModels(): readonly RubatoModel[] {
+function useRubatoModels() {
   const providers = useAtomValue(primaryServerProvidersAtom);
-  return useMemo(
-    () =>
-      (providers.find((provider) => provider.driver === "rubato-pi")?.models ?? []).map((model) => {
-        const descriptor = model.capabilities?.optionDescriptors?.find(
-          (entry) => entry.id === "reasoningEffort" && entry.type === "select",
-        );
-        return {
-          slug: model.slug,
-          name: model.name,
-          reasoning: descriptor && descriptor.type === "select" ? descriptor.options : [],
-        };
-      }),
-    [providers],
-  );
+  const settings = useAtomValue(primaryServerSettingsAtom);
+  return useMemo(() => scheduleModels(providers, settings?.providerInstances), [providers, settings]);
 }
 
 function ModelIcon({ slug }: { slug: string }) {
@@ -752,7 +735,7 @@ function TaskFormView({
         : await rubatoSchedule.create(environmentId, input);
       onDone(saved);
     } catch (cause) {
-      const field = cause instanceof RubatoRequestError ? formFieldOf(cause.field) : null;
+      const field = isRubatoRequestError(cause) ? formFieldOf(cause.field) : null;
       if (field) setErrors({ [field]: cause instanceof Error ? cause.message : String(cause) });
       else reportError(COPY.saveFailed, cause);
     } finally {

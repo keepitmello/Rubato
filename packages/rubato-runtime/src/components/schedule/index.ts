@@ -52,7 +52,7 @@ export const ScheduleToolParams = Type.Object({
   prompt: Type.Optional(Type.String({ description: "First user message of each run's session; for a task with send_to, the message it sends" })),
   send_to: Type.Optional(Type.String({ description: "Send prompt as a message instead of starting a session: \"this\" (this conversation), \"companion\" (from a companion's conversation, that companion itself; from any other, the default companion), \"companion:<id>\" for one companion by its id, or a conversation id; empty string switches back to starting a session" })),
   cwd: Type.Optional(Type.String({ description: "Project folder; defaults to this session's folder" })),
-  model: Type.Optional(Type.String({ description: "provider/model; omit for the user's default model (empty string clears it)" })),
+  model: Type.Optional(Type.String({ description: "provider/model, or the Scheduled Tasks picker's rubato-agy-cli/instance/model or rubato-agy-profile/instance/model for official Antigravity. Omit for the user's default model (empty string clears it)." })),
   thinking: Type.Optional(Type.String({ description: "off minimal low medium high xhigh max; empty string clears it" })),
   enabled: Type.Optional(Type.Boolean()),
   schedule: Type.Optional(ScheduleShape),

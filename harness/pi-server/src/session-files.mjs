@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { SCHEDULED_AGY_ENTRY, scheduledAgy } from './scheduled-agy.mjs';
 import { link, mkdir, open, readdir, realpath, rename, rm, stat, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { SessionNotFoundError, SessionAmbiguousError } from '@earendil-works/pi-server';
@@ -364,7 +365,8 @@ export class SessionFiles {
    * `companion` marks the conversation as the companion (harness/companion): the engine runs it
    * under the companion role.
    */
-  async create({ cwd, title, titleLocked = false, systemPrompt, leadRole, companion = false, companionId } = {}) {
+  async create({ cwd, title, titleLocked = false, systemPrompt, leadRole, companion = false, companionId, agy } = {}) {
+    if (agy !== undefined && (companion || !scheduledAgy(agy?.model, agy?.thinking))) throw new TypeError('Invalid scheduled Antigravity selection');
     if (typeof companion !== 'boolean') throw new TypeError('companion must be a boolean');
     if (companionId !== undefined && (!companion || !/^[a-z][a-z0-9-]{0,47}$/.test(companionId)))
       throw new TypeError('companionId needs a companion and a valid id');
@@ -391,8 +393,9 @@ export class SessionFiles {
     const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomUUID()}.tmp`);
     try {
       await writeFile(temporary, JSON.stringify(manager.getHeader()) + '\n', { flag: 'wx', mode: 0o600 });
-      if (title || replacement || role || companion) {
+      if (title || replacement || role || companion || agy) {
         const opened = SessionManager.open(temporary, this.root);
+        if (agy) opened.appendCustomEntry(SCHEDULED_AGY_ENTRY, { model: agy.model, thinking: agy.thinking ?? null });
         if (role) opened.appendCustomEntry(LEAD_ROLE_ENTRY_TYPE, role);
         if (companion) opened.appendCustomEntry(COMPANION_ENTRY, { since: new Date().toISOString(), ...(companionId ? { id: companionId } : {}) });
         if (replacement) opened.appendCustomEntry(SYSTEM_PROMPT_REPLACEMENT_ENTRY, replacement);

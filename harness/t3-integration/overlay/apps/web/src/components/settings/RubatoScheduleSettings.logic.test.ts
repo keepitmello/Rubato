@@ -12,6 +12,7 @@ import {
   runActions,
   runTimeLabel,
   scheduleFromForm,
+  scheduleModels,
   statusLabel,
   targetLabel,
   validateForm,
@@ -19,6 +20,25 @@ import {
 } from "./RubatoScheduleSettings.logic";
 
 const now = new Date(2026, 8, 29, 10, 30); // Tue, Sep 29 2026, 10:30 local
+
+it("offers Gemini 4+ once per official login, with its catalog reasoning options", () => {
+  const options = [{ id: "low", label: "Low" }];
+  const hydrogen = { slug: "gemini-4-hydrogen", name: "Hydrogen", capabilities: {
+    optionDescriptors: [{ id: "reasoningEffort", type: "select", options }],
+  } };
+  const providers = ["lead", "another-agent", "work"].map(instanceId => ({
+    instanceId, driver: "antigravity", enabled: true, status: "ready", displayName: "Work",
+    models: [hydrogen, { slug: "gemini-3-test", name: "Older" }],
+  }));
+  const settings = Object.fromEntries(providers.map(({ instanceId }) => [instanceId, { environment: [
+    { name: "RUBATO_LOCAL_AGY_AGENT", value: "rubato-lead" },
+    ...(instanceId === "work" ? [{ name: "RUBATO_LOCAL_AGY_ISOLATED", value: "1" }] : []),
+  ] }]));
+  expect(scheduleModels(providers as never, settings as never)).toEqual([
+    { slug: `rubato-agy-cli/lead/${hydrogen.slug}`, name: "Antigravity · Hydrogen", reasoning: options },
+    { slug: `rubato-agy-profile/work/${hydrogen.slug}`, name: "Work · Hydrogen", reasoning: options },
+  ]);
+});
 
 const filled = (patch: Partial<TaskForm> = {}): TaskForm => ({
   ...emptyForm(now),

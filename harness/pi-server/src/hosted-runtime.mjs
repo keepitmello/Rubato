@@ -7,6 +7,7 @@ import { createSessionLink } from './session-link.mjs';
 import { COMPANION_ROLE } from '../../companion/companion.mjs';
 import { clearCompanionEnv, companionEnv, companionModelSelection, validModelSelection } from '../../companion/registry.mjs';
 import { COMPANION_AGY_PROVIDER, createCompanionAgyProvider, resolveCompanionAgy } from './companion-agy.mjs';
+import { SCHEDULED_AGY_ENTRY, scheduledAgy } from './scheduled-agy.mjs';
 
 const COMPANION_MODEL_ENTRY = 'rubato.companion-model';
 
@@ -72,7 +73,7 @@ export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
   const { runRpcMode } = await load(base + 'modes/rpc/rpc-mode.js');
   const { runMigrations } = await load(base + 'migrations.js');
   const ai = 'node_modules/@earendil-works/pi-ai/dist/';
-  async function configureCompanionModel(runtime, metadata, selection, env) {
+  async function configureSessionModel(runtime, metadata, selection, env, scheduled) {
     if (!selection) return;
     const modelRuntime = runtime.services.modelRuntime;
     const account = await resolveCompanionAgy(selection, env);
@@ -82,11 +83,11 @@ export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
         load(ai + 'index.js'), load(ai + 'utils/transcript.js'), load(ai + 'utils/block-symbols.js'),
       ]);
       const route = createCompanionAgyProvider({ companionId: metadata.companionId ?? 'segno',
-        account, createAssistantMessageEventStream, getCurrentSystemPrompt,
+        account, scheduled, resolveAccount: scheduled && (() => resolveCompanionAgy(selection, env)), createAssistantMessageEventStream, getCurrentSystemPrompt,
         markResolved(block) { block[kCursorExecResolved] = true; },
       });
       provider = route.provider;
-      modelId = selection.model;
+      modelId = scheduled ? `${scheduled.instanceId}/${selection.model}` : selection.model;
       modelRuntime.registerProvider(provider, route.config);
     } else {
       const split = selection.model.indexOf('/');
@@ -168,19 +169,27 @@ export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
       const scope = api.createUiScope({ process: { cwd: () => metadata.cwd }, env: workerEnv(metadata, creation) });
       const fromCli = Boolean(creation?.createRuntime);
       let runtime;
+      let scheduled;
       let refresh, refreshController, refreshTimeout;
       return { ...creation,
         createRuntime: () => scope.run(async () => {
           try { runtime = await (creation?.createRuntime ? creation.createRuntime() : hosted.createRuntime(metadata)); }
           finally { creation = undefined; } // Startup's UI/trust callback must not pin a detached terminal.
           announceUnloadOnDispose(runtime);
-          if (metadata.companion) {
+          const entries = runtime.session.sessionManager.getEntries();
+          const routeEntry = entries.findLast(entry => entry.type === 'custom' && entry.customType === SCHEDULED_AGY_ENTRY);
+          if (metadata.companion || routeEntry) {
             try {
-              const entries = runtime.session.sessionManager.getEntries();
-              const saved = entries.findLast(entry => entry.type === 'custom' && entry.customType === COMPANION_MODEL_ENTRY);
-              const selection = saved ? validModelSelection(saved.data)
-                : companionModelSelection(metadata.companionId, scope.env);
-              await configureCompanionModel(runtime, metadata, selection, scope.env);
+              if (routeEntry) {
+                scheduled = scheduledAgy(routeEntry.data.model, routeEntry.data.thinking);
+                if (!scheduled) throw new Error('Invalid scheduled Antigravity selection');
+                await configureSessionModel(runtime, metadata, scheduled, scope.env, scheduled);
+              } else {
+                const saved = entries.findLast(entry => entry.type === 'custom' && entry.customType === COMPANION_MODEL_ENTRY);
+                const selection = saved ? validModelSelection(saved.data)
+                  : companionModelSelection(metadata.companionId, scope.env);
+                await configureSessionModel(runtime, metadata, selection, scope.env);
+              }
             } catch (error) {
               await runtime.dispose();
               throw error;
@@ -203,8 +212,8 @@ export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
           const bound = api.bindUiContext(controller);
           return { ...controller,
             dispatch: async command => {
-              if (metadata.companion && command.type === 'set_model' &&
-                  runtime.session.model?.provider.startsWith(COMPANION_AGY_PROVIDER)) {
+              if (command.type === 'set_model' && (scheduled || (metadata.companion &&
+                  runtime.session.model?.provider.startsWith(COMPANION_AGY_PROVIDER)))) {
                 // The room has a native T3 carrier. The adapter can replay its
                 // last Pi choice during reconnect; only the companion model
                 // command can change an active ACP route.
@@ -216,7 +225,7 @@ export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
                 if (!metadata.companion) throw new Error('Only a companion room can set its own companion model');
                 if (runtime.session.isStreaming) throw new Error('Wait for the companion to finish before changing its model');
                 const selection = validModelSelection(command.modelSelection);
-                const result = await configureCompanionModel(runtime, metadata, selection, scope.env);
+                const result = await configureSessionModel(runtime, metadata, selection, scope.env);
                 runtime.session.sessionManager.appendCustomEntry(COMPANION_MODEL_ENTRY, selection);
                 return transport.output({ id: command.id, type: 'response', command: command.type, success: true, data: result });
               } catch (error) {

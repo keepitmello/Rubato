@@ -21,7 +21,7 @@ import {
   type CompanionProposal,
 } from "../../state/rubatoCompanion";
 import { companionDraft, onboardingChips, wordDiff } from "../../state/rubatoCompanionModel";
-import { RubatoRequestError } from "../../state/rubatoHttp";
+import { isRubatoRequestError } from "../../state/rubatoHttp";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { ThreadId } from "@t3tools/contracts";
@@ -106,8 +106,8 @@ export function RubatoProposalCard({
         if (answer) acceptCompanionIcon(companionId, answer.icon);
       }
     } catch (cause) {
-      if (cause instanceof RubatoRequestError && cause.code === "stale") onUpdate({ ...proposal, status: "stale" });
-      else if (cause instanceof RubatoRequestError && cause.code === "closed") onRefresh();
+      if (isRubatoRequestError(cause) && cause.code === "stale") onUpdate({ ...proposal, status: "stale" });
+      else if (isRubatoRequestError(cause) && cause.code === "closed") onRefresh();
       else
         toastManager.add({
           type: "error",
