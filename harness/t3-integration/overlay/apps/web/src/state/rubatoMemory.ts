@@ -1,4 +1,5 @@
 import type { EnvironmentId } from "@t3tools/contracts";
+import { TaggedError } from "effect/Data";
 
 import { rubatoHttpAccess } from "./rubatoHttp";
 import { readPreparedConnection } from "./session";
@@ -299,12 +300,11 @@ export interface UserMemoryView {
   readonly asks: readonly UserMemoryAsk[];
 }
 
-export class MemoryRequestError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
+export class MemoryRequestError extends TaggedError("MemoryRequestError")<{
+  readonly code: string; readonly message: string;
+}> {
+  constructor(code: string, message: string) {
+    super({ code, message });
   }
 }
 

@@ -1,3 +1,4 @@
+import { TaggedError } from "effect/Data";
 import { readDesktopPrimaryBearerToken } from "../environments/primary/desktopAuth";
 import { readPreparedConnection } from "./session";
 
@@ -47,14 +48,16 @@ function isSameOriginPage(baseUrl: string): boolean {
   }
 }
 
-export class RubatoRequestError extends Error {
+export class RubatoRequestError extends TaggedError("RubatoRequestError")<{
+  readonly code: string; readonly message: string; readonly field?: string;
+}> {
   constructor(
-    readonly code: string,
+    code: string,
     message: string,
     /** The input the server blamed, when it named one. */
-    readonly field?: string,
+    field?: string,
   ) {
-    super(message);
+    super({ code, message, ...(field === undefined ? {} : { field }) });
   }
 }
 
