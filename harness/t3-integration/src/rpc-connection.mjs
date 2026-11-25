@@ -816,9 +816,13 @@ export class RubatoRpcConnection {
     switch (record?.type) {
       case 'new_session':
         this.bridge.stepContinues?.delete(this.threadId);
-        // A second registration on this connection wants a fresh conversation, unless
-        // the thread already has one: that is the thread's, whichever path asked.
-        await this.attach((this.sessionId === null ? await this.boundSession() : null) ?? await this.createSession());
+        // A thread has one conversation and it is the thread's, whichever path asked: a
+        // second registration on an attached connection keeps it. Upstream's recovery from
+        // an uncertain delivery registers again to move to a fresh native thread; here that
+        // opened a stand-in session holding only a summary (Segno, 2026-11-25) while the real
+        // conversation went on unseen. Only a connection with nothing attached opens one.
+        if (this.sessionId !== null) return { cancelled: false };
+        await this.attach((await this.boundSession()) ?? await this.createSession());
         return { cancelled: false };
       case 'switch_session':
         // Not a new conversation: the adapter reattaches the thread's own session this way, as

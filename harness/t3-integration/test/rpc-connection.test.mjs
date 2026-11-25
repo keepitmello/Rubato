@@ -135,9 +135,12 @@ test('a thread that already ran in a session reattaches to it instead of startin
   assert.equal((await conn.request({ type: 'get_state' })).sessionFile, 'old-1');
   assert.deepEqual(client.attached, ['old-1']);
   assert.equal(created, 0);
-  // A later registration on the same connection asks for a fresh conversation.
-  await conn.request({ type: 'new_session' });
-  assert.deepEqual(client.attached, ['old-1', 'detach', 'created-1']);
+  // A later registration on the same connection keeps the thread's conversation: a fresh one
+  // would be a stand-in holding only a summary.
+  assert.deepEqual(await conn.request({ type: 'new_session' }), { cancelled: false });
+  assert.deepEqual(client.attached, ['old-1']);
+  assert.equal(created, 0);
+  assert.equal((await conn.request({ type: 'get_state' })).sessionFile, 'old-1');
 });
 
 test('a binding from another engine profile is not followed', async () => {
