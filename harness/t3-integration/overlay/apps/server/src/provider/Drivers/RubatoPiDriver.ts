@@ -326,6 +326,9 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig, any> = {
       selectionRecord: (selection) => (selection.options?.length ? { type: "rubato_selection", options: selection.options } : null),
       // Restarting Rubato closes every connection: idle threads just stop, a cut-off reply says so.
       transportClosedMessage: "Rubato restarted or disconnected while writing this reply, so it was cut off. Send your message again to continue.",
+      // The connection is the thread's own engine session: a registration that lost its native
+      // ref answers with that session, never a replacement (handoff-recovery-edits.mjs).
+      keepsNativeSession: true,
       // Segno's conversation keeps its stream however long it idles (bridge keepsStream).
       keepsLoadedWhileIdle: (threadId) => bridge.keepsStream?.(threadId) === true,
       // T3's resume (a step rewind's continue, a stopped run resumed) is the engine's continue:

@@ -10,6 +10,14 @@
 // went with a prompt that may not have arrived" — re-delivering them is the same trade-off
 // upstream already takes for text-only providers, and far cheaper than the full-thread
 // summary, which would replay the whole conversation into the session that already holds it.
+//
+// That "same id comes back" has to be true. Upstream's adapter answers a registration without
+// a native ref by opening a NEW session in the same worker (`new_session`), so the recovery
+// above did not keep the session: it swapped it. Segno's room did exactly that on 2026-11-25
+// after four failed turn starts: the thread was rebound to a fresh session that held only a
+// summary, and the person talked to a stand-in while the real Segno kept running unseen.
+// A provider that sets keepsNativeSession never opens a replacement; the registration
+// answers with the session the connection is attached to.
 const KEPT_NATIVE_ANCHOR = `        if (replacement === undefined) return undefined;
 `;
 
@@ -260,6 +268,90 @@ const PI_READ_CONTEXT_TOKENS_TEST = `  // Rubato: handoff-recovery-edits.mjs let
 
 `;
 
+const KEEPS_NATIVE_SESSION_FIELD_ANCHOR = `  readonly transportClosedMessage?: string;
+`;
+
+const KEEPS_NATIVE_SESSION_FIELD = `  readonly transportClosedMessage?: string;
+  /**
+   * Rubato (handoff-recovery-edits.mjs): the connection is attached to the thread's own
+   * conversation, so a registration without a native ref answers with that session instead of
+   * opening a replacement. A replacement would hold only a summary of the real conversation.
+   */
+  readonly keepsNativeSession?: boolean;
+`;
+
+const NEEDS_NEW_SESSION_ANCHOR = `          const needsNewSession = resumeId == null && registrationAttempted;
+`;
+
+const NEEDS_NEW_SESSION = `          // Rubato (handoff-recovery-edits.mjs): never swap the conversation the connection is on.
+          const needsNewSession =
+            resumeId == null && registrationAttempted && options.keepsNativeSession !== true;
+`;
+
+const KEEPS_NATIVE_SESSION_TEST_ANCHOR = `  it.effect("rejects rollback while native wake output is awaiting ownership", () =>
+`;
+
+const KEEPS_NATIVE_SESSION_TEST = `  // Rubato: handoff-recovery-edits.mjs keeps a Rubato thread on its engine session.
+  describe("a provider that keeps its native session", () => {
+    const openKeeping = Effect.fnUntraced(function* (fake: FakePi, keepsNativeSession: boolean) {
+      const adapter = yield* makePiAdapterV2({
+        instanceId: PI_INSTANCE_ID,
+        settings: { enabled: true, binaryPath: "pi", launchArgs: "", customModels: [] },
+        environment: {},
+        ...(keepsNativeSession ? { keepsNativeSession } : {}),
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, fake.spawner));
+      return yield* adapter.openSession({
+        threadId: THREAD_ID,
+        providerSessionId: SESSION_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy,
+      });
+    });
+    const registerTwice = Effect.fnUntraced(function* (fake: FakePi, keepsNativeSession: boolean) {
+      const runtime = yield* openKeeping(fake, keepsNativeSession);
+      const first = yield* runtime.ensureThread({
+        threadId: THREAD_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy,
+      });
+      // Upstream's uncertain-delivery recovery registers again with the native ref dropped.
+      const second = yield* runtime.ensureThread({
+        threadId: THREAD_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy,
+        existingProviderThread: { ...first, nativeThreadRef: null },
+      });
+      return { first, second };
+    });
+
+    it.effect("answers a registration without a native ref with the attached session", () =>
+      Effect.gen(function* () {
+        const fake = yield* makeFakePi;
+        const { first, second } = yield* registerTwice(fake, true);
+        assert.isDefined(first.nativeThreadRef?.nativeId);
+        assert.equal(second.nativeThreadRef?.nativeId, first.nativeThreadRef?.nativeId);
+        assert.notInclude(
+          fake.allRequests().map((request) => request.type),
+          "new_session",
+        );
+      }).pipe(Effect.scoped, Effect.provide(layerTest)),
+    );
+
+    it.effect("still opens a replacement session when the provider does not keep one (upstream Pi)", () =>
+      Effect.gen(function* () {
+        const fake = yield* makeFakePi;
+        const { first, second } = yield* registerTwice(fake, false);
+        assert.notEqual(second.nativeThreadRef?.nativeId, first.nativeThreadRef?.nativeId);
+        assert.include(
+          fake.allRequests().map((request) => request.type),
+          "new_session",
+        );
+      }).pipe(Effect.scoped, Effect.provide(layerTest)),
+    );
+  });
+
+`;
+
 const MEASURED_ESTIMATE_ANCHOR = `      const nativeContextEstimate = Effect.gen(function* () {
 `;
 
@@ -402,9 +494,12 @@ export const handoffRecoveryEdits = {
   ],
   'packages/provider-pi/src/server/adapter.ts': [
     [PI_READ_CONTEXT_TOKENS_ANCHOR, PI_READ_CONTEXT_TOKENS],
+    [KEEPS_NATIVE_SESSION_FIELD_ANCHOR, KEEPS_NATIVE_SESSION_FIELD, 'replace'],
+    [NEEDS_NEW_SESSION_ANCHOR, NEEDS_NEW_SESSION, 'replace'],
   ],
   'packages/provider-pi/src/server/adapter.test.ts': [
     [PI_READ_CONTEXT_TOKENS_TEST_ANCHOR, PI_READ_CONTEXT_TOKENS_TEST],
+    [KEEPS_NATIVE_SESSION_TEST_ANCHOR, KEEPS_NATIVE_SESSION_TEST],
   ],
   'apps/server/src/orchestration-v2/ProviderTurnStartService.ts': [
     [KEPT_NATIVE_ANCHOR, KEPT_NATIVE, 'replace'],
