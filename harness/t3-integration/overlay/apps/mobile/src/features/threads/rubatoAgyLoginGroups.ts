@@ -2,11 +2,14 @@
 // Antigravity instance pairs one agy agent with one Google login, so the main login with Rubato and
 // 헬레나 is two instances, and the sub login two more. A login is one section named for the login,
 // its agents a choice above its models; only the chosen agent's models show. Search and the
-// favorites filter list every agent's models instead, each under "login · agent".
+// favorites filter list every agent's models instead, each under "login · agent". Rubato's own
+// models lead the list, the Antigravity logins under them (user: "루바토모델 먼저뜨고 그밑에 안티 둘").
 import type { ServerSettings } from "@t3tools/contracts";
 import { agyPickerAccounts, type AgyPickerAgent } from "@t3tools/shared/rubatoAgyAccounts";
 
 import type { ProviderGroup } from "../../lib/modelOptions";
+
+const RUBATO_DRIVER = "rubato-pi";
 
 export interface AgyLoginChoice {
   /** The login's agents that have models here, the lead first. */
@@ -37,13 +40,17 @@ export function agyLoginGroups(input: {
     accounts.flatMap((account) => account.agents.map((agent) => [agent.instanceId, account] as const)),
   );
   const choices = new Map<string, AgyLoginChoice>();
+  const rubatoFirst = (groups: ReadonlyArray<ProviderGroup>) => [
+    ...groups.filter((group) => group.models[0]?.providerDriver === RUBATO_DRIVER),
+    ...groups.filter((group) => group.models[0]?.providerDriver !== RUBATO_DRIVER),
+  ];
   if (input.narrowed) {
     const groups = input.groups.map((group) => {
       const account = accountOf.get(group.providerKey);
       const agent = account?.agents.find((candidate) => candidate.instanceId === group.providerKey);
       return account && agent ? { ...group, providerLabel: `${account.label} · ${agent.label}` } : group;
     });
-    return { groups, choices };
+    return { groups: rubatoFirst(groups), choices };
   }
   const groups = input.groups.flatMap((group): ReadonlyArray<ProviderGroup> => {
     const account = accountOf.get(group.providerKey);
@@ -60,5 +67,5 @@ export function agyLoginGroups(input: {
     choices.set(account.railId, { agents, chosen });
     return [{ ...byInstance.get(chosen)!, providerKey: account.railId, providerLabel: account.label }];
   });
-  return { groups, choices };
+  return { groups: rubatoFirst(groups), choices };
 }

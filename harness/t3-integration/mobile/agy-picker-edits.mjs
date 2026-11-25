@@ -3,7 +3,8 @@
 // One T3 instance pairs one agy agent with one Google login, so the sheet showed "Antigravity",
 // "Antigravity [sub]" and a "헬레나" section per login. Now a login is one section named for it, with
 // its agents (Rubato, 헬레나) as a choice above the models; search and the favorites filter keep
-// every agent's models, each under "login · agent" (rubatoAgyLoginGroups.ts). The provider filter
+// every agent's models, each under "login · agent" (rubatoAgyLoginGroups.ts). Rubato's own models
+// lead, the Antigravity logins under them ("루바토모델 먼저뜨고 그밑에 안티 둘"). The provider filter
 // menu lists the logins the same way, since it reads the same groups.
 //
 // Cost per upstream bump: 9 anchors in 1 file, all here.

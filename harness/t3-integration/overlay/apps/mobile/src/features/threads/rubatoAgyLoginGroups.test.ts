@@ -24,7 +24,12 @@ const instances = {
 const group = (providerKey: string, providerLabel: string): ProviderGroup => ({
   providerKey,
   providerLabel,
-  models: [{ key: `${providerKey}:gemini-4-neon` } as ModelOption],
+  models: [
+    {
+      key: `${providerKey}:gemini-4-neon`,
+      providerDriver: providerKey === "rubato" ? "rubato-pi" : "antigravity",
+    } as ModelOption,
+  ],
 });
 // The order the sheet lists them in, by display name.
 const groups = [
@@ -38,7 +43,7 @@ const view = (result: ReturnType<typeof agyLoginGroups>) =>
   result.groups.map((entry) => [entry.providerKey, entry.providerLabel, entry.models[0]!.key]);
 
 describe("agyLoginGroups", () => {
-  it("lists the main and sub logins once each, with Rubato and 헬레나 a choice on each", () => {
+  it("lists Rubato first, then the main and sub logins once each, with Rubato and 헬레나 a choice on each", () => {
     const result = agyLoginGroups({
       groups,
       instances,
@@ -47,9 +52,9 @@ describe("agyLoginGroups", () => {
       narrowed: false,
     });
     expect(view(result)).toEqual([
+      ["rubato", "Rubato", "rubato:gemini-4-neon"],
       ["agy-rubato-lead", "Antigravity", "agy-rubato-lead:gemini-4-neon"],
       ["agy-rubato-lead-sub", "Antigravity [sub]", "agy-rubato-lead-sub:gemini-4-neon"],
-      ["rubato", "Rubato", "rubato:gemini-4-neon"],
     ]);
     expect(result.choices.get("agy-rubato-lead-sub")).toEqual({
       agents: [
@@ -63,7 +68,7 @@ describe("agyLoginGroups", () => {
   it("opens a login on the agent the thread runs, and shows the agent picked here instead", () => {
     const base = { groups, instances, narrowed: false } as const;
     const onThread = agyLoginGroups({ ...base, picked: new Map(), displayedInstanceId: "agy-rubato-lead-sub-helena" });
-    expect(view(onThread)[1]).toEqual([
+    expect(view(onThread)[2]).toEqual([
       "agy-rubato-lead-sub",
       "Antigravity [sub]",
       "agy-rubato-lead-sub-helena:gemini-4-neon",
@@ -73,18 +78,18 @@ describe("agyLoginGroups", () => {
       picked: new Map([["agy-rubato-lead", "agy-helena"]]),
       displayedInstanceId: "agy-rubato-lead-sub-helena",
     });
-    expect(view(picked)[0]).toEqual(["agy-rubato-lead", "Antigravity", "agy-helena:gemini-4-neon"]);
+    expect(view(picked)[1]).toEqual(["agy-rubato-lead", "Antigravity", "agy-helena:gemini-4-neon"]);
     expect(picked.choices.get("agy-rubato-lead")?.chosen).toBe("agy-helena");
   });
 
   it("lists every agent under its login's name while searching", () => {
     const result = agyLoginGroups({ groups, instances, picked: new Map(), displayedInstanceId: undefined, narrowed: true });
     expect(result.groups.map((entry) => entry.providerLabel)).toEqual([
+      "Rubato",
       "Antigravity · Rubato",
       "Antigravity [sub] · Rubato",
       "Antigravity [sub] · 헬레나",
       "Antigravity · 헬레나",
-      "Rubato",
     ]);
     expect(result.choices.size).toBe(0);
   });
