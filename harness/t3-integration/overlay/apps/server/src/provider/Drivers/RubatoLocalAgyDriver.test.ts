@@ -10,6 +10,7 @@ import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as TestClock from "effect/testing/TestClock";
 import { HttpClient } from "effect/http";
 
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
@@ -22,6 +23,7 @@ import * as ModelManifest from "../ModelManifest.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { resolveProviderCompatibility } from "../providerCompatibility.ts";
 import { AntigravityDriver } from "./AntigravityDriver.ts";
+import { checkAgyLogin } from "../RubatoAgyLogin.ts";
 import * as ProviderHostLive from "../ProviderHostLive.ts";
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 
@@ -60,7 +62,16 @@ const quote = (value: string) => `'${value.replaceAll("'", `'"'"'`)}'`;
 
 // A stand-in for the official agy CLI: `agy agents` lists one agent, `agy acp ...` runs T3's mock
 // ACP agent. Every call records its arguments and HOME.
-const makeHarness = Effect.fn("makeLocalAgyHarness")(function* (agent: string) {
+const makeHarness = Effect.fn("makeLocalAgyHarness")(function* (
+  agent: string,
+  options: {
+    readonly id?: string;
+    readonly isolated?: boolean;
+    readonly login?: string;
+    /** While this file exists, `agy acp` answers with a Google sign-in link, as a signed-out agy does. */
+    readonly signedOutMarker?: string;
+  } = {},
+) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -80,6 +91,14 @@ const makeHarness = Effect.fn("makeLocalAgyHarness")(function* (agent: string) {
       "#!/bin/sh",
       `printf '%s|%s|%s\\n' "$HOME" "\${GEMINI_API_KEY:-}" "$*" >> ${quote(callLog)}`,
       `if [ "$1" = agents ]; then printf 'Available agents:\\nrubato-lead-alt\\nrubato-lead\\n'; exit 0; fi`,
+      ...(options.signedOutMarker
+        ? [
+            `if [ "$1" = acp ] && [ -f ${quote(options.signedOutMarker)} ]; then`,
+            "  printf 'Open the following link to authenticate the ACP server: https://accounts.google.com/o/oauth2/v2/auth?response_type=code&state=s&redirect_uri=http://127.0.0.1:4567/\\n'",
+            "  exec sleep 30",
+            "fi",
+          ]
+        : []),
       "export T3_ACP_ANTIGRAVITY=1 T3_ACP_AGENT_VERSION=1.5.13",
       `export T3_ACP_REQUEST_LOG_PATH=${quote(requestLog)}`,
       `exec ${quote(nodePath)} ${quote(mockAgentPath)} "$@"`,
@@ -133,12 +152,14 @@ const makeHarness = Effect.fn("makeLocalAgyHarness")(function* (agent: string) {
     }),
   );
   const instance = yield* AntigravityDriver.create({
-    instanceId: ProviderInstanceId.make(`local-${path.basename(root)}`),
+    instanceId: ProviderInstanceId.make(options.id ?? `local-${path.basename(root)}`),
     displayName: "Lead",
     enabled: true,
     config: { ...AntigravityDriver.defaultConfig(), authMethod: "oauth-personal", binaryPath: agy },
     environment: [
       { name: "RUBATO_LOCAL_AGY_AGENT", value: agent },
+      ...(options.isolated ? [{ name: "RUBATO_LOCAL_AGY_ISOLATED", value: "1" }] : []),
+      ...(options.login ? [{ name: "RUBATO_LOCAL_AGY_LOGIN", value: options.login }] : []),
       { name: "HOME", value: home },
       { name: "GEMINI_API_KEY", value: "must-not-be-forwarded" },
       { name: "T3_ACP_ANTIGRAVITY", value: "must-not-be-forwarded" },
@@ -273,5 +294,47 @@ it.layer(layerTest)("Rubato local agy", (it) => {
       expect(agyLaunches.filter((launch) => launch.args.join(" ") !== "agents")).toEqual([]);
       expect(yield* h.methods).toEqual([]);
     }),
+  );
+
+  it.effect.skipIf(windowsHost)(
+    "checks every agent on an isolated login at start, and a pass brings back the signed-out ones",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const scratch = yield* fs.makeTempDirectoryScoped({ prefix: "t3-agy-login-" });
+        const signedOutMarker = path.join(scratch, "signed-out");
+        yield* fs.writeFileString(signedOutMarker, "");
+        const login = `sub-${path.basename(scratch)}`;
+        const lead = yield* makeHarness("rubato-lead", { id: login, isolated: true, signedOutMarker });
+        const helena = yield* makeHarness("rubato-lead-alt", {
+          id: `${login}-helena`,
+          isolated: true,
+          login,
+          signedOutMarker,
+        });
+        const authOf = (h: typeof lead) =>
+          h.instance.snapshot.getSnapshot.pipe(Effect.map((snapshot) => snapshot.auth.status));
+        const bothSignedOut = Effect.all([authOf(lead), authOf(helena)]).pipe(
+          Effect.map((states) => states.every((state) => state === "unauthenticated")),
+        );
+        // The start checks run in the background; wait for them in real time.
+        for (let attempt = 0; attempt < 200 && !(yield* bothSignedOut); attempt += 1) {
+          yield* TestClock.withLive(Effect.sleep("50 millis"));
+        }
+        expect(yield* bothSignedOut).toBe(true);
+
+        const profiles = [...lead.launches, ...helena.launches]
+          .filter((launch) => launch.command !== process.execPath && launch.args[0] === "acp")
+          .map((launch) => launch.args[launch.args.indexOf("--gemini-dir") + 1]);
+        expect(profiles.length).toBeGreaterThanOrEqual(2);
+        expect(new Set(profiles).size).toBe(1);
+
+        // Signed in again: one passing check of the login brings back the other agent on it.
+        yield* fs.remove(signedOutMarker);
+        expect(yield* checkAgyLogin(profiles[0]!, login)).toBe(true);
+        expect(yield* authOf(lead)).toBe("authenticated");
+        expect(yield* authOf(helena)).toBe("authenticated");
+      }),
   );
 });

@@ -34,7 +34,7 @@ export interface AgyPrompt {
   readonly enabled: boolean;
 }
 
-/** connected · checking (no live status yet) · signin (isolated, not signed in) · absent (CLI login not ready) · off */
+/** connected · checking (no live status yet) · signin (isolated, an agent on it is not signed in) · absent (CLI login not ready) · off */
 export type AgyAccountState = "connected" | "checking" | "signin" | "absent" | "off";
 
 export interface AgyAccount {
@@ -90,9 +90,33 @@ function cliState(prompts: ReadonlyArray<AgyPrompt>, live: ReadonlyMap<string, A
   return "absent";
 }
 
-function isolatedState(prompt: AgyPrompt, live: AgyLiveInput | undefined): AgyAccountState {
-  if (!prompt.enabled) return "off";
-  return live?.auth?.status === "authenticated" || live?.status === "ready" ? "connected" : "signin";
+// The agents on one isolated login share its stored sign-in, but each instance keeps its own sign-in
+// state. An agent that found the login signed out speaks for the whole login, so the row never says
+// connected while that agent cannot run.
+function isolatedState(
+  holder: AgyPrompt,
+  prompts: ReadonlyArray<AgyPrompt>,
+  live: ReadonlyMap<string, AgyLiveInput>,
+): AgyAccountState {
+  if (!holder.enabled) return "off";
+  const views = prompts.filter((prompt) => prompt.enabled).map((prompt) => live.get(prompt.instanceId));
+  if (views.some((view) => view?.auth?.status === "unauthenticated")) return "signin";
+  return views.some((view) => view?.auth?.status === "authenticated" || view?.status === "ready")
+    ? "connected"
+    : "signin";
+}
+
+/**
+ * The holder's status for the login's sign-in controls. When another agent on the login found it
+ * signed out, the holder's own "signed in" would hide the way to sign in again.
+ */
+export function agySignInView<Live extends { readonly auth: { readonly status: string } }>(
+  account: Pick<AgyAccount, "state">,
+  live: Live,
+): Live {
+  return account.state === "signin" && live.auth.status === "authenticated"
+    ? ({ ...live, auth: { ...live.auth, status: "unauthenticated" } } as Live)
+    : live;
 }
 
 /** The CLI login first (when any instance uses it), then each isolated login in the given order. */
@@ -130,7 +154,7 @@ export function agyAccounts(
       key,
       isolated: true,
       name: holder.name,
-      state: isolatedState(holder, live.get(holder.instanceId)),
+      state: isolatedState(holder, prompts, live),
       models: modelsOf(prompts, live),
       prompts,
     });

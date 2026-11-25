@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { agyAccounts, agyAccountsSummary, type AgyLiveInput } from "./RubatoAgyAccounts.logic";
+import { agyAccounts, agyAccountsSummary, agySignInView, type AgyLiveInput } from "./RubatoAgyAccounts.logic";
 
 const agent = (value: string) => ({ name: "RUBATO_LOCAL_AGY_AGENT", value });
 const isolated = { name: "RUBATO_LOCAL_AGY_ISOLATED", value: "1" };
@@ -59,6 +59,40 @@ describe("agyAccounts", () => {
       ["agy-rubato-lead-sub", "rubato-lead"],
       ["agy-helena-sub", "헬레나"],
     ]);
+  });
+
+  it("asks to sign in again when any agent on a shared login found it signed out, though its holder did not", () => {
+    const login = { name: "RUBATO_LOCAL_AGY_LOGIN", value: "agy-rubato-lead-sub" };
+    const entries = [
+      ["agy-rubato-lead-sub", { displayName: "Antigravity [sub]", environment: [agent("rubato-lead"), isolated] }],
+      ["agy-helena-sub", { displayName: "헬레나", environment: [agent("헬레나"), isolated, login] }],
+    ] as const;
+    const holder = { status: "ready", auth: { status: "authenticated" }, models: [{ name: "Gemini 4 Neon" }] };
+    const signedOut = { status: "warning", auth: { status: "unauthenticated" }, models: [] };
+
+    const [account] = agyAccounts(entries, new Map([["agy-rubato-lead-sub", holder], ["agy-helena-sub", signedOut]]));
+    expect(account!.state).toBe("signin");
+    // The holder's own "signed in" must not hide the sign-in button for the login.
+    expect(agySignInView(account!, holder).auth.status).toBe("unauthenticated");
+
+    const [healthy] = agyAccounts(entries, new Map([["agy-rubato-lead-sub", holder], ["agy-helena-sub", holder]]));
+    expect(healthy!.state).toBe("connected");
+    expect(agySignInView(healthy!, holder)).toBe(holder);
+  });
+
+  it("ignores a turned-off agent's sign-in state on a shared login", () => {
+    const login = { name: "RUBATO_LOCAL_AGY_LOGIN", value: "agy-rubato-lead-sub" };
+    const [account] = agyAccounts(
+      [
+        ["agy-rubato-lead-sub", { environment: [agent("rubato-lead"), isolated] }],
+        ["agy-helena-sub", { environment: [agent("헬레나"), isolated, login], enabled: false }],
+      ],
+      new Map([
+        ["agy-rubato-lead-sub", ready()],
+        ["agy-helena-sub", { status: "warning", auth: { status: "unauthenticated" }, models: [] }],
+      ]),
+    );
+    expect(account!.state).toBe("connected");
   });
 
   it("turns the CLI login off only when every system prompt on it is off", () => {

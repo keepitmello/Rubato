@@ -40,7 +40,7 @@ import { rubatoAccountLabel, rubatoAccountOrder } from "../../rubatoAccountLabel
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import { SettingsGroup } from "./SettingsGroup";
-import { agyAccounts, agyAccountsSummary, type AgyAccount, type AgyAccountState } from "./RubatoAgyAccounts.logic";
+import { agyAccounts, agyAccountsSummary, agySignInView, type AgyAccount, type AgyAccountState } from "./RubatoAgyAccounts.logic";
 import { ProviderAuthenticationSection } from "./ProviderAuthenticationSection";
 import { EffortDefaultSection, ModelEffortControl, useEffortSettings, type EffortState } from "./RubatoEffortSettings";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
@@ -1181,7 +1181,7 @@ function AntigravityAcpDetail({
                     environmentId={environmentId}
                     environmentLabel="this machine"
                     instanceId={ProviderInstanceId.make(isolatedId)}
-                    provider={live}
+                    provider={agySignInView(account, live)}
                     readOnly={false}
                   />
                 ) : null}

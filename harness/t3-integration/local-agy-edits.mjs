@@ -16,6 +16,8 @@ const support = 'apps/server/src/provider/acp/AntigravityAcpSupport.ts';
 
 export const localAgyOverlays = [
   'apps/server/src/provider/RubatoLocalAgy.ts',
+  'apps/server/src/provider/RubatoAgyLogin.ts',
+  'apps/server/src/provider/RubatoAgyLogin.test.ts',
   'apps/server/src/provider/Drivers/RubatoLocalAgyDriver.test.ts',
 ];
 
@@ -74,6 +76,8 @@ export const localAgyEdits = {
     [
       '  readonly readKeyringSecret?: Effect.Effect<string | undefined, AntigravityKeyringError>;',
       '  readonly useLocalAgyLogin?: boolean;\n' +
+      '  /** Rubato: renews the lapsed sign-in a Google account instance stored (RubatoAgyLogin.ts). */\n' +
+      '  readonly renewSignIn?: Effect.Effect<void>;\n' +
       '  readonly readKeyringSecret?: Effect.Effect<string | undefined, AntigravityKeyringError>;',
       'replace',
     ],
@@ -87,6 +91,20 @@ export const localAgyEdits = {
       '      const stored = !input.useLocalAgyLogin && (yield* fs.exists(cliTokenPath))\n' +
       '        ? yield* fs.readFileString(cliTokenPath)\n' +
       '        : input.useLocalAgyLogin || input.authMethod === "oauth-business"',
+      'replace',
+    ],
+    // Only a running agy renews the stored sign-in, so it lapses after an idle hour while the
+    // login itself still holds. Renew it before calling it expired.
+    [
+      '      const { token } = yield* decodeCliToken(stored);\n      if (!(Date.parse(token.expiry ?? "") > now + 60_000)) {',
+      '      let { token } = yield* decodeCliToken(stored);\n' +
+      '      if (!(Date.parse(token.expiry ?? "") > now + 60_000) && input.renewSignIn && !input.useLocalAgyLogin) {\n' +
+      '        yield* input.renewSignIn;\n' +
+      '        if (yield* fs.exists(cliTokenPath)) {\n' +
+      '          ({ token } = yield* fs.readFileString(cliTokenPath).pipe(Effect.flatMap(decodeCliToken)));\n' +
+      '        }\n' +
+      '      }\n' +
+      '      if (!(Date.parse(token.expiry ?? "") > now + 60_000)) {',
       'replace',
     ],
   ],
@@ -151,7 +169,8 @@ export const localAgyEdits = {
       'import * as Option from "effect/Option";\n' +
       'import { agyThreadPrompt, AgyPromptFileError } from "../RubatoAgyThreadPrompt.ts";\n' +
       'import { installPromptAgent, verifyProfileAgent } from "../agyPrompt.mjs";\n' +
-      'import { hasLocalAgyAgent, linkLocalAgyProfileConfig, localAgyAgent, localAgyApprovalSpawn, localAgyIsolated, localAgyLoginOwner, localAgyModels, localAgySpawn, localAgyWithAgentArgs } from "../RubatoLocalAgy.ts";\n',
+      'import { hasLocalAgyAgent, linkLocalAgyProfileConfig, localAgyAgent, localAgyApprovalSpawn, localAgyIsolated, localAgyLoginOwner, localAgyModels, localAgySpawn, localAgyWithAgentArgs } from "../RubatoLocalAgy.ts";\n' +
+      'import { checkAgyLogin, joinAgyLogin, recheckAgyLoginSiblings, renewAgyLogin } from "../RubatoAgyLogin.ts";\n',
     ],
     [
       '    const settings = { ...config, enabled } satisfies AntigravitySettings;\n',
@@ -159,12 +178,19 @@ export const localAgyEdits = {
       '    const localAgent = localAgyAgent(environment);\n' +
       '    const promptSql = localAgent ? Option.getOrUndefined(yield* Effect.serviceOption(SqlClient.SqlClient)) : undefined;\n' +
       '    const localIsolated = Boolean(localAgent) && localAgyIsolated(environment);\n' +
-      '    const localExistingLogin = Boolean(localAgent) && !localIsolated;\n',
+      '    const localExistingLogin = Boolean(localAgent) && !localIsolated;\n' +
+      '    const localScope = yield* Scope.Scope;\n' +
+      '    // Set once the login check exists below; the quota read renews a lapsed sign-in with it.\n' +
+      '    let renewLocalLogin: Effect.Effect<void> = Effect.void;\n',
       'replace',
     ],
     [
       "    const profileDirectory = directories.profile;\n",
-      "    // Rubato: another agy agent on an isolated Google login keeps that login's profile, so the\n    // sign-in is shared and the usage page counts one account (RubatoLocalAgy.ts).\n    const loginOwner = localIsolated ? localAgyLoginOwner(environment) : undefined;\n    const profileDirectory =\n      loginOwner !== undefined && loginOwner !== instanceId\n        ? (yield* resolveAntigravityInstanceDirectories(\n            host.paths.stateDir,\n            loginOwner as typeof instanceId,\n          ).pipe(\n            Effect.provideService(Digest.Digest, digest),\n            Effect.provideService(Path.Path, path),\n            Effect.orElseSucceed(() => directories),\n          )).profile\n        : directories.profile;\n",
+      "    // Rubato: another agy agent on an isolated Google login keeps that login's profile, so the\n    // sign-in is shared and the usage page counts one account (RubatoLocalAgy.ts).\n    const loginOwner = localIsolated ? localAgyLoginOwner(environment) : undefined;\n    const profileDirectory =\n      loginOwner !== undefined && loginOwner !== instanceId\n        ? (yield* resolveAntigravityInstanceDirectories(\n            host.paths.stateDir,\n            loginOwner as typeof instanceId,\n          ).pipe(\n            Effect.provideService(Digest.Digest, digest),\n            Effect.provideService(Path.Path, path),\n            Effect.orElseSucceed(() => directories),\n          )).profile\n        : directories.profile;\n" +
+      "    // A pass on this login has its instances that found it signed out check again (RubatoAgyLogin.ts).\n" +
+      "    const recheckLocalLogin = localIsolated\n" +
+      "      ? recheckAgyLoginSiblings(profileDirectory, instanceId).pipe(Effect.forkIn(localScope), Effect.asVoid)\n" +
+      "      : Effect.void;\n",
       'replace',
     ],
     [
@@ -336,7 +362,8 @@ export const localAgyEdits = {
     ],
     [
       '    const usage = yield* makeAntigravityUsageProbe({\n      profileDirectory,',
-      '    const usage = yield* makeAntigravityUsageProbe({\n      profileDirectory,\n      useLocalAgyLogin: localExistingLogin,',
+      '    const usage = yield* makeAntigravityUsageProbe({\n      profileDirectory,\n      useLocalAgyLogin: localExistingLogin,\n' +
+      '      ...(localIsolated ? { renewSignIn: Effect.suspend(() => renewLocalLogin) } : {}),',
       'replace',
     ],
     [
@@ -361,9 +388,37 @@ export const localAgyEdits = {
 `,
       'replace',
     ],
+    // A sign-in, or a session that started, on an isolated login speaks for the other agents on it.
+    [
+      '      onAuthenticated: (started, runtime) =>\n        Effect.suspend(() => provider.onSignedIn).pipe(\n          Effect.andThen(publishCatalog(started, runtime)),\n',
+      '      onAuthenticated: (started, runtime) =>\n        Effect.suspend(() => provider.onSignedIn).pipe(\n          Effect.andThen(publishCatalog(started, runtime)),\n          Effect.andThen(recheckLocalLogin),\n',
+      'replace',
+    ],
+    [
+      '        provider.onSessionStarted(started, cwd).pipe(Effect.andThen(authFlow.onSignedInElsewhere)),\n',
+      '        provider.onSessionStarted(started, cwd).pipe(\n          Effect.andThen(authFlow.onSignedInElsewhere),\n          Effect.andThen(recheckLocalLogin),\n        ),\n',
+      'replace',
+    ],
     [
       '    return {\n      instanceId,\n      driverKind: DRIVER,\n      continuationIdentity,\n',
-      `    // Read the account's actual model list at start, without sending a prompt.
+      `    // An isolated login is checked at start too, one agent at a time, so an agent that shares it
+    // never stays unchecked with no models, and the quota read can renew its lapsed sign-in.
+    if (enabled && localIsolated) {
+      yield* joinAgyLogin(profileDirectory, instanceId, {
+        check: refreshModels().pipe(
+          Effect.as(true),
+          Effect.catch((cause) => Effect.logWarning(cause.detail).pipe(Effect.as(false))),
+        ),
+        signedOut: provider.snapshot.getSnapshot.pipe(
+          Effect.map((snapshot) => snapshot.auth.status === "unauthenticated"),
+          Effect.orElseSucceed(() => false),
+        ),
+      });
+      renewLocalLogin = renewAgyLogin(profileDirectory, instanceId);
+      yield* checkAgyLogin(profileDirectory, instanceId).pipe(Effect.forkScoped);
+    }
+
+    // Read the account's actual model list at start, without sending a prompt.
     if (enabled && localExistingLogin) {
       yield* refreshModels().pipe(
         Effect.catch((cause) => Effect.logWarning(cause.detail)),
