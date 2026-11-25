@@ -1791,6 +1791,18 @@ test('the companion room names a person\'s message to the engine by its messenge
   assert.equal(typed('노보링크 쪽에 답해줘'), 'quick');
   assert.equal(typed('아까 그것도 실수야', sent + 10_000), 'queued');
   assert.equal(typed('![a.png](t3-context://v1/image/r1) 이게 뭐야'), 'picture');
+  // T3 also names where it saved each file (Roo's room, 2026-11-26: every picture message was refused).
+  const saved = [prompt('saved', '[Image: b.png; ref=r2] 세뇨는 보여줄게\n\n<t3_context version="1">\n<context kind="image" id="r2">\n</context>\n</t3_context>\n\n[Attached image "b.png" is saved at: /t3/attachments/x-r2.png]', sent + 400),
+    prompt('files-only', '[User attached one or more files without additional text. Respond using the conversation context and the attached files.]\n\n[Attached image "c.png" is saved at: /t3/attachments/c.png]\n\n[Attached file "d.pdf" is unavailable: could not resolve a saved path for attachment \'d\'.]', sent + 500)];
+  const typedSaved = (text) => companionEntry(saved, 'room', { messageId: 'app-2', text, createdAt: new Date(sent).toISOString() });
+  assert.equal(typedSaved('![b.png](t3-context://v1/image/r2) 세뇨는 보여줄게'), 'saved');
+  assert.equal(typedSaved('[User attached one or more files without additional text. Respond using the conversation context and the attached files.]'), 'files-only');
+  // A dictated message: the app keeps its voice mark, the engine took it in as "[voice] …" (Roo's room).
+  const spoken = [prompt('spoken', '[voice] 아니  뭐 그런 보고서가 뭔지는', sent + 300)];
+  // A turn that carried a context handoff: the person's words follow it (Segno's room after the rebind).
+  const handedOff = [prompt('handoff', 'Context handoff (delta_since_target_last_seen):\nProvider context handoff.\n[item; status=failed]\nThe provider could not start this turn.\n\nUser message:\n세뇨야 번호인증이 왜 필요해', sent + 300)];
+  assert.equal(companionEntry(handedOff, 'room', { messageId: 'app-4', text: '세뇨야 번호인증이 왜 필요해', createdAt: new Date(sent).toISOString() }), 'handoff');
+  assert.equal(companionEntry(spoken, 'room', { messageId: 'app-3', text: '\u2063아니  뭐 그런 보고서가 뭔지는\n', createdAt: new Date(sent).toISOString() }), 'spoken');
   // Words the engine never took in, or a message with no id, name nothing rather than a neighbour.
   assert.equal(typed('보낸 적 없는 말'), null);
   assert.equal(companionEntry(branch, 'room', { text: '노보링크 쪽에 답해줘', createdAt: new Date(sent).toISOString() }), null);

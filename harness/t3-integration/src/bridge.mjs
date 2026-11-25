@@ -25,6 +25,7 @@ function t3BridgeLog(message, extra) {
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
+import { RUBATO_VOICE_MARK } from './voice/submit.mjs';
 
 // 소켓이 끊기면 pi-client 는 이 문구들로 던진다. 서버가 다시 떠도 이미 만들어 둔
 // 클라이언트는 되살아나지 않으니, 붙잡고 있던 것을 버리고 새 연결로 한 번 더 친다.
@@ -209,10 +210,23 @@ const COMPANION_STOP_TRIES = 100;
 const PROMPT_SKEW_MS = 5_000;
 /**
  * A prompt's words without its attachments: the app writes a picture as a context link, the engine
- * as an image note followed by the context block the app sent along.
+ * as an image note followed by the context block the app sent along, and then one line per file
+ * naming where T3 saved it (provider-core attachmentPrompt.ts).
  */
-const promptWords = (text) => String(text ?? '')
+/**
+ * A turn that carried a context handoff reached the engine as the handoff, then "User message:"
+ * and the person's words (orchestration-v2 ContextHandoffDelivery.ts).
+ */
+const HANDOFF_USER_MARK = '\n\nUser message:\n';
+const handoffUserText = (text) => {
+  const at = text.startsWith('Context handoff (') ? text.lastIndexOf(HANDOFF_USER_MARK) : -1;
+  return at === -1 ? text : text.slice(at + HANDOFF_USER_MARK.length);
+};
+const promptWords = (text) => handoffUserText(String(text ?? ''))
+  // A dictated message: the app marks it with RUBATO_VOICE_MARK, the model reads "[voice] " (voice-edits.mjs).
+  .replace(new RegExp(`^(?:${RUBATO_VOICE_MARK}|\\[voice\\] )`), '')
   .replace(/<t3_context[\s\S]*?<\/t3_context>/g, ' ')
+  .replace(/\[Attached [a-z]+ "[^"]*" is (?:saved at|unavailable): [^\]]*\]/g, ' ')
   .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
   .replace(/\[Image[^\]]*\]/g, ' ')
   .replace(/\s+/g, ' ')
