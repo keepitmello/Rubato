@@ -166,11 +166,14 @@ export function queuedMessagesInOrder(state, cleared) {
   return [...ordered, ...byDelivery.steer, ...byDelivery.followUp]
     .filter((message) => typeof message === 'string' && message.trim());
 }
+/** How long a close waits on the engine's teardown before telling T3 the attachment is gone. */
+const CLOSE_TEARDOWN_MS = 5_000;
 export class RubatoRpcConnection {
   constructor(bridge, { threadId, cwd, onRecord, onClosed = () => {}, log = () => {},
     awaitTimings = { pollMs: AWAIT_POLL_MS, graceMs: AWAIT_GRACE_MS },
-    restartTimings = { reconnectMs: RESTART_RECONNECT_MS, retryMs: 500, resumeGraceMs: RESTART_RESUME_GRACE_MS } }) {
-    Object.assign(this, { bridge, threadId, cwd, onRecord, onClosed, log, awaitTimings, restartTimings });
+    restartTimings = { reconnectMs: RESTART_RECONNECT_MS, retryMs: 500, resumeGraceMs: RESTART_RESUME_GRACE_MS },
+    closeTimings = { teardownMs: CLOSE_TEARDOWN_MS } }) {
+    Object.assign(this, { bridge, threadId, cwd, onRecord, onClosed, log, awaitTimings, restartTimings, closeTimings });
     this.bound = undefined;
     // Inbound records in order, through the steps that may wait on the engine.
     this.inbound = Promise.resolve();
@@ -882,9 +885,22 @@ export class RubatoRpcConnection {
     this.restart?.resolve();
     clearInterval(this.watchdog);
     clearTimeout(this.hold?.timer);
-    try { await this.unsubscribe?.(); } catch { /* the engine may be gone */ }
-    if (this.sessionId) await this.client?.detach().catch(() => {});
-    await this.client?.close().catch(() => {});
+    // T3 drops this runtime only once it hears the attachment closed (onClosed). Until then a
+    // runtime whose Stop asked for this close stays "ready" and refuses every turn ("Cannot start
+    // a Pi turn after session closure"): Segno's room, 2026-11-25, after an unsubscribe waited on
+    // the engine with no deadline. The engine's teardown may finish later; T3 does not wait for it.
+    const teardown = (async () => {
+      try { await this.unsubscribe?.(); } catch { /* the engine may be gone */ }
+      if (this.sessionId) await this.client?.detach().catch(() => {});
+      await this.client?.close().catch(() => {});
+    })();
+    let timer;
+    const late = new Promise((resolve) => { timer = setTimeout(() => resolve(true), this.closeTimings.teardownMs); });
+    if (await Promise.race([teardown.then(() => false), late])) {
+      this.log('engine teardown still running; closing anyway', this.sessionId);
+      teardown.catch(() => {});
+    }
+    clearTimeout(timer);
     this.onClosed(error);
   }
 }

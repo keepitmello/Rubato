@@ -44,6 +44,26 @@ test('the app original rides the companion prompt separately from provider text'
   }
 });
 
+test('a close tells T3 the attachment is gone even when the engine never finishes tearing it down', async () => {
+  const client = fakeClient();
+  const { conn, closed } = connection(client, {}, { closeTimings: { teardownMs: 20 } });
+  await conn.attach('s1');
+  // Seen in Segno's room: the unsubscribe waited on the engine with no deadline, T3 never heard
+  // the close, and the runtime Stop had closed refused every turn while it still read "ready".
+  conn.unsubscribe = () => new Promise(() => {});
+  const started = Date.now();
+  await conn.close();
+  assert.equal(closed.length, 1);
+  assert.ok(Date.now() - started < 1_000);
+  // A teardown that finishes in time still runs in full before the close is told.
+  const quick = fakeClient();
+  const done = connection(quick, {}, { closeTimings: { teardownMs: 1_000 } });
+  await done.conn.attach('s2');
+  await done.conn.close();
+  assert.deepEqual(quick.attached, ['s2', 'detach']);
+  assert.equal(done.closed.length, 1);
+});
+
 test('events before the attach are history; later ones arrive once, in order', async () => {
   const client = fakeClient();
   const { conn, records } = connection(client);
