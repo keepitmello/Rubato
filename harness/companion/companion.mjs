@@ -44,6 +44,9 @@ export const PIECES = Object.freeze([
   Object.freeze({ id: 'user', editable: true }),
   Object.freeze({ id: 'companion', editable: true }),
   Object.freeze({ id: 'tools', editable: false }),
+  // How to hand over information (harness/prompts/delivery.pi.md): one file every companion and every
+  // lead reads alike, so it lives beside the lead's pieces and no home has its own copy.
+  Object.freeze({ id: 'delivery', editable: false, shared: true }),
   Object.freeze({ id: 'memory', editable: true }),
   Object.freeze({ id: 'coda', editable: true }),
 ]);
@@ -523,7 +526,8 @@ function pieceOf(id) {
 
 /** The product default of one piece: a companion the app made reads the nameless new-companion texts. */
 export const defaultPiecePath = (defaultsDir, id, env = {}) => path.join(
-  env.RUBATO_COMPANION_MADE_IN_APP === '1' && NEW_COMPANION_PIECES.has(pieceOf(id).id) ? path.join(defaultsDir, NEW_COMPANION_DEFAULTS) : defaultsDir,
+  pieceOf(id).shared ? path.dirname(defaultsDir)
+    : env.RUBATO_COMPANION_MADE_IN_APP === '1' && NEW_COMPANION_PIECES.has(pieceOf(id).id) ? path.join(defaultsDir, NEW_COMPANION_DEFAULTS) : defaultsDir,
   `${pieceOf(id).id}.pi.md`);
 /** The resident memory piece lives with Segno's memory, where the dream keeps it, not under prompt/. */
 export const memoryPiecePath = (env = process.env) => path.join(companionHome(env),
@@ -634,11 +638,12 @@ export function clearPersonaReviewRequest(env = process.env) {
  * `baseUnknown` when the file predates seeding.
  */
 export function readPieces({ defaultsDir, env = process.env, readFile = (file) => readFileSync(file, 'utf8') } = {}) {
-  return PIECES.map(({ id, editable }) => {
+  return PIECES.map(({ id, editable, shared }) => {
     const defaultText = readFile(defaultPiecePath(defaultsDir, id, env)).trim();
     const mapped = JSON.parse(env.RUBATO_COMPANION_PROMPT_FILES || '{}')[id];
     const personal = editable || mapped ? readOptional(personalPiecePath(env, id), readFile) : undefined;
-    if (!usesProductTexts(env) && personal === undefined)
+    // A shared piece is Rubato's own wording for every companion, a private persona's too.
+    if (!usesProductTexts(env) && personal === undefined && !shared)
       throw new TypeError(`Companion ${env.RUBATO_COMPANION_ID} has no private ${id} piece; refusing another persona's default`);
     if (personal === undefined) return { id, editable, defaultText };
     const base = readOptional(basePiecePath(env, id), readFile);

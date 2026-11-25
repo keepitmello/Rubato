@@ -61,8 +61,12 @@ fresh() {
 # 역할 조각에는 그 역할에만 해당하는 문장만 둔다.
 # owner 와 verifier 는 같은 teammate 파일을 쓴다. 검증도 하나의 워크스트림이고,
 # verifier 는 산출물이 판단인 owner 이기 때문이다. 순수 task Agent 는 agent 파일을 쓴다.
+# 정보를 건네는 방식(delivery)은 사람에게 답하는 리드와 팀원만 싣는다. 순수 task Agent 의
+# 결과는 사람이 아니라 리드가 읽는다. 같은 파일을 컴패니언도 공용 조각으로 읽는다
+# (harness/companion/companion.mjs PIECES).
 for role in lead teammate agent; do
-  parts=(preamble.pi.md base.pi.md brief-exchange.pi.md "core-$role.pi.md" calm.pi.md voice.md)
+  delivery=(); [ "$role" = agent ] || delivery=(delivery.pi.md)
+  parts=(preamble.pi.md base.pi.md brief-exchange.pi.md "core-$role.pi.md" ${delivery[@]+"${delivery[@]}"} calm.pi.md voice.md)
   if ! fresh "$OUT/$role.pi.md" "${parts[@]}"; then
     emit "$role.pi.md" "${parts[@]}"
   fi

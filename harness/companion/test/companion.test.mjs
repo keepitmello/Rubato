@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  DEFAULT_SETTINGS, HEARTBEAT_MINUTES, PIECES, REFLECT_NOTE_LIMIT, SEEDED_PIECES, basePiecePath, clearPersonaReviewRequest, composeCompanionPrompt,
+  DEFAULT_SETTINGS, HEARTBEAT_MINUTES, PIECES, defaultPiecePath, REFLECT_NOTE_LIMIT, SEEDED_PIECES, basePiecePath, clearPersonaReviewRequest, composeCompanionPrompt,
   companionPaths, moveBaseToDefault, pendingDefaultChanges, personalPiecePath, readPersonaReviewRequest, readPieces,
   readSettings, requestPersonaReview, seedPromptPieces, writePiece, writeSettings,
 } from '../companion.mjs';
@@ -20,16 +20,38 @@ function sandbox(t) {
 
 /** Rubato's defaults, copied so a test can change one the way an update would. */
 function defaultsSandbox(t, edits = {}) {
-  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-defaults-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  for (const { id } of PIECES) copyFileSync(path.join(defaultsDir, `${id}.pi.md`), path.join(dir, `${id}.pi.md`));
+  // Laid out as shipped: the companion's pieces in companion/, a shared piece beside that folder.
+  const root = mkdtempSync(path.join(tmpdir(), 'rubato-defaults-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const dir = path.join(root, 'companion');
+  mkdirSync(dir);
+  for (const { id } of PIECES) copyFileSync(defaultPiecePath(defaultsDir, id), defaultPiecePath(dir, id));
   for (const [id, text] of Object.entries(edits)) writeFileSync(path.join(dir, `${id}.pi.md`), text);
   return dir;
 }
 
-test('every piece has a product default, and only the tools piece has no personal version', () => {
-  for (const { id } of PIECES) assert.ok(existsSync(path.join(defaultsDir, `${id}.pi.md`)), id);
-  assert.deepEqual(PIECES.filter((piece) => !piece.editable).map((piece) => piece.id), ['tools']);
+test('every piece has a product default; tools and the shared delivery piece have no personal version', () => {
+  for (const { id } of PIECES) assert.ok(existsSync(defaultPiecePath(defaultsDir, id)), id);
+  assert.deepEqual(PIECES.filter((piece) => !piece.editable).map((piece) => piece.id), ['tools', 'delivery']);
+  // The delivery piece is the very file the lead's prompt is built from (harness/prompts/build.sh).
+  assert.equal(defaultPiecePath(defaultsDir, 'delivery'), path.join(path.dirname(defaultsDir), 'delivery.pi.md'));
+});
+
+test('a private persona with no copy of the shared delivery piece still gets it', () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'rubato-private-'));
+  try {
+    const promptFiles = {};
+    for (const { id } of PIECES.filter((piece) => !piece.shared)) {
+      promptFiles[id] = path.join(home, `${id}.md`);
+      writeFileSync(promptFiles[id], `private-${id}`);
+    }
+    // Roo's registration: its own file for every piece of its persona (registry promptFiles).
+    const env = { RUBATO_COMPANION_HOME: home, RUBATO_COMPANION_ID: 'roo', RUBATO_COMPANION_PROMPT_FILES: JSON.stringify(promptFiles) };
+    const prompt = composeCompanionPrompt({ defaultsDir, env });
+    assert.match(prompt, /private-tools\n\n# 정보를 건네는 방식/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test('the shipped defaults name Segno and never hand the companion a waiting tool', () => {

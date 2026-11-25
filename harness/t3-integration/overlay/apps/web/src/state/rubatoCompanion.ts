@@ -176,6 +176,7 @@ export type CompanionPieceId =
   | "user"
   | "companion"
   | "tools"
+  | "delivery"
   | "memory"
   | "coda";
 

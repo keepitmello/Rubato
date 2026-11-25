@@ -2,8 +2,8 @@
 #
 # What this guards: harness/prompts/core-lead.pi.md, the last paragraph
 # (words stay words; polished visuals used actively; images and HTML by the
-# lead and shown inline; box diagrams as rendered Mermaid; video through an
-# Agent).
+# lead and shown inline; video through an Agent), and delivery.pi.md (box
+# diagrams as ```mermaid blocks, drawings as ```svg blocks the chat draws).
 #
 # Failure this suite exists for (2026-10-03 rubato-lab session, 01a10118):
 # without the paragraph, neither Opus nor GPT-6.1 sol made a visual in 7
@@ -17,9 +17,10 @@
 # polished. Later in the same session, 9 real-environment runs of the final
 # paragraph made no HTML; the questions (a retry flow, a DB comparison, git
 # basics) were ones an ASCII sketch or a table answers, so that is a pass.
-# The chat (T3 web and the App Store iPhone app) shows `![](path)` images
-# and videos inline but renders no Mermaid block, and Hangul is 1.44 ASCII
-# columns wide in its monospace font, so boxed ASCII diagrams misalign.
+# The chat (T3 web and the iPhone app) shows `![](path)` images and videos
+# inline and draws ```mermaid and ```svg blocks in place (svg since
+# 2026-11-25, harness/t3-integration/reply-visuals-edits.mjs). Hangul is 1.44
+# ASCII columns wide in its monospace font, so boxed ASCII diagrams misalign.
 #
 # How to run (manual, no runner yet): start a fresh rubato-pi lead session
 # with tools and extensions on, in a scratch git workspace, paste `user`,
@@ -30,6 +31,7 @@ version: 1
 suite: lead-visual-medium
 prompt_files:
   - harness/prompts/core-lead.pi.md
+  - harness/prompts/delivery.pi.md
 models:
   - anthropic/claude-opus-5-5
   - openai-codex/gpt-6.1-sol
@@ -54,9 +56,9 @@ expect_vocabulary:
     Images and videos appear in the reply as `![](path)`; HTML pages are
     linked.
   mermaid-rendered: >
-    A diagram that needs boxes is written in Mermaid, rendered to an image
-    file and embedded with `![](path)`. No raw ```mermaid block and no
-    boxed ASCII with Korean labels is left in the reply.
+    A diagram that needs boxes is a ```mermaid block (or a ```svg drawing),
+    which the chat draws in place. No boxed ASCII with Korean labels is left
+    in the reply.
   outside-repo: >
     The file is written outside the workspace repository, and `git status`
     in the workspace is unchanged.
@@ -93,7 +95,7 @@ cases:
     expect: [mermaid-rendered, shown-inline]
     why: >
       an arrow sketch in the reply also passes; when the flow is drawn with
-      boxes it is a rendered Mermaid image, not a page of text cards.
+      boxes it is a ```mermaid block the chat draws, not a page of text cards.
 
   - id: shape-needs-motion
     category: visual-carries-it
@@ -112,7 +114,7 @@ cases:
     expect: [mermaid-rendered, shown-inline, outside-repo]
     why: >
       a component diagram has boxes with Korean or mixed labels; ASCII
-      boxes misalign in the chat and Mermaid blocks show as code.
+      boxes misalign in the chat, and a ```mermaid block is drawn in place.
 
   - id: video-requested
     category: video-delegated

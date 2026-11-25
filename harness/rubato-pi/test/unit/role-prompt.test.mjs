@@ -22,9 +22,9 @@ const allRoles = ["lead", "owner", "verifier", "agent"];
 test("roles share only the intended source fragments and preserve voice", () => {
   const voice = source("voice.md").trim();
   const cases = [
-    ["lead", ["base.pi.md", "brief-exchange.pi.md", "core-lead.pi.md"]],
-    ["owner", ["base.pi.md", "brief-exchange.pi.md", "core-teammate.pi.md"]],
-    ["verifier", ["base.pi.md", "brief-exchange.pi.md", "core-teammate.pi.md"]],
+    ["lead", ["base.pi.md", "brief-exchange.pi.md", "core-lead.pi.md", "delivery.pi.md"]],
+    ["owner", ["base.pi.md", "brief-exchange.pi.md", "core-teammate.pi.md", "delivery.pi.md"]],
+    ["verifier", ["base.pi.md", "brief-exchange.pi.md", "core-teammate.pi.md", "delivery.pi.md"]],
     ["agent", ["base.pi.md", "brief-exchange.pi.md", "core-agent.pi.md"]],
   ];
   for (const [role, fragments] of cases) {
@@ -32,6 +32,8 @@ test("roles share only the intended source fragments and preserve voice", () => 
     assert.ok(built(role).startsWith(source("preamble.pi.md").trim()), "the preamble is the first thing read");
     assert.ok(built(role).trim().endsWith(`${source("calm.pi.md").trim()}\n\n${voice}`), "calm sits right before voice");
   }
+  // How to hand over information reaches the roles that answer a person; an agent answers its lead.
+  assert.ok(!built("agent").includes(source("delivery.pi.md").trim()));
   assert.equal(promptNameForRole("owner"), promptNameForRole("verifier"));
   assert.equal(built("owner"), built("verifier"));
   assert.notEqual(composed("owner"), composed("verifier"));

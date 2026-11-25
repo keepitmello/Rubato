@@ -7,6 +7,7 @@ export const PIECE_COPY = Object.freeze({
   user: Object.freeze({ title: 'About you', description: 'Your business, your repositories, how you like to be told things.' }),
   companion: Object.freeze({ title: 'How the companion works', description: 'Leads, approvals, reports, heartbeat.' }),
   tools: Object.freeze({ title: 'Tools', description: 'The tools the companion has. It follows Rubato and cannot be changed.' }),
+  delivery: Object.freeze({ title: 'Delivering information', description: 'How answers show tables, drawings and sources. Shared with every Rubato conversation and cannot be changed.' }),
   memory: Object.freeze({ title: 'Resident memory', description: "What the companion always carries. Its night dream keeps this in memory/MEMORY.md." }),
   coda: Object.freeze({ title: 'Closing lines', description: "The last words of the companion's prompt, after everything else." }),
 });

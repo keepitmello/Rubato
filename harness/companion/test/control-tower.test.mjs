@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { COMPANION_TITLE, PIECES, basePiecePath, companionPaths, personalPiecePath, readPersonaReviewRequest,
+import { COMPANION_TITLE, PIECES, defaultPiecePath, basePiecePath, companionPaths, personalPiecePath, readPersonaReviewRequest,
   readState, requestPersonaReview, seedPromptPieces, writeSettings, writeState } from '../companion.mjs';
 import { SLEEP_CONTEXT_TOKENS, SLEEP_TEXT, heartbeatText, locationLine, readUserLocation, localIso, timeLabel, lastUserMessageAt, localDate, nextBoundary, startControlTower } from '../control-tower.mjs';
 import { CAPABILITY_LEASE_MS, capabilityActive, renewCapability, clearCapability, noteCompanionActivity, readWakeWish, setWakeWish } from '../home.mjs';
@@ -15,9 +15,12 @@ const startTower = (options) => startControlTower({ defaultsDir, ...options });
 
 /** Rubato's defaults, copied so a test can change one the way an update would. */
 function defaultsCopy(t, edits = {}) {
-  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-companion-defaults-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  for (const { id } of PIECES) copyFileSync(path.join(defaultsDir, `${id}.pi.md`), path.join(dir, `${id}.pi.md`));
+  // Laid out as shipped: the companion's pieces in companion/, a shared piece beside that folder.
+  const root = mkdtempSync(path.join(tmpdir(), 'rubato-companion-defaults-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const dir = path.join(root, 'companion');
+  mkdirSync(dir);
+  for (const { id } of PIECES) copyFileSync(defaultPiecePath(defaultsDir, id), defaultPiecePath(dir, id));
   for (const [id, text] of Object.entries(edits)) writeFileSync(path.join(dir, `${id}.pi.md`), text);
   return dir;
 }

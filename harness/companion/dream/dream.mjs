@@ -519,7 +519,7 @@ export function forwardDictationTerms(file, { env = process.env, runId, at = new
 }
 
 export function composeDreamPrompt({ env = process.env, defaultsDir = companionDefaultsDir(env), instructions } = {}) {
-  const pieces = readPieces({ defaultsDir, env }).filter((piece) => piece.id !== 'tools');
+  const pieces = readPieces({ defaultsDir, env }).filter((piece) => piece.id !== 'tools' && piece.id !== 'delivery');
   const profile = readProfile(env);
   const parts = pieces.map((piece) => renderProfile(piece.personalText ?? piece.defaultText, profile, env)).filter((text) => text?.length > 0);
   if (!pieces.some((piece) => piece.id === 'memory')) {

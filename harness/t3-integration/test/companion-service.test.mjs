@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCompanionService, handleCompanionRequest } from '../src/companion/service.mjs';
-import { PIECES, readPersonaReviewRequest, seedPromptPieces, writeState } from '../../companion/companion.mjs';
+import { PIECES, defaultPiecePath, readPersonaReviewRequest, seedPromptPieces, writeState } from '../../companion/companion.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
 
@@ -71,7 +71,7 @@ test('additional companions have separately selected app settings without changi
 test('pieces list every piece with its default, and a saved piece is the person\'s until cleared', async (t) => {
   const { post } = await setup(t);
   const { body } = await post('pieces');
-  assert.deepEqual(body.pieces.map((piece) => piece.id), ['preamble', 'soul', 'identity', 'user', 'companion', 'tools', 'memory', 'coda']);
+  assert.deepEqual(body.pieces.map((piece) => piece.id), ['preamble', 'soul', 'identity', 'user', 'companion', 'tools', 'delivery', 'memory', 'coda']);
   assert.ok(body.pieces.every((piece) => piece.defaultText.length > 0));
   const saved = await post('save-piece', { id: 'user', text: 'I sell shoes.' });
   assert.equal(saved.body.pieces.find((piece) => piece.id === 'user').personalText, 'I sell shoes.');
@@ -244,9 +244,12 @@ test('the page marks a default that moved and asks Segno to look at it', async (
   const { env, post } = await setup(t);
   seedPromptPieces({ defaultsDir, env });
   // The defaults folder an update would leave behind: one piece moved.
-  const after = mkdtempSync(path.join(tmpdir(), 'rubato-companion-defaults-'));
-  t.after(() => rmSync(after, { recursive: true, force: true }));
-  for (const { id } of PIECES) copyFileSync(path.join(defaultsDir, `${id}.pi.md`), path.join(after, `${id}.pi.md`));
+  // Laid out as shipped: the companion's pieces in companion/, a shared piece beside that folder.
+  const root = mkdtempSync(path.join(tmpdir(), 'rubato-companion-defaults-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const after = path.join(root, 'companion');
+  mkdirSync(after);
+  for (const { id } of PIECES) copyFileSync(defaultPiecePath(defaultsDir, id), defaultPiecePath(after, id));
   writeFileSync(path.join(after, 'soul.pi.md'), '# A new default soul\n');
   const service = createCompanionService({ env, defaultsDir: after });
   const ask = async (action, body = {}) => {
