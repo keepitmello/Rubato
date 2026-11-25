@@ -73,3 +73,18 @@ it("refuses while a turn runs, and a message that is not the person's or already
   const rolledBack = { ...segno, runs: [segno.runs[0]!, segno.runs[1]!, run("turn-2", 3, "app-2", 2, "rolled_back")] };
   expect(companionRewindPlan(rolledBack, "app-2")).toEqual({ refused: expect.objectContaining({ code: "not-a-message" }) });
 });
+
+it("marks a typed message whose own turn failed, which the engine may never have taken in", () => {
+  const failed = { ...segno, runs: [...segno.runs.slice(0, 2), run("turn-2", 3, "app-2", 2, "failed"), segno.runs[3]!] };
+  const plan = companionRewindPlan(failed, "app-2");
+  if ("refused" in plan) throw new Error(plan.refused.message);
+  expect(plan.failed).toBe(true);
+  expect(plan.runs.map((entry) => entry.id)).toEqual(["turn-2", "said-2"]);
+  const answered = companionRewindPlan(segno, "app-2");
+  if ("refused" in answered) throw new Error(answered.refused.message);
+  expect(answered.failed).toBe(false);
+  // A messenger message sits in someone else's run; that run failing says nothing about the message.
+  const messenger = companionRewindPlan({ ...roo, runs: [run("said-1", 1, "said-1", 1, "failed"), ...roo.runs.slice(1)] }, "tg-2");
+  if ("refused" in messenger) throw new Error(messenger.refused.message);
+  expect(messenger.failed).toBe(false);
+});

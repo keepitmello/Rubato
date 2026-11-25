@@ -11,6 +11,10 @@
  * before it (bridge rewindBeforeMessage), and then the thread drops it and everything after
  * (RubatoThreadImporter rollBackFrom). Files stay: the companion's home is its own record.
  *
+ * A typed message whose turn failed before the engine took it in (the companion was down) is not
+ * in the engine at all. The engine then goes back to just before the first thing it took in after
+ * the message was sent, which is where the message would have been.
+ *
  * Nothing changes unless the engine finds the message, and nothing changes while a turn runs.
  */
 import {
@@ -39,6 +43,8 @@ export interface CompanionRewindRecords {
 }
 export interface CompanionRewindPlan {
   readonly message: OrchestrationV2ConversationMessage;
+  /** The message opened a turn of its own and that turn failed: the engine may never have taken it in. */
+  readonly failed: boolean;
   /** Whole runs that leave the thread. */
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
   /** Rows of the run the message sits in that leave with it; `run` is that run. */
@@ -91,7 +97,7 @@ export function companionRewindPlan(
   const template = own !== undefined && !starts ? own : runs[0] ?? live.at(-1);
   const cut = template === undefined || (messages.length === 0 && items.length === 0) ? null
     : { run: template, items, messages };
-  return { message, runs, cut };
+  return { message, failed: starts && own?.status === "failed", runs, cut };
 }
 
 const SETTLE_ATTEMPTS = 20;
@@ -131,7 +137,8 @@ export const rubatoCompanionRewindRouteLayer = Layer.unwrap(Effect.gen(function*
     // The engine first: it refuses when it cannot find the message, and then nothing has moved.
     yield* Effect.tryPromise({
       try: () => bridge.rewindBeforeMessage({ threadId, sessionId: session.sessionId, messageId,
-        text: plan.message.text, createdAt: DateTime.formatIso(DateTime.makeUnsafe(millis(plan.message.createdAt))) }),
+        text: plan.message.text, createdAt: DateTime.formatIso(DateTime.makeUnsafe(millis(plan.message.createdAt))),
+        failed: plan.failed }),
       catch: (cause) => refused("engine-refused", describe(cause)),
     });
     const importer = yield* RubatoThreadImporter;

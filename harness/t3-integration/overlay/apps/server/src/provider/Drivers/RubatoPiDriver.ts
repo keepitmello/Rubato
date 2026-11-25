@@ -107,7 +107,7 @@ export interface PiBridge {
    * The companion room's rewind: the session goes back to just before one of the person's messages
    * in a companion thread, found by its id or its words and time; fails when the engine cannot find it.
    */
-  rewindBeforeMessage(input: {threadId: string; sessionId: string; messageId: string; text: string; createdAt: string}): Promise<{entryId: string}>;
+  rewindBeforeMessage(input: {threadId: string; sessionId: string; messageId: string; text: string; createdAt: string; failed?: boolean}): Promise<{entryId: string | null}>;
   /**
    * The companion room's model picker: the companion's session takes `model` (provider/modelId)
    * now, so its own runs use it too; fails for any other conversation.

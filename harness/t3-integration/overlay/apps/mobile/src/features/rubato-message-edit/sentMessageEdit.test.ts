@@ -1,6 +1,11 @@
 import { Atom } from "effect/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+interface Projection {
+  readonly messages: Array<{ id: string; runId: string | null }>;
+  readonly runs: Array<{ id: string; status: string }>;
+}
+
 // The Mac, the thread store and the drafts are stand-ins: the edit's own rules are under test.
 const calls = vi.hoisted(() => ({ posts: [] as Array<[string, string, Record<string, unknown>]>, reverts: [] as unknown[] }));
 const messagesAtom = vi.hoisted(() => ({ current: null as unknown }));
@@ -8,19 +13,19 @@ vi.mock("../companions/rubatoHttp", () => ({
   postRubato: vi.fn(async (_environmentId: string, route: string, action: string, body: Record<string, unknown>) => {
     calls.posts.push([route, action, body]);
     if (route === "/rubato/message-rewind") return { turnCount: 2, checkpointId: "cp-2", scopeId: "scope" };
-    if (route === "/rubato/companion-room") dropMessage(body.messageId as string);
+    if (route === "/rubato/companion-room") rollBackFrom(body.messageId as string);
     return {};
   }),
 }));
 vi.mock("@t3tools/client-runtime/state/runtime", () => ({
   runAtomCommand: vi.fn(async (_registry: unknown, _command: unknown, value: { input: { turnCount: number } }) => {
     calls.reverts.push(value.input);
-    setTimeout(() => dropMessage("m2"), 5);
+    setTimeout(() => rollBackFrom("m2"), 5);
     return { _tag: "Success", value: undefined };
   }),
 }));
 vi.mock("../../state/threads", () => {
-  const atom = Atom.make<{ projection: { messages: Array<{ id: string }> } } | null>(null).pipe(Atom.keepAlive);
+  const atom = Atom.make<{ projection: Projection } | null>(null).pipe(Atom.keepAlive);
   messagesAtom.current = atom;
   return { environmentThreadDetails: { threadAtom: () => atom }, threadEnvironment: { revertCheckpoint: {} } };
 });
@@ -33,15 +38,31 @@ vi.mock("../../state/use-composer-drafts", () => ({
 import { appAtomRegistry } from "../../state/atom-registry";
 import { beginSentMessageEdit, cancelSentMessageEdit, getSentMessageEdit, rewindBeforeSend } from "./sentMessageEdit";
 
-type ThreadAtom = Atom.Writable<{ projection: { messages: Array<{ id: string }> } } | null>;
+type ThreadAtom = Atom.Writable<{ projection: Projection } | null>;
 const thread = () => messagesAtom.current as ThreadAtom;
+/** Each message opened a run of its own, named after it. */
 function setMessages(ids: string[]) {
-  appAtomRegistry.set(thread(), { projection: { messages: ids.map((id) => ({ id })) } });
+  appAtomRegistry.set(thread(), { projection: {
+    messages: ids.map((id) => ({ id, runId: `run-${id}` })),
+    runs: ids.map((id) => ({ id: `run-${id}`, status: "completed" })),
+  } });
 }
-function dropMessage(id: string) {
-  const current = appAtomRegistry.get(thread());
-  setMessages((current?.projection.messages ?? []).map((message) => message.id).filter((other) => other !== id));
+/**
+ * What the Mac does on a rewind: the message and every later one stay in the records, their runs
+ * rolled back (T3's revert and the companion room's alike).
+ */
+function rollBackFrom(id: string) {
+  const projection = appAtomRegistry.get(thread())!.projection;
+  const from = projection.messages.findIndex((message) => message.id === id);
+  const gone = new Set(projection.messages.slice(from).map((message) => message.runId));
+  appAtomRegistry.set(thread(), { projection: { ...projection,
+    runs: projection.runs.map((run) => (gone.has(run.id) ? { ...run, status: "rolled_back" } : run)) } });
 }
+const liveMessages = () => {
+  const projection = appAtomRegistry.get(thread())!.projection;
+  return projection.messages.filter((message) => projection.runs.some((run) => run.id === message.runId && run.status !== "rolled_back"))
+    .map((message) => message.id);
+};
 const KEY = "env:thread";
 const target = { threadKey: KEY, environmentId: "env" as never, threadId: "thread" as never };
 
@@ -68,7 +89,7 @@ describe("editing a sent message", () => {
     await rewindBeforeSend({ ...target, busy: false });
     expect(calls.posts).toEqual([["/rubato/message-rewind", "target", { threadId: "thread", messageId: "m2" }]]);
     expect(calls.reverts).toMatchObject([{ checkpointId: "cp-2", scopeId: "scope", turnCount: 2, restoreFiles: false }]);
-    expect(appAtomRegistry.get(thread())?.projection.messages.map((message) => message.id)).toEqual(["m1", "m3"]);
+    expect(liveMessages()).toEqual(["m1"]);
     expect(getSentMessageEdit(KEY)).toBe(null);
   });
 
@@ -77,6 +98,15 @@ describe("editing a sent message", () => {
     await rewindBeforeSend({ ...target, busy: false });
     expect(calls.posts).toEqual([["/rubato/companion-room", "rewind", { threadId: "thread", messageId: "m3" }]]);
     expect(calls.reverts).toEqual([]);
+    expect(liveMessages()).toEqual(["m1", "m2"]);
+  });
+
+  it("does not rewind a message the Mac already rolled back, and just sends", async () => {
+    rollBackFrom("m3");
+    beginSentMessageEdit(KEY, { id: "m3" as never, text: "again" }, true);
+    await rewindBeforeSend({ ...target, busy: false });
+    expect(calls.posts).toEqual([]);
+    expect(getSentMessageEdit(KEY)).toBe(null);
   });
 
   it("does not rewind while a turn runs, and keeps the edit to send again", async () => {

@@ -9,7 +9,7 @@ import { serveProfile } from '../../pi-server/src/profile-server.mjs';
 import { RpcWorker } from '../../pi-server/src/rpc-worker.mjs';
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { RubatoPiBridge, THREAD_REQUEST_PASSES } from '../src/bridge.mjs';
-import { CATALOGUE_REUSE_MS, companionEntry, handleCacheWarmingRequest, rewindPlan, stepRewindPlan, userStartedSession } from '../src/bridge.mjs';
+import { CATALOGUE_REUSE_MS, companionCut, companionEntry, handleCacheWarmingRequest, rewindPlan, stepRewindPlan, userStartedSession } from '../src/bridge.mjs';
 import { errorDetail, EventProjection, sessionMessageId } from '../src/events.mjs';
 import {t3Modules} from './t3-source.mjs';
 import { CODEX_ULTRAFAST_MODEL_IDS } from '../../../packages/model-core/src/product-model-catalog.mjs';
@@ -1796,11 +1796,30 @@ test('the companion room names a person\'s message to the engine by its messenge
   assert.equal(companionEntry(branch, 'room', { text: '노보링크 쪽에 답해줘', createdAt: new Date(sent).toISOString() }), null);
 });
 
+test('a typed message whose turn failed before the engine took it in cuts before the next thing the engine took in', () => {
+  const sent = Date.parse('2026-11-25T13:25:03.768Z');
+  const prompt = (id, words, at) => ({ id, type: 'message', timestamp: new Date(at).toISOString(),
+    message: { role: 'user', content: [{ type: 'text', text: words }], timestamp: at } });
+  const wake = (id, at) => ({ id, type: 'custom_message', customType: 'rubato-session-message', timestamp: new Date(at).toISOString(),
+    content: '<rubato_wake what="heartbeat">', display: false });
+  const note = (id, at) => ({ id, type: 'custom', customType: 'rubato.context-note.v1', timestamp: new Date(at).toISOString() });
+  const before = [prompt('earlier', 'ㅇㅇ 물어보자', sent - 70_000), note('note', sent - 60_000)];
+  const branch = [...before, note('later-note', sent + 1_000), wake('heartbeat', sent + 5 * 60_000), prompt('after', '뭐해', sent + 6 * 60_000)];
+  const cut = (entries, failed) => companionCut(entries, 'room', { messageId: 'app-9', text: '다 옮기자', createdAt: new Date(sent).toISOString(), failed });
+  // Seen in Segno's room: three messages failed in 0.1 s and the engine holds none of them.
+  assert.deepEqual(cut(branch, true), { entryId: 'heartbeat' });
+  assert.deepEqual(cut(before, true), { entryId: null });
+  // A turn that did not fail names its message or nothing.
+  assert.equal(cut(branch, false), null);
+  // A failed turn the engine did take in is still cut at the message itself.
+  assert.deepEqual(cut([...before, prompt('taken', '다 옮기자', sent + 300), wake('heartbeat', sent + 60_000)], true), { entryId: 'taken' });
+});
+
 test('the companion room\'s rewind stops the companion\'s own work first, and touches nothing when it cannot find the message', async () => {
   const at = Date.parse('2026-11-08T11:00:00.000Z');
   const branch = [{ id: 'typed', type: 'message', timestamp: new Date(at).toISOString(),
     message: { role: 'user', content: [{ type: 'text', text: '고쳐줘' }], timestamp: at + 100 } }];
-  const run = async ({ streaming = false, compacting = false, text = '고쳐줘' } = {}) => {
+  const run = async ({ streaming = false, compacting = false, text = '고쳐줘', failed = false, sentAt = at } = {}) => {
     const sent = [];
     const bridge = new RubatoPiBridge({ descriptorPath: '/missing', instanceId: 'rubato' });
     bridge.withSession = async (_threadId, _sessionId, use) => use({ command: async (command) => {
@@ -1812,7 +1831,7 @@ test('the companion room\'s rewind stops the companion\'s own work first, and to
       return {};
     } });
     const outcome = await bridge.rewindBeforeMessage({ threadId: 'room', sessionId: 's', messageId: 'app-1', text,
-      createdAt: new Date(at).toISOString() }).then((value) => value, (error) => error);
+      createdAt: new Date(sentAt).toISOString(), failed }).then((value) => value, (error) => error);
     return { sent, outcome };
   };
   const working = await run({ streaming: true });
@@ -1822,6 +1841,14 @@ test('the companion room\'s rewind stops the companion\'s own work first, and to
   const missing = await run({ streaming: true, text: '보낸 적 없는 말' });
   assert.match(missing.outcome.message, /cannot find this message/);
   assert.deepEqual(missing.sent, ['get_entries']);
+  // A failed message the engine never took in: nothing after it leaves the engine as it is.
+  const untaken = await run({ streaming: true, text: '보낸 적 없는 말', failed: true, sentAt: at + 60_000 });
+  assert.deepEqual(untaken.outcome, { entryId: null });
+  assert.deepEqual(untaken.sent, ['get_entries']);
+  // One the engine holds words after: those go, as the thread's later runs do.
+  const earlier = await run({ text: '보낸 적 없는 말', failed: true, sentAt: at - 60_000 });
+  assert.deepEqual(earlier.outcome, { entryId: 'typed' });
+  assert.deepEqual(earlier.sent, ['get_entries', 'get_state', 'get_entries', 'rewind']);
   const compacting = await run({ streaming: true, compacting: true });
   assert.match(compacting.outcome.message, /compacting/);
   assert.equal(compacting.sent.includes('abort'), false);

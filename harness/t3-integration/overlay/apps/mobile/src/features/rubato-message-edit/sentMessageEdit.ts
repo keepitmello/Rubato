@@ -69,10 +69,17 @@ export class SentMessageEditError extends Schema.TaggedError<SentMessageEditErro
   { message: Schema.String },
 ) {}
 
-const messageStillThere = (environmentId: EnvironmentId, threadId: ThreadId, messageId: MessageId) =>
-  appAtomRegistry
-    .get(environmentThreadDetails.threadAtom({ environmentId, threadId }))
-    ?.projection.messages.some((message) => message.id === messageId) ?? false;
+/**
+ * Whether the conversation still holds the message. A rewind does not delete it: T3's revert and
+ * the companion room's both leave it on a rolled-back run, which the feed no longer shows.
+ */
+export const messageStillThere = (environmentId: EnvironmentId, threadId: ThreadId, messageId: MessageId) => {
+  const projection = appAtomRegistry.get(environmentThreadDetails.threadAtom({ environmentId, threadId }))?.projection;
+  const message = projection?.messages.find((candidate) => candidate.id === messageId);
+  if (!projection || !message) return false;
+  return message.runId == null
+    || !projection.runs.some((run) => run.id === message.runId && run.status === "rolled_back");
+};
 
 /** Resolves once the thread no longer holds the message, so the edit is sent after the rewind. */
 function untilGone(environmentId: EnvironmentId, threadId: ThreadId, messageId: MessageId, timeoutMs = 20_000) {

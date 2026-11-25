@@ -244,6 +244,22 @@ export function companionEntry(branch, threadId, { messageId, text, createdAt } 
   }
   return null;
 }
+/**
+ * Where the room's rewind cuts the engine for one of the person's messages: just before the
+ * message (`companionEntry`). A typed message whose turn failed (`failed`) may never have reached
+ * the engine; then the cut goes before the first input the engine took in after the app sent it,
+ * `{ entryId: null }` when it took in none. Null when the engine holds no such message.
+ */
+export function companionCut(branch, threadId, { messageId, text, createdAt, failed = false } = {}) {
+  const entryId = companionEntry(branch, threadId, { messageId, text, createdAt });
+  if (entryId !== null) return { entryId };
+  const at = Date.parse(createdAt);
+  if (!failed || !Number.isFinite(at)) return null;
+  const next = (branch ?? []).find((entry) => (entry?.type === 'custom_message'
+    || (entry?.type === 'message' && entry.message?.role === 'user'))
+    && Number(entry.message?.timestamp ?? Date.parse(entry.timestamp)) > at);
+  return { entryId: next?.id ?? null };
+}
 /** How often threads with no stream are compared with their sessions (backfill.mjs); T3's own inventory pass is five seconds too. */
 const BACKFILL_MS = 5000;
 /** Inventory passes a thread request waits for its session's thread to appear before it is dropped. */
@@ -639,11 +655,14 @@ export class RubatoPiBridge {
    * one of the person's messages and drops it with everything after (conversation-rewind
    * `before`). The room's thread is a chat log with no turns to count, so the message names itself.
    */
-  async rewindBeforeMessage({ threadId, sessionId, messageId, text, createdAt }) {
+  async rewindBeforeMessage({ threadId, sessionId, messageId, text, createdAt, failed = false }) {
     return this.withSession(threadId, sessionId, async (client) => {
-      const find = async () => companionEntry(activeBranch(await client.command({ type: 'get_entries' })), threadId,
-        { messageId, text, createdAt });
-      if (await find() === null) throw new Error('Rubato cannot find this message in the conversation');
+      const find = async () => companionCut(activeBranch(await client.command({ type: 'get_entries' })), threadId,
+        { messageId, text, createdAt, failed });
+      const first = await find();
+      if (first === null) throw new Error('Rubato cannot find this message in the conversation');
+      // A failed message the engine never took in, with nothing after it: the engine is already there.
+      if (first.entryId === null) return { entryId: null };
       // The room has no Stop for the companion's own work (a wake, a retry), and that work comes
       // after the message, so the rewind drops it anyway: it stops first. Compaction is not cut.
       let state = await client.command({ type: 'get_state' });
@@ -656,8 +675,10 @@ export class RubatoPiBridge {
         }
         if (state?.isStreaming) throw new Error('The companion did not stop its current work; try again');
       }
-      const entryId = await find();
-      if (entryId === null) throw new Error('Rubato cannot find this message in the conversation');
+      const cut = await find();
+      if (cut === null) throw new Error('Rubato cannot find this message in the conversation');
+      const { entryId } = cut;
+      if (entryId === null) return { entryId: null };
       const result = await client.command({ type: 'rewind', before: entryId });
       if (result?.cancelled) throw new Error('Rubato declined the rewind; see its notice in the conversation');
       return { entryId };
