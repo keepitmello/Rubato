@@ -331,7 +331,7 @@ export const piAdapterEdits = {
         PI_PROVIDER === "rubato-pi" && message.createdBy === "user" && message.rubatoAppText !== undefined &&
         message.senderThreadId === undefined && message.scheduledTaskId === undefined &&
         (message.creationSource === "web" || message.creationSource === "mobile")
-          ? { rubatoAppText: message.rubatoAppText }
+          ? { rubatoAppText: message.rubatoAppText, rubatoAppMessageId: message.messageId }
           : {};
 
 `,

@@ -1,8 +1,8 @@
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { readDescriptor } from '../../pi-server/src/descriptor.mjs';
 import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
-import { EventProjection, cacheFrom, importedId, messageKey, runOpener, sessionMessageFrom, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
-import { SAID_KIND, channelItem, companionThreadItems, saidEchoes } from './said-echo.mjs';
+import { EventProjection, cacheFrom, importedId, messageKey, runOpener, sessionMessageFrom, sessionMessageId, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
+import { SAID_KIND, companionThreadItems, saidEchoes } from './said-echo.mjs';
 import { pushService } from './push/service.mjs';
 import { backfillItem, companionSince, missingItems, shownSince } from './backfill.mjs';
 import { applySelectionOptions, catalogForPicker, serviceTierPrompts } from './model-catalog-order.mjs';
@@ -235,43 +235,60 @@ const userText = (message) => (typeof message?.content === 'string' ? message.co
   : (Array.isArray(message?.content) ? message.content : []).filter((part) => part?.type === 'text').map((part) => part.text).join(''));
 /**
  * The engine entry of one of the person's messages in a companion thread, for the room's edit and
- * rewind (RubatoCompanionRewind.ts). A messenger message carries its own id, and the thread's id
- * for it is made from that (said-echo channelItem). A prompt typed in the app carries none: it is
- * the first user message with the same words the engine took in after the app sent it. Null when
- * the engine holds no such message.
+ * rewind (RubatoCompanionRewind.ts), by id wherever the engine holds one:
+ * - a prompt typed in the app carries the app's message id (`rubatoAppMessageId`, set as the
+ *   engine takes it in: pi-runtime input-lifecycle);
+ * - a delivered message (messenger, another session) carries its own id, and the thread's id for
+ *   it is made from that (events sessionMessageId).
+ * Both are short scalars, so they survive the outline a long session's listing comes as
+ * (pi-server outlineEntry), which drops every message's words.
+ * A prompt the engine took in before it kept the app's id is found as before: the first user
+ * message with the same words taken in after the app sent it, or, when the listing has no words,
+ * with the same app original (`rubatoAppText`), or the app prompt nearest after the send.
+ * Null when none of these names it.
  */
 export function companionEntry(branch, threadId, { messageId, text, createdAt } = {}) {
   if (typeof messageId !== 'string' || messageId.length === 0) return null;
-  for (const entry of branch ?? []) {
-    if (entry?.type !== 'custom_message') continue;
-    const item = channelItem({ role: 'custom', customType: entry.customType, content: entry.content,
-      details: entry.details, timestamp: entry.timestamp }, threadId);
-    if (item !== undefined && item.id === messageId) return entry.id;
+  const entries = branch ?? [];
+  for (const entry of entries) {
+    if (entry?.type === 'message' && entry.message?.role === 'user' && entry.message.rubatoAppMessageId === messageId) return entry.id;
+    const delivered = entry?.type === 'custom_message' ? entry.details?.messageId : undefined;
+    if (typeof delivered === 'string' && delivered.trim() && sessionMessageId(threadId, delivered.trim()) === messageId) return entry.id;
   }
   const at = Date.parse(createdAt);
   if (!Number.isFinite(at)) return null;
   const words = promptWords(text);
-  for (const entry of branch ?? []) {
-    if (entry?.type !== 'message' || entry.message?.role !== 'user') continue;
-    const after = Number(entry.message.timestamp ?? Date.parse(entry.timestamp)) - at;
-    if (after > -PROMPT_SKEW_MS && after < PROMPT_QUEUE_MS && promptWords(userText(entry.message)) === words) return entry.id;
-  }
-  return null;
+  const since = (entry) => Number(entry.message.timestamp ?? Date.parse(entry.timestamp)) - at;
+  // Prompts from before the engine kept the app's id, taken in while this message could be.
+  const legacy = entries.filter((entry) => entry?.type === 'message' && entry.message?.role === 'user'
+    && typeof entry.message.rubatoAppMessageId !== 'string' && since(entry) > -PROMPT_SKEW_MS && since(entry) < PROMPT_QUEUE_MS);
+  const said = (entry) => {
+    const written = userText(entry.message);
+    if (written) return promptWords(written);
+    return typeof entry.message.rubatoAppText === 'string' ? promptWords(entry.message.rubatoAppText) : null;
+  };
+  const same = legacy.find((entry) => said(entry) === words);
+  if (same) return same.id;
+  // An outlined listing keeps no words of an app prompt the engine took in unchanged
+  // (`rubatoAppText: true`): the first such prompt taken in after the send, else the last before it.
+  const unchanged = legacy.filter((entry) => said(entry) === null && entry.message.rubatoAppText === true);
+  return (unchanged.find((entry) => since(entry) >= 0) ?? unchanged.at(-1))?.id ?? null;
 }
 /**
- * Where the room's rewind cuts the engine for one of the person's messages: just before the
- * message (`companionEntry`). A typed message whose turn failed (`failed`) may never have reached
- * the engine; then the cut goes before the first input the engine took in after the app sent it,
- * `{ entryId: null }` when it took in none. Null when the engine holds no such message.
+ * Where the room's rewind cuts the engine for one of the person's messages; it always names one.
+ * Just before the message when the engine holds it (`companionEntry`). Otherwise the engine never
+ * took it in (its turn failed, or it never left the queue) or cannot name it: the cut goes before
+ * the first input the engine took in after the app sent it, `{ entryId: null }` when there is
+ * none. A failed turn's message cannot be in the engine, so its cut takes nothing sent before it.
  */
 export function companionCut(branch, threadId, { messageId, text, createdAt, failed = false } = {}) {
-  const entryId = companionEntry(branch, threadId, { messageId, text, createdAt });
+  const entryId = failed ? null : companionEntry(branch, threadId, { messageId, text, createdAt });
   if (entryId !== null) return { entryId };
   const at = Date.parse(createdAt);
-  if (!failed || !Number.isFinite(at)) return null;
+  const from = Number.isFinite(at) ? at - (failed ? 0 : PROMPT_SKEW_MS) : Number.NEGATIVE_INFINITY;
   const next = (branch ?? []).find((entry) => (entry?.type === 'custom_message'
     || (entry?.type === 'message' && entry.message?.role === 'user'))
-    && Number(entry.message?.timestamp ?? Date.parse(entry.timestamp)) > at);
+    && Number(entry.message?.timestamp ?? Date.parse(entry.timestamp)) > from);
   return { entryId: next?.id ?? null };
 }
 /** How often threads with no stream are compared with their sessions (backfill.mjs); T3's own inventory pass is five seconds too. */
@@ -673,10 +690,8 @@ export class RubatoPiBridge {
     return this.withSession(threadId, sessionId, async (client) => {
       const find = async () => companionCut(activeBranch(await client.command({ type: 'get_entries' })), threadId,
         { messageId, text, createdAt, failed });
-      const first = await find();
-      if (first === null) throw new Error('Rubato cannot find this message in the conversation');
-      // A failed message the engine never took in, with nothing after it: the engine is already there.
-      if (first.entryId === null) return { entryId: null };
+      // Nothing the engine took in after the message was sent: the engine is already there.
+      if ((await find()).entryId === null) return { entryId: null };
       // The room has no Stop for the companion's own work (a wake, a retry), and that work comes
       // after the message, so the rewind drops it anyway: it stops first. Compaction is not cut.
       let state = await client.command({ type: 'get_state' });
@@ -689,9 +704,7 @@ export class RubatoPiBridge {
         }
         if (state?.isStreaming) throw new Error('The companion did not stop its current work; try again');
       }
-      const cut = await find();
-      if (cut === null) throw new Error('Rubato cannot find this message in the conversation');
-      const { entryId } = cut;
+      const { entryId } = await find();
       if (entryId === null) return { entryId: null };
       const result = await client.command({ type: 'rewind', before: entryId });
       if (result?.cancelled) throw new Error('Rubato declined the rewind; see its notice in the conversation');

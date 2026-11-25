@@ -41,8 +41,10 @@ export const withoutDuplicatePartial = (value) => {
 // Pi adapter asks for that listing whenever it binds a thread, so every turn on it died
 // within a second. The listing's readers walk the tree: entry ids, parents and kinds, the
 // role, timestamp and model a reply's fingerprint hashes (conversation-rewind
-// messageFingerprint), and tool call ids (T3 step rewind). A listing over one frame's
-// budget therefore comes as that outline of every entry, marked `rubatoOutlined`.
+// messageFingerprint), tool call ids (T3 step rewind), and the ids the companion room's rewind
+// names a message by (the app's id on a prompt, a delivered message's details.messageId). A
+// listing over one frame's budget therefore comes as that outline of every entry, marked
+// `rubatoOutlined`.
 /** Longest string an outline keeps. Ids measured at most 92 chars; payloads run to megabytes. */
 const OUTLINE_STRING = 256;
 const scalar = (value) => value === null || typeof value === 'number' || typeof value === 'boolean'
@@ -60,6 +62,10 @@ export function outlineEntry(entry) {
       .filter((part) => part?.type === 'toolCall')
       .map(({ type, id, name }) => ({ type, id, name }));
   }
+  // A delivered message's own id (a messenger message's details.messageId), which the room's
+  // rewind names it by (t3-integration bridge companionEntry).
+  const details = entry.details;
+  if (details && typeof details === 'object' && !Array.isArray(details)) outline.details = scalars(details);
   return outline;
 }
 

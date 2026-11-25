@@ -9,6 +9,7 @@ import { serveProfile } from '../../pi-server/src/profile-server.mjs';
 import { RpcWorker } from '../../pi-server/src/rpc-worker.mjs';
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { RubatoPiBridge, THREAD_REQUEST_PASSES } from '../src/bridge.mjs';
+import { outlineEntry } from '../../pi-server/src/session-worker.mjs';
 import { CATALOGUE_REUSE_MS, companionCut, companionEntry, handleCacheWarmingRequest, rewindPlan, stepRewindPlan, userStartedSession } from '../src/bridge.mjs';
 import { errorDetail, EventProjection, sessionMessageId } from '../src/events.mjs';
 import {t3Modules} from './t3-source.mjs';
@@ -1808,6 +1809,33 @@ test('the companion room names a person\'s message to the engine by its messenge
   assert.equal(companionEntry(branch, 'room', { text: '노보링크 쪽에 답해줘', createdAt: new Date(sent).toISOString() }), null);
 });
 
+test('the room names a message by id even in an outlined listing, which keeps no words', () => {
+  const sent = Date.parse('2026-11-26T06:00:00.000Z');
+  const prompt = (id, words, at, extra = {}) => ({ id, type: 'message', timestamp: new Date(at).toISOString(),
+    message: { role: 'user', content: [{ type: 'text', text: words }], timestamp: at, ...extra } });
+  const telegram = { id: 'tg', type: 'custom_message', customType: 'rubato-session-message', timestamp: new Date(sent + 100).toISOString(),
+    content: '혹시 노트에 적었으면 지워'.repeat(40), display: true,
+    details: { v: 1, messageId: 'm-31493', kind: 'channel', text: '혹시 노트에 적었으면 지워'.repeat(40), from: { channel: 'telegram', isUser: true } } };
+  const full = [
+    prompt('old-same', '루 설정붕괴야 지금', sent + 200, { rubatoAppText: true }),
+    telegram,
+    prompt('stamped', '아니 이건 캐붕이 맞아', sent + 300, { rubatoAppText: true, rubatoAppMessageId: 'app-7' }),
+    prompt('old-edited', '[voice] 사쪽 없이', sent + 400, { rubatoAppText: '\u2063사쪽 없이' }),
+  ];
+  // Seen in Roo's and Segno's rooms (11-26): the engine outlines a long session's listing, so every
+  // message came back with no words and every rewind was refused.
+  const outlined = full.map(outlineEntry);
+  assert.deepEqual(outlined[0].message.content, []);
+  const find = (branch, messageId, text, at = sent) => companionEntry(branch, 'room', { messageId, text, createdAt: new Date(at).toISOString() });
+  for (const branch of [full, outlined]) {
+    assert.equal(find(branch, 'app-7', '전혀 다른 말'), 'stamped');
+    assert.equal(find(branch, sessionMessageId('room', 'm-31493'), 'x'), 'tg');
+    assert.equal(find(branch, 'app-9', '\u2063사쪽 없이'), 'old-edited');
+    // A prompt from before the engine kept ids: its words, or in an outline the app prompt taken in next.
+    assert.equal(find(branch, 'app-1', '루 설정붕괴야 지금'), 'old-same');
+  }
+});
+
 test('a typed message whose turn failed before the engine took it in cuts before the next thing the engine took in', () => {
   const sent = Date.parse('2026-11-25T13:25:03.768Z');
   const prompt = (id, words, at) => ({ id, type: 'message', timestamp: new Date(at).toISOString(),
@@ -1821,13 +1849,13 @@ test('a typed message whose turn failed before the engine took it in cuts before
   // Seen in Segno's room: three messages failed in 0.1 s and the engine holds none of them.
   assert.deepEqual(cut(branch, true), { entryId: 'heartbeat' });
   assert.deepEqual(cut(before, true), { entryId: null });
-  // A turn that did not fail names its message or nothing.
-  assert.equal(cut(branch, false), null);
+  // A message the engine cannot name is cut at its send time too: the rewind always lands.
+  assert.deepEqual(cut(branch, false), { entryId: 'heartbeat' });
   // A failed turn the engine did take in is still cut at the message itself.
   assert.deepEqual(cut([...before, prompt('taken', '다 옮기자', sent + 300), wake('heartbeat', sent + 60_000)], true), { entryId: 'taken' });
 });
 
-test('the companion room\'s rewind stops the companion\'s own work first, and touches nothing when it cannot find the message', async () => {
+test('the companion room\'s rewind stops the companion\'s own work first, and touches nothing when nothing comes after the message', async () => {
   const at = Date.parse('2026-11-08T11:00:00.000Z');
   const branch = [{ id: 'typed', type: 'message', timestamp: new Date(at).toISOString(),
     message: { role: 'user', content: [{ type: 'text', text: '고쳐줘' }], timestamp: at + 100 } }];
@@ -1850,8 +1878,9 @@ test('the companion room\'s rewind stops the companion\'s own work first, and to
   assert.deepEqual(working.outcome, { entryId: 'typed' });
   assert.deepEqual(working.sent, ['get_entries', 'get_state', 'abort', 'get_state', 'get_entries', 'rewind']);
   assert.deepEqual((await run()).sent, ['get_entries', 'get_state', 'get_entries', 'rewind']);
-  const missing = await run({ streaming: true, text: '보낸 적 없는 말' });
-  assert.match(missing.outcome.message, /cannot find this message/);
+  // Words the engine never took in, sent after everything it holds: nothing to cut, nothing stopped.
+  const missing = await run({ streaming: true, text: '보낸 적 없는 말', sentAt: at + 60_000 });
+  assert.deepEqual(missing.outcome, { entryId: null });
   assert.deepEqual(missing.sent, ['get_entries']);
   // A failed message the engine never took in: nothing after it leaves the engine as it is.
   const untaken = await run({ streaming: true, text: '보낸 적 없는 말', failed: true, sentAt: at + 60_000 });

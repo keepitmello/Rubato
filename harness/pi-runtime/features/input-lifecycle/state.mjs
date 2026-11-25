@@ -20,7 +20,7 @@ export class InputLifecycle {
   #messageRecords = new WeakMap();
   #pendingMessages = new WeakSet();
 
-  begin({ sessionId, text, images, source, streamingBehavior, rubatoAppText }) {
+  begin({ sessionId, text, images, source, streamingBehavior, rubatoAppText, rubatoAppMessageId }) {
     const inputId = `${sessionId}:${++this.#nextInputId}`;
     this.#openInputs.set(inputId, {
       id: inputId,
@@ -28,6 +28,7 @@ export class InputLifecycle {
       source: pendingSource(source),
       text,
       rubatoAppText,
+      rubatoAppMessageId,
       imageCount: Array.isArray(images) ? images.length : 0,
       enqueuedAt: Date.now(),
       ...(streamingBehavior === undefined ? {} : { delivery: streamingBehavior }),
@@ -55,6 +56,10 @@ export class InputLifecycle {
     // null records a new, non-app input; legacy entries have no field at all.
     message.rubatoAppText = typeof record.rubatoAppText !== "string" ? null
       : record.rubatoAppText === message.content?.[0]?.text ? true : record.rubatoAppText;
+    // The app's id for this message, so a rewind names it exactly. A short scalar, so it survives
+    // the outline a long session's listing comes as (pi-server session-worker outlineEntry).
+    if (typeof record.rubatoAppMessageId === "string" && record.rubatoAppMessageId)
+      message.rubatoAppMessageId = record.rubatoAppMessageId;
     this.#messageRecords.set(message, record);
     if (pending) this.#pendingMessages.add(message);
     return record;

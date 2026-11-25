@@ -795,6 +795,7 @@ export default function contextWindowProbe(pi) {
   assert.equal((await channel.request("prompt-1", "prompt", {
     message: "rpc original message must be cut atomically",
     rubatoAppText: "Original app input before provider formatting.",
+    rubatoAppMessageId: "app-message-7f3c",
   })).success, true);
   await channel.waitFor((frame) => frame.type === "agent_settled", 20_000, start);
 
@@ -811,6 +812,9 @@ export default function contextWindowProbe(pi) {
   assert.equal(entriesBefore.data.entries.filter((entry) => entry.type === "compaction").length, 1);
   assert.equal(entriesBefore.data.entries.find((entry) => entry.message?.role === "user").message.rubatoAppText,
     "Original app input before provider formatting.");
+  // The app's id stays with the entry, for the companion room's rewind (t3-integration companionEntry).
+  assert.equal(entriesBefore.data.entries.find((entry) => entry.message?.role === "user").message.rubatoAppMessageId,
+    "app-message-7f3c");
   const revision = await channel.request("revision", "extension_request", { name: "context_window_revision" });
   assert.equal(revision.success, true, channel.stderr());
   assert.equal(Number.isSafeInteger(revision.data.revision), true);

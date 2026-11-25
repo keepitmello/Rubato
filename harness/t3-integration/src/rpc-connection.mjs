@@ -726,9 +726,12 @@ export class RubatoRpcConnection {
       if (this.closed) throw new Error('Rubato connection is closed');
     }
     if (!this.sessionId) await this.openThreadSession();
-    const { id: _id, rubatoAppText, ...command } = record;
+    const { id: _id, rubatoAppText, rubatoAppMessageId, ...command } = record;
     if (this.companion && command.type === 'prompt' && typeof rubatoAppText === 'string')
       command.rubatoAppText = rubatoAppText;
+    // The app's id rides along, so the room's rewind finds this prompt by id, not by its words.
+    if (this.companion && command.type === 'prompt' && typeof rubatoAppMessageId === 'string')
+      command.rubatoAppMessageId = rubatoAppMessageId;
     // Only the step-rewind continue route's own message (it marks the thread right before it
     // sends): the same words typed by hand stay a prompt, and any other prompt drops the mark.
     if (command.type === 'prompt') {
