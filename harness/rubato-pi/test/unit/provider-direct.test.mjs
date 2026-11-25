@@ -425,6 +425,9 @@ test("피커는 현재 세대만 남기고 getModels 저장분은 그대로다",
 
   const anthropicPicker = anthropic.filterModels(anthropic.getModels()).map((model) => model.id);
   assert.deepEqual(anthropicPicker, [...ANTHROPIC_PICKER_IDS]);
+  for (const legacy of ["claude-fable-5", "claude-opus-4-6"]) {
+    assert.ok(anthropicPicker.includes(legacy), `${legacy} 를 그 버전 그대로 고를 수 있어야 한다`);
+  }
   assert.ok(anthropic.getModels().some((model) => model.id === "claude-sonnet-4-5"));
   assert.ok(anthropic.getModels().some((model) => model.id === "claude-fable-5"), "pin 저장분의 Fable 5를 지우면 안 된다");
   assert.ok(anthropic.getModels().some((model) => model.id === "claude-fable-5-1"), "Fable 5.1 파생이 없다");

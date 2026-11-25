@@ -31,6 +31,9 @@ export const PRODUCT_MODEL_ORDER = Object.freeze({
     "claude-opus-5-5",
     "claude-sonnet-5-5",
     "claude-haiku-5-5",
+    // 옛 버전을 그 버전 그대로 돌리는 자리. 피커 목록(picker-catalog.mjs)과 짝이다.
+    "claude-fable-5",
+    "claude-opus-4-6",
   ]),
   xai: Object.freeze(["grok-4.7"]),
   "google-vertex": Object.freeze(["gemini-4-argon"]),

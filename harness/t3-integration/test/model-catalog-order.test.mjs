@@ -30,7 +30,7 @@ test('T3 catalogue keeps the curated /model set and drops provider extras', () =
     { provider: 'xai', id: XAI_GROK, name: 'Grok', reasoning: true, thinkingLevelMap: { xhigh: 'xhigh' }, api: 'openai-completions' },
     { provider: 'anthropic', id: opus, name: 'Claude Opus', reasoning: true, api: 'anthropic-messages' },
     { provider: 'anthropic', id: fable, name: 'Claude Fable', reasoning: true, thinkingLevelMap: { max: 'max' } },
-    { provider: 'anthropic', id: 'claude-opus-4-6', name: 'Claude Opus 4.6', reasoning: true },
+    { provider: 'anthropic', id: 'claude-opus-4-7', name: 'Claude Opus 4.7', reasoning: true },
     { provider: 'openai-codex', id: CODEX_SOL, name: 'GPT-6 Sol', reasoning: true, thinkingLevelMap: { xhigh: 'xhigh', max: 'max' }, api: 'openai-codex-responses' },
     { provider: 'openai-codex', id: `${CODEX_DAYBREAK}-fast`, name: 'Daybreak Blue Fast', api: 'openai-codex-responses' },
     { provider: 'openai-codex', id: 'gpt-5.4', name: 'GPT-5.4', reasoning: true, api: 'openai-codex-responses' },

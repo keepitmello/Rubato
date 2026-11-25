@@ -15,11 +15,14 @@ export const VERTEX_PICKER_IDS = Object.freeze(["gemini-4-argon"]);
 
 export const GEMINI_API_PICKER_IDS = Object.freeze(["gemini-4-hydrogen"]);
 
+// 끝의 둘은 현재 세대가 아니라 그 버전 그대로 돌리려고 남긴 옛 버전이다 (pin 에 있는 행).
 export const ANTHROPIC_PICKER_IDS = Object.freeze([
   "claude-fable-5-2",
   "claude-opus-5-5",
   "claude-sonnet-5-5",
   "claude-haiku-5-5",
+  "claude-fable-5",
+  "claude-opus-4-6",
 ]);
 
 // Codex Fast 는 피커 행이 아니라 `/fast` 토글이다. getModels() 저장분의 `-fast`

@@ -35,12 +35,14 @@ test("목록 순서로 남고, 없는 id 는 만들지 않는다", () => {
   assert.deepEqual(kept.map((entry) => entry.id), [...XAI_PICKER_IDS]);
 });
 
-test("Anthropic 이전 세대와 dated id 는 빠진다", () => {
+test("Anthropic 이전 세대와 dated id 는 빠지고, 그 버전 그대로 남긴 옛 버전만 남는다", () => {
   const kept = keepPickerIds(
     [
       model("claude-sonnet-4-5"),
       model("claude-sonnet-5"),
       model("claude-opus-4-8"),
+      model("claude-opus-4-7"),
+      model("claude-opus-4-6"),
       model(CURRENT_OPUS),
       model(CURRENT_SONNET),
       model("claude-haiku-5-5-20251001"),

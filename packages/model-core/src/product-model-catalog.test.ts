@@ -64,6 +64,12 @@ describe("product model catalog", () => {
   })
 
   test("#given a live Fast-only cursor row #when listed for spawn surfaces #then the picker identity is the available slug", () => {
+    // 옛 버전을 그 버전 그대로 서브에이전트로 띄울 수 있어야 한다 — 대체 버전으로 바꿔 내지 않는다.
+    expect(availableProductModelIds([
+      { provider: "anthropic", id: "claude-fable-5" },
+      { provider: "anthropic", id: "claude-opus-4-6" },
+      { provider: "anthropic", id: "claude-opus-4-7" },
+    ])).toEqual(["anthropic/claude-fable-5", "anthropic/claude-opus-4-6"])
     expect(availableProductModelIds([
       { provider: "cursor", id: `${CURSOR_GROK_BASE_ID}-high-fast` },
       { provider: "xai", id: XAI_GROK },
