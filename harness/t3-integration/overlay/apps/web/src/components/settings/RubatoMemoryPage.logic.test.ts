@@ -9,6 +9,9 @@ import {
   foldNeeds,
   insightLanguage,
   listedStores,
+  memoryAddress,
+  memorySearch,
+  memorySearchFor,
   needsYou,
   oldestRef,
   placeCompanionLines,
@@ -187,5 +190,42 @@ describe("small readings", () => {
   it("finds the oldest date a question mentions", () => {
     expect(oldestRef([{ refs: "daily 10-22·10-23" }, { refs: "대화 10-20 07:07" }, { refs: null }])).toBe("10-20");
     expect(oldestRef([{ refs: null }])).toBeNull();
+  });
+});
+
+describe("memory page address", () => {
+  it("keeps the known keys and drops the rest", () => {
+    expect(memorySearch({ view: "projects", store: "rubato", file: "decisions/x.md", other: "1" })).toEqual({
+      view: "projects",
+      store: "rubato",
+      file: "decisions/x.md",
+    });
+    expect(memorySearch({ view: "nowhere", record: "" })).toEqual({});
+    expect(memorySearch({ view: "home" })).toEqual({});
+  });
+
+  it("reads a store the router parsed as a number", () => {
+    expect(memorySearch({ view: "projects", store: 2026 })).toEqual({ view: "projects", store: "2026" });
+  });
+
+  it("opens at a glance with no address", () => {
+    expect(memoryAddress({})).toEqual({ view: "home", project: null, segno: null });
+  });
+
+  it("writes only the open view's target", () => {
+    const project = { store: "rubato", file: "decisions/x.md" };
+    const segno = { path: "people/a.md" };
+    expect(memorySearchFor({ view: "projects", project, segno })).toEqual({
+      view: "projects",
+      store: "rubato",
+      file: "decisions/x.md",
+    });
+    expect(memorySearchFor({ view: "segno", project, segno })).toEqual({ view: "segno", record: "people/a.md" });
+    expect(memorySearchFor({ view: "home", project, segno })).toEqual({});
+  });
+
+  it("lands where it left off", () => {
+    const search = { view: "projects", store: "rubato", file: "decisions/x.md" } as const;
+    expect(memorySearchFor(memoryAddress(memorySearch(search)))).toEqual(search);
   });
 });

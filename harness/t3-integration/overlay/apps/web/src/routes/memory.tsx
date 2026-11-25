@@ -2,6 +2,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 
 import { RubatoStandalonePage } from "../components/RubatoStandalonePage";
 import { RubatoMemoryPage } from "../components/settings/RubatoMemoryPage";
+import { memorySearch } from "../components/settings/RubatoMemoryPage.logic";
 
 function MemoryPage() {
   return (
@@ -12,6 +13,7 @@ function MemoryPage() {
 }
 
 export const Route = createFileRoute("/memory")({
+  validateSearch: memorySearch,
   beforeLoad: async ({ context }) => {
     if (
       context.authGateState.status !== "authenticated" &&

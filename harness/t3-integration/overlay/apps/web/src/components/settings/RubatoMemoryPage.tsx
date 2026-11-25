@@ -3,6 +3,7 @@
 // changed), Segno (its status board, questions, records, people) and the dream (state per store and
 // the model ladder). The server half is harness/t3-integration/src/memory/service.mjs.
 import { BrainIcon, CalendarDaysIcon, FolderIcon, MoonIcon, SearchIcon, SparklesIcon, UserIcon } from "lucide-react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
@@ -31,7 +32,9 @@ import {
   insightLanguage,
   listedStores,
   meCounts,
-  MEMORY_VIEWS,
+  memoryAddress,
+  memorySearch,
+  memorySearchFor,
   needsYou,
   openItems,
   placeCompanionLines,
@@ -54,33 +57,6 @@ const NAV: ReadonlyArray<{ readonly view: MemoryView; readonly label: string; re
   { view: "segno", label: "Segno", icon: CalendarDaysIcon },
   { view: "dream", label: "Dream", icon: MoonIcon },
 ];
-
-// The view (and the project file or Segno record it opened) lives in the address, so a link or a
-// reload lands on the same place: /memory?view=projects&store=rubato&file=decisions/x.md.
-function readAddress(): { view: MemoryView; project: ProjectTarget | null; segno: SegnoTarget | null } {
-  const params = new URLSearchParams(window.location.search);
-  const view = MEMORY_VIEWS.find((entry) => entry === params.get("view")) ?? "home";
-  const store = params.get("store");
-  const file = params.get("file");
-  const record = params.get("record");
-  return {
-    view,
-    project: store ? { store, ...(file ? { file } : {}) } : null,
-    segno: record ? { path: record } : null,
-  };
-}
-function writeAddress(view: MemoryView, project: ProjectTarget | null, segno: SegnoTarget | null) {
-  const params = new URLSearchParams(window.location.search);
-  for (const key of ["view", "store", "file", "record"]) params.delete(key);
-  if (view !== "home") params.set("view", view);
-  if (view === "projects" && project) {
-    params.set("store", project.store);
-    if (project.file) params.set("file", project.file);
-  }
-  if (view === "segno" && segno) params.set("record", segno.path);
-  const search = params.toString();
-  window.history.replaceState(window.history.state, "", `${window.location.pathname}${search ? `?${search}` : ""}`);
-}
 
 export interface MemoryPageData {
   readonly environmentId: EnvironmentId;
@@ -189,7 +165,9 @@ export function RubatoMemoryPage() {
   // A language switch draws the page again, so times and model summaries follow it.
   useSyncExternalStore(subscribeUiLanguage, uiLanguage);
   const environmentId = useReadyEnvironmentId();
-  const initial = useMemo(readAddress, []);
+  const navigate = useNavigate();
+  const search = useSearch({ strict: false });
+  const [initial] = useState(() => memoryAddress(memorySearch(search)));
   const [view, setView] = useState<MemoryView>(initial.view);
   const [project, setProject] = useState<ProjectTarget | null>(initial.project);
   const [segnoTarget, setSegnoTarget] = useState<SegnoTarget | null>(initial.segno);
@@ -198,7 +176,9 @@ export function RubatoMemoryPage() {
   const { dismissed, dismiss } = useDismissed();
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => writeAddress(view, project, segnoTarget), [view, project, segnoTarget]);
+  useEffect(() => {
+    void navigate({ to: "/memory", search: memorySearchFor({ view, project, segno: segnoTarget }), replace: true });
+  }, [navigate, view, project, segnoTarget]);
   const go = useCallback((next: MemoryView, target?: { project?: ProjectTarget | null; segno?: SegnoTarget | null; me?: string | null }) => {
     setView(next);
     if (target?.project !== undefined) setProject(target.project);

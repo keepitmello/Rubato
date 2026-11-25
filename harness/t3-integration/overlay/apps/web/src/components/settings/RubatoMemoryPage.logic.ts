@@ -13,6 +13,64 @@ import type { SegnoAboutLine, SegnoMemoryView } from "../../state/rubatoSegnoMem
 export type MemoryView = "home" | "me" | "projects" | "segno" | "dream";
 export const MEMORY_VIEWS: readonly MemoryView[] = ["home", "me", "projects", "segno", "dream"];
 
+/**
+ * What /memory keeps in its address, so a link or a reload lands on the same place:
+ * /memory?view=projects&store=rubato&file=decisions/x.md. It goes through the router: the desktop app
+ * keeps the route after "#", so writing window.location by hand dropped "#/memory" and landed home.
+ */
+export interface MemorySearch {
+  readonly view?: MemoryView;
+  readonly store?: string;
+  readonly file?: string;
+  readonly record?: string;
+}
+
+export interface MemoryAddress {
+  readonly view: MemoryView;
+  readonly project: { readonly store: string; readonly file?: string } | null;
+  readonly segno: { readonly path: string } | null;
+}
+
+// The router parses search values as JSON, so a store named "2026" arrives as a number.
+function searchText(value: unknown): string | undefined {
+  if (typeof value === "number") return String(value);
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+/** The route's validateSearch: the known keys, anything else dropped. */
+export function memorySearch(raw: Record<string, unknown>): MemorySearch {
+  const view = MEMORY_VIEWS.find((entry) => entry === raw.view);
+  const store = searchText(raw.store);
+  const file = searchText(raw.file);
+  const record = searchText(raw.record);
+  return {
+    ...(view && view !== "home" ? { view } : {}),
+    ...(store ? { store } : {}),
+    ...(file ? { file } : {}),
+    ...(record ? { record } : {}),
+  };
+}
+
+export function memoryAddress(search: MemorySearch): MemoryAddress {
+  return {
+    view: search.view ?? "home",
+    project: search.store ? { store: search.store, ...(search.file ? { file: search.file } : {}) } : null,
+    segno: search.record ? { path: search.record } : null,
+  };
+}
+
+/** Only the open view's target goes into the address. */
+export function memorySearchFor(address: MemoryAddress): MemorySearch {
+  const { view, project, segno } = address;
+  return {
+    ...(view !== "home" ? { view } : {}),
+    ...(view === "projects" && project
+      ? { store: project.store, ...(project.file ? { file: project.file } : {}) }
+      : {}),
+    ...(view === "segno" && segno ? { record: segno.path } : {}),
+  };
+}
+
 const relativeFormats = new Map<string, Intl.RelativeTimeFormat>();
 
 /**
