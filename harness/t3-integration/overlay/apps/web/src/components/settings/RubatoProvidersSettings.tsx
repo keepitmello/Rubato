@@ -40,7 +40,7 @@ import { rubatoAccountLabel, rubatoAccountOrder } from "../../rubatoAccountLabel
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import { SettingsGroup } from "./SettingsGroup";
-import { agyAccounts, agyAccountsSummary, agySignInView, type AgyAccount, type AgyAccountState } from "./RubatoAgyAccounts.logic";
+import { agyAccounts, agyAccountsSummary, agySignInView, type AgyAccount, type AgyAccountState } from "@t3tools/shared/rubatoAgyAccounts";
 import { ProviderAuthenticationSection } from "./ProviderAuthenticationSection";
 import { EffortDefaultSection, ModelEffortControl, useEffortSettings, type EffortState } from "./RubatoEffortSettings";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";

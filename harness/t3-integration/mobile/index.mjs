@@ -12,6 +12,7 @@
 //   usage-edits.mjs      the Usage page's pace forecast and red/green even-pace tick
 //   navbar-edits.mjs     the iPhone's tab bar, compose and Settings gear as before v0.1.11
 //   access-mode-edits.mjs  no access-mode control in the composer's thread settings
+//   agy-picker-edits.mjs   one thread-settings section per Antigravity login, its agents a choice
 //
 // Two files must never edit one file at the same anchor: apply.mjs undoes an edit by
 // finding addition+anchor, and a second addition in between hides the first.
@@ -26,6 +27,7 @@ import { mobileUsageEdits, mobileUsageOverlays } from './usage-edits.mjs';
 import { mobileNavbarEdits, mobileNavbarOverlays } from './navbar-edits.mjs';
 import { mobileAccessModeEdits, mobileAccessModeOverlays } from './access-mode-edits.mjs';
 import { mobilePerfEdits, mobilePerfOverlays } from './perf-edits.mjs';
+import { mobileAgyPickerEdits, mobileAgyPickerOverlays } from './agy-picker-edits.mjs';
 
 const tables = [
   [shellEdits, shellOverlays],
@@ -39,6 +41,7 @@ const tables = [
   [mobileNavbarEdits, mobileNavbarOverlays],
   [mobileAccessModeEdits, mobileAccessModeOverlays],
   [mobilePerfEdits, mobilePerfOverlays],
+  [mobileAgyPickerEdits, mobileAgyPickerOverlays],
 ];
 
 export const mobileOverlays = tables.flatMap(([, overlays]) => overlays);

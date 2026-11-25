@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { agyPickerAccounts } from "./rubatoAgyPicker";
+import { agyPickerAccounts } from "./rubatoAgyAccounts.ts";
 
 const agent = (value: string) => ({ name: "RUBATO_LOCAL_AGY_AGENT", value });
 const isolated = { name: "RUBATO_LOCAL_AGY_ISOLATED", value: "1" };

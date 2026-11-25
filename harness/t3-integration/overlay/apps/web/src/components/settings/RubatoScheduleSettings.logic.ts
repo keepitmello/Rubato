@@ -1,6 +1,6 @@
 import type { ServerProvider, ServerSettings } from "@t3tools/contracts";
 import { companionModelAccounts } from "@t3tools/shared/rubatoCompanionModelChoice";
-import { isIsolatedAgy } from "./RubatoAgyAccounts.logic";
+import { isIsolatedAgy } from "@t3tools/shared/rubatoAgyAccounts";
 import type {
   RunStatus,
   Schedule,

@@ -1,6 +1,6 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, it } from "vite-plus/test";
 
-import { agyAccounts, agyAccountsSummary, agySignInView, type AgyLiveInput } from "./RubatoAgyAccounts.logic";
+import { agyAccounts, agyAccountsSummary, agySignInView, type AgyLiveInput } from "./rubatoAgyAccounts.ts";
 
 const agent = (value: string) => ({ name: "RUBATO_LOCAL_AGY_AGENT", value });
 const isolated = { name: "RUBATO_LOCAL_AGY_ISOLATED", value: "1" };

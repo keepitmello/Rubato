@@ -12,10 +12,10 @@ export const providerOverlays = [
   'apps/web/src/rubatoAccountLabel.ts',
   'apps/web/src/components/settings/RubatoProvidersSettings.tsx',
   // Antigravity: Google logins as accounts, agy agents on them as system prompts.
-  'apps/web/src/components/settings/RubatoAgyAccounts.logic.ts',
-  'apps/web/src/components/settings/RubatoAgyAccounts.logic.test.ts',
+  'packages/shared/src/rubatoAgyAccounts.ts',
+  'packages/shared/src/rubatoAgyAccounts.test.ts',
+  'packages/shared/src/rubatoAgyPickerAccounts.test.ts',
   'apps/web/src/components/chat/rubatoAgyPicker.ts',
-  'apps/web/src/components/chat/rubatoAgyPicker.test.ts',
   // Titles and summaries: the session-title ladder the Stats card shares.
   'apps/web/src/components/settings/RubatoTitleModels.tsx',
   // Thinking effort: the level new conversations start at (src/auth/effort.mjs), and the line under
@@ -110,6 +110,11 @@ export const providerEdits = {
   'apps/server/src/server.ts': [
     ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoAppRouteLayer, rubatoAuthRouteLayer, rubatoSessionStateRouteLayer } from "./RubatoServiceRoute.ts";\n'],
     ['    DeviceHubProxy.layer,\n', '    rubatoAuthRouteLayer,\n    rubatoAppRouteLayer,\n    rubatoSessionStateRouteLayer,\n'],
+  ],
+  // The desktop's settings and picker and the phone's thread settings group Antigravity logins alike.
+  'packages/shared/package.json': [
+    ['    "./pullRequestAnchor": {\n',
+      '    "./rubatoAgyAccounts": {\n      "types": "./src/rubatoAgyAccounts.ts",\n      "import": "./src/rubatoAgyAccounts.ts"\n    },\n'],
   ],
   'apps/web/src/routes/_chat.settings.providers.tsx': [
     [t3Route, 'import { RubatoProvidersSettingsPanel } from "../components/settings/RubatoProvidersSettings";\n', 'replace'],

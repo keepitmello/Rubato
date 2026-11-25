@@ -1,5 +1,6 @@
-// Settings > Providers > Antigravity ACP: accounts are Google logins, and the system prompts
-// (agy agents) run on them. One T3 Antigravity instance pairs one agy agent with one login.
+// Rubato: the Antigravity accounts as Settings > Providers > Antigravity ACP, the desktop's model
+// picker and the phone's thread settings all show them. Accounts are Google logins, and the system
+// prompts (agy agents) run on them. One T3 Antigravity instance pairs one agy agent with one login.
 // Instances without RUBATO_LOCAL_AGY_ISOLATED all use the login the official agy CLI holds;
 // each isolated instance keeps its own Google profile (server RubatoLocalAgy.ts), as does a plain
 // T3 Antigravity instance that names no agy agent, unless RUBATO_LOCAL_AGY_LOGIN names the isolated
@@ -173,4 +174,53 @@ export function agyAccountsSummary(accounts: ReadonlyArray<AgyAccount>): {
     total: accounts.length,
     off: accounts.length > 0 && accounts.every((account) => account.state === "off"),
   };
+}
+
+export interface AgyPickerAgent {
+  readonly instanceId: string;
+  readonly label: string;
+}
+
+export interface AgyPickerAccount {
+  /** The instance that stands for the login in a picker: the login's lead when it has one. */
+  readonly railId: string;
+  readonly label: string;
+  readonly agents: ReadonlyArray<AgyPickerAgent>;
+}
+
+const LEAD_AGENT = "rubato-lead";
+
+type PickerInstances = Readonly<Record<string, (AgyInstanceInput & { readonly driver?: unknown }) | undefined>>;
+
+/**
+ * The logins among the instances a picker shows, in the picker's order. Pickers show each login
+ * once, and the agents on it are a choice above its models, the lead first as "Rubato".
+ */
+export function agyPickerAccounts(
+  instances: PickerInstances | undefined,
+  shownIds: ReadonlyArray<string>,
+): ReadonlyArray<AgyPickerAccount> {
+  const entries = shownIds.flatMap((id) => {
+    const instance = instances?.[id];
+    return instance?.driver === "antigravity" ? [[id, instance] as const] : [];
+  });
+  return agyAccounts(entries, new Map()).flatMap((account) => {
+    const agents = account.prompts
+      .map((prompt) => ({
+        instanceId: prompt.instanceId,
+        label: prompt.agent === LEAD_AGENT ? "Rubato" : (prompt.agent ?? prompt.name),
+        lead: prompt.agent === LEAD_AGENT,
+      }))
+      // .sort() on a fresh array keeps the settings order among the rest.
+      .sort((left, right) => Number(right.lead) - Number(left.lead))
+      .map(({ instanceId, label }) => ({ instanceId, label }));
+    if (agents.length === 0) return [];
+    return [
+      {
+        railId: agents[0]!.instanceId,
+        label: account.isolated ? (account.name ?? "Antigravity") : "Antigravity",
+        agents,
+      },
+    ];
+  });
 }
