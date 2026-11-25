@@ -18,6 +18,17 @@ export const CLAUDE_CODE_VERSION = "2.1.290";
 export const CLAUDE_CODE_BILLING_HEADER =
   `x-anthropic-billing-header: cc_version=${CLAUDE_CODE_VERSION}; cc_entrypoint=cli;`;
 
+/**
+ * OAuth 요청에서 대소문자만 바꿔 내보낼 도구 이름. stock 의 Claude Code 도구 표
+ * (`toClaudeCodeName`)에 덧붙고, 응답의 이름은 stock 이 대소문자 무시로 되돌린다.
+ *
+ * 도구 목록에 정확히 `deep_research` 가 있으면 구독 계정 하나(login-2)가 요청 전체를
+ * "Third-party apps now draw from your extra usage" 400 으로 거절한다. 설명·입력 칸·
+ * 본문 언급은 통과하고, `Deep_Research`·`deep-research` 처럼 이름만 달라도 통과한다
+ * (2026-11-25 실측, 같은 body 에 도구 이름만 바꿔 비교).
+ */
+export const CLAUDE_CODE_WIRE_TOOL_NAMES = Object.freeze(["Deep_Research"]);
+
 const VERSION_NEEDLE = 'const claudeCodeVersion = "2.1.251";';
 const VERSION_REPLACEMENT = `const claudeCodeVersion = "${CLAUDE_CODE_VERSION}";`;
 const IDENTITY_NEEDLE = 'text: "You are Claude Code, Anthropic\'s official CLI for Claude.",';
