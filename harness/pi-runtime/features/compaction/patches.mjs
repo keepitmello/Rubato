@@ -6,6 +6,7 @@ import {
 import {
   CLAUDE_CODE_BILLING_HEADER,
   CLAUDE_CODE_VERSION,
+  CLAUDE_CODE_WIRE_TOOL_NAMES,
 } from "../../../rubato-pi/src/transforms/misc-claude-code-version.mjs";
 
 const PACKAGE_AGENT = "@earendil-works/pi-coding-agent";
@@ -138,6 +139,12 @@ export function patchAnthropicMessagesServerCompaction(source) {
     'text: "You are Claude Code, Anthropic\'s official CLI for Claude.",',
     `text: "${CLAUDE_CODE_BILLING_HEADER}",\n            },\n            {\n                type: "text",\n                text: "You are Claude Code, Anthropic's official CLI for Claude.",`,
     "claude-code-billing-header",
+  );
+  next = replaceOnce(
+    next,
+    '    "WebSearch",\n];',
+    `    "WebSearch",\n${CLAUDE_CODE_WIRE_TOOL_NAMES.map((name) => `    ${JSON.stringify(name)},\n`).join("")}];`,
+    "claude-code-wire-tool-names",
   );
   next = replaceOnce(
     next,

@@ -19,7 +19,11 @@ import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { runtimeFactoriesFeature } from "../runtime-factories/feature.mjs";
 import { applyFeatureToggles } from "../rubato-components/feature-toggles.mjs";
 import { compactionFeature, files, patches } from "./feature.mjs";
-import { CLAUDE_CODE_BILLING_HEADER, CLAUDE_CODE_VERSION } from "../../../rubato-pi/src/transforms/misc-claude-code-version.mjs";
+import {
+  CLAUDE_CODE_BILLING_HEADER,
+  CLAUDE_CODE_VERSION,
+  CLAUDE_CODE_WIRE_TOOL_NAMES,
+} from "../../../rubato-pi/src/transforms/misc-claude-code-version.mjs";
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
 const sourceRoot = resolve(featureDir, "../..");
@@ -221,6 +225,54 @@ test("the staged engine sends the declared Claude Code identity, not stock's", (
   ), "utf8");
   assert.ok(wire.includes(`const claudeCodeVersion = "${CLAUDE_CODE_VERSION}";`));
   assert.ok(wire.includes(CLAUDE_CODE_BILLING_HEADER));
+});
+
+test("OAuth sends deep_research under its wire casing and maps the model's call back", async () => {
+  // 구독 계정 하나가 도구 목록의 정확한 이름 `deep_research` 를 보고 요청 전체를 400 으로 거절한다.
+  assert.ok(CLAUDE_CODE_WIRE_TOOL_NAMES.includes("Deep_Research"));
+  const piAiDir = runtime.packages["@earendil-works/pi-ai"].dir;
+  const anthropic = await import(pathToFileURL(join(piAiDir, "dist/api/anthropic-messages.js")).href);
+  const { anthropicProvider } = await import(pathToFileURL(join(piAiDir, "dist/providers/anthropic.js")).href);
+  const model = anthropicProvider().getModels().find((candidate) =>
+    candidate.compat?.supportsMidConvoSystemMessages && candidate.compat?.supportsMidConvoToolChanges);
+  assert.ok(model);
+  const tool = (name) => ({ name, description: `${name} tool`, parameters: { type: "object", properties: {} } });
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+  const messages = [
+    { role: "system", content: "base prompt", toolsAdded: [tool("read"), tool("deep_research")], timestamp: 1 },
+    { role: "user", content: "research it", timestamp: 1 },
+    {
+      role: "assistant", api: model.api, provider: model.provider, model: model.id, usage, stopReason: "toolUse", timestamp: 1,
+      content: [{ type: "toolCall", id: "toolu_dr", name: "deep_research", arguments: { question: "q" } }],
+    },
+    { role: "toolResult", toolCallId: "toolu_dr", toolName: "deep_research", content: [{ type: "text", text: "submitted" }], isError: false, timestamp: 1 },
+    { role: "user", content: "again", timestamp: 1 },
+  ];
+
+  let payload;
+  const sse = [
+    ["message_start", { type: "message_start", message: { id: "msg_1", type: "message", role: "assistant", model: model.id, content: [], stop_reason: null, usage: { input_tokens: 1, output_tokens: 0 } } }],
+    ["content_block_start", { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_next", name: "Deep_Research", input: {} } }],
+    ["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"question\":\"q2\"}" } }],
+    ["content_block_stop", { type: "content_block_stop", index: 0 }],
+    ["message_delta", { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { output_tokens: 1 } }],
+    ["message_stop", { type: "message_stop" }],
+  ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join("");
+  const fetch = async () => new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } });
+  const result = await anthropic.stream(model, { messages }, {
+    apiKey: "sk-ant-oat01-test-not-real",
+    fetch,
+    onPayload: (params) => { payload = structuredClone(params); },
+  }).result();
+
+  const body = JSON.stringify(payload);
+  assert.doesNotMatch(body, /"name":"deep_research"/, "no tool name on the wire is exactly deep_research");
+  assert.ok(payload.tools.some((entry) => entry.name === "Deep_Research"));
+  assert.match(body, /"type":"tool_use"[^}]*"name":"Deep_Research"/);
+  assert.equal(result.stopReason, "toolUse", result.errorMessage);
+  const call = result.content.find((block) => block.type === "toolCall");
+  assert.equal(call.name, "deep_research");
+  assert.deepEqual(call.arguments, { question: "q2" });
 });
 
 test("product threshold and circuit-breaker match the overlay contract", () => {
