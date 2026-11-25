@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
@@ -37,7 +37,17 @@ export function parseSkillFrontmatter(raw) {
   return fields;
 }
 
-function walkSkillFiles(dir, files = []) {
+// Bundle skills reach ~/.agents/skills as symlinks (install-skills.sh), so a link is followed like
+// the folder or file it points to; `seen` keeps a link back up the tree from looping.
+function walkSkillFiles(dir, files = [], seen = new Set()) {
+  let real;
+  try {
+    real = realpathSync(dir);
+  } catch {
+    return files;
+  }
+  if (seen.has(real)) return files;
+  seen.add(real);
   let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true });
@@ -47,11 +57,19 @@ function walkSkillFiles(dir, files = []) {
   for (const entry of entries) {
     if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
     const fullPath = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walkSkillFiles(fullPath, files);
+    let kind = entry;
+    if (entry.isSymbolicLink()) {
+      try {
+        kind = statSync(fullPath);
+      } catch {
+        continue;
+      }
+    }
+    if (kind.isDirectory()) {
+      walkSkillFiles(fullPath, files, seen);
       continue;
     }
-    if (entry.isFile() && entry.name === "SKILL.md") files.push(fullPath);
+    if (kind.isFile() && entry.name === "SKILL.md") files.push(fullPath);
   }
   return files;
 }

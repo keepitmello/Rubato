@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -80,4 +80,19 @@ test("empty lists stay empty; unique roots keep explicit full paths", () => {
   assert.doesNotMatch(section, /An omitted path/);
   assert.ok(section.includes(JSON.stringify(["a", "A", "/one/a/SKILL.md"])));
   assert.ok(section.includes(JSON.stringify(["b", "B", "/two/b/SKILL.md"])));
+});
+
+test("a skill linked into the folder is listed like one copied there, and a loop ends", () => {
+  // install-skills.sh links bundle skills into ~/.agents/skills; companions list that folder through here.
+  const root = mkdtempSync(join(tmpdir(), "skills-link-"));
+  const bundle = join(root, "bundle", "visual-delivery");
+  mkdirSync(bundle, { recursive: true });
+  writeFileSync(join(bundle, "SKILL.md"), "---\nname: visual-delivery\ndescription: draw\n---\nbody\n");
+  const agents = join(root, "agents");
+  mkdirSync(join(agents, "copied"), { recursive: true });
+  writeFileSync(join(agents, "copied", "SKILL.md"), "---\nname: copied\ndescription: copy\n---\n");
+  symlinkSync(bundle, join(agents, "visual-delivery"));
+  symlinkSync(agents, join(agents, "copied", "loop"));
+  const names = loadSkillEntries([{ dir: agents, source: "agents" }]).map((skill) => skill.name);
+  assert.deepEqual(names, ["copied", "visual-delivery"]);
 });

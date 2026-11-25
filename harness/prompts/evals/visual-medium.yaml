@@ -2,8 +2,9 @@
 #
 # What this guards: harness/prompts/core-lead.pi.md, the last paragraph
 # (words stay words; polished visuals used actively; images and HTML by the
-# lead and shown inline; video through an Agent), and delivery.pi.md (box
-# diagrams as ```mermaid blocks, drawings as ```svg blocks the chat draws).
+# lead and shown inline; video through an Agent), delivery.pi.md (when to draw)
+# and the visual-delivery skill (box diagrams as ```mermaid blocks, drawings as
+# ```svg blocks the chat draws).
 #
 # Failure this suite exists for (2026-10-03 rubato-lab session, 01a10118):
 # without the paragraph, neither Opus nor GPT-6.1 sol made a visual in 7
@@ -32,6 +33,7 @@ suite: lead-visual-medium
 prompt_files:
   - harness/prompts/core-lead.pi.md
   - harness/prompts/delivery.pi.md
+  - harness/skills/visual-delivery/SKILL.md
 models:
   - anthropic/claude-opus-5-5
   - openai-codex/gpt-6.1-sol
