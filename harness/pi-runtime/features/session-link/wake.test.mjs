@@ -44,6 +44,14 @@ test("a wake that already has a user-side message before it needs no anchor; one
   assert.deepEqual(projectWakes(twice, { native: true }).slice(3), [anchor(4), system(HEARTBEAT, 4), system(HEARTBEAT, 5)]);
 });
 
+test("a tool-update system message right after an answer does not open the place for the wake behind it", () => {
+  const update = { role: "system", content: "", toolsAdded: [{ name: "late_tool" }], timestamp: 4 };
+  const resumed = [PROMPT, user("hi", 2), answer("hello", 3), update, wake("wake", "Session restarted.", 5)];
+  assert.deepEqual(projectWakes(resumed, { native: true }), [PROMPT, user("hi", 2), answer("hello", 3), update, anchor(5), system("Session restarted.", 5)]);
+  const afterResult = [PROMPT, user("hi", 2), { role: "toolResult", content: [], timestamp: 3 }, update, wake("wake", "x", 5)];
+  assert.deepEqual(projectWakes(afterResult, { native: true }).slice(-1), [system("x", 5)]);
+});
+
 test("other models get the context untouched, so they read the wrapped envelope as before", () => {
   const messages = [PROMPT, user("hi", 2), answer("hello", 3), wake("heartbeat", HEARTBEAT, 4)];
   assert.equal(projectWakes(messages, { native: false }), messages);

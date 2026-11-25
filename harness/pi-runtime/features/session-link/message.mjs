@@ -252,8 +252,8 @@ const USER_SIDE = new Set(["user", "custom", "toolResult"]);
 /**
  * The request's context with each wake as a system message, for a model that takes system
  * messages mid-conversation (`native`), so the turn after it is the conversation's own and not an
- * answer to the user. A wake whose place is not open (it follows an answer, or the leading system
- * prompt) gets SYSTEM_ANCHOR before it. A wake's projection depends only on what precedes it, so
+ * answer to the user. A wake whose place is not open (it follows an answer, or only system
+ * messages) gets SYSTEM_ANCHOR before it. A wake's projection depends only on what precedes it, so
  * earlier turns project the same bytes on every request. Other models read the wake's envelope as
  * a user message, as before. The transcript keeps the wake as it was written.
  * The system message carries `rubatoEvent`, so the forced-prompt projection (session-prompt
@@ -267,9 +267,12 @@ export function projectWakes(messages, { native }) {
       projected.push(message);
       continue;
     }
-    const previous = projected.at(-1);
-    const leading = projected.length === 1 && previous.role === "system";
-    const open = previous !== undefined && !leading && (USER_SIDE.has(previous.role) || previous.role === "system");
+    // Read the place past system messages: the provider holds those back to the next assistant
+    // message or the end of the request, so a tool-update system message that sits right after
+    // an answer is not on a user side itself, and a wake behind it still needs the anchor
+    // (resume wrote exactly that: answer, system, wake -> 400 "role 'system' must follow a user message").
+    const previous = projected.findLast((item) => item.role !== "system");
+    const open = previous !== undefined && USER_SIDE.has(previous.role);
     if (!open) projected.push({ role: "user", content: [{ type: "text", text: SYSTEM_ANCHOR }], timestamp: message.timestamp });
     projected.push({ role: "system", content: [{ type: "text", text: message.details.text }], rubatoEvent: true,
       timestamp: message.timestamp });
