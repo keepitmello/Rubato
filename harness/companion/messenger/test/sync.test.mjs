@@ -233,3 +233,57 @@ test('a silent final stops Telegram typing without sending monologue', async t =
   assert.deepEqual(sentTexts(box), []);
   assert.deepEqual(box.errors, []);
 });
+
+// A reply's ```svg fence is a picture in the app; on Telegram it goes as a PNG photo in its place.
+const FIGURE = '<svg viewBox="0 0 120 60"><text x="4" y="30">*별표* [pause] 그대로</text></svg>';
+const figureReply = `두 마우스 겹쳐 봤어.\n\n\`\`\`svg title="형태 차이를 설명하기 위한 개략도"\n${FIGURE}\n\`\`\`\n\n앞이 2mm 짧아.`;
+
+function drawn(box) {
+  const svgs = [];
+  return {
+    svgs,
+    svgPng: async (svg) => {
+      svgs.push(svg);
+      const file = `${box.dir}/figure-${svgs.length}.png`;
+      writeFileSync(file, 'png');
+      return { file, cleanup: () => {} };
+    },
+  };
+}
+
+test('a mirrored reply sends its svg fence as a captioned photo between its words, the markup untouched', async t => {
+  const renderer = { svgs: [], svgPng: undefined };
+  const box = await paired(t, { svgPng: (svg) => renderer.svgPng(svg) });
+  Object.assign(renderer, drawn(box));
+  transcript(box, [channelEntry('telegram'), ...mouth('f', figureReply)]);
+  await settle(box.service);
+  assert.deepEqual(sentTexts(box), ['두 마우스 겹쳐 봤어.', '앞이 2mm 짧아.']);
+  assert.deepEqual(box.fake.uploads.map(row => [row.kind, row.caption]), [['photo', '형태 차이를 설명하기 위한 개략도']]);
+  assert.deepEqual(renderer.svgs, [FIGURE], 'sanitizing never reaches the drawing');
+  const order = [...box.fake.sent.filter(row => row.chatId === USER_CHAT && !/연결됐습니다/.test(row.text)), ...box.fake.uploads]
+    .sort((a, b) => a.message_id - b.message_id).map(row => row.text ?? row.kind);
+  assert.deepEqual(order, ['두 마우스 겹쳐 봤어.', 'photo', '앞이 2mm 짧아.']);
+});
+
+test('a reply with files keeps its svg fence as written with sanitize false, and as a photo either way', async t => {
+  for (const sanitize of [false, true]) {
+    const renderer = { svgs: [], svgPng: undefined };
+    const box = await paired(t, { svgPng: (svg) => renderer.svgPng(svg) });
+    Object.assign(renderer, drawn(box));
+    const doc = `${box.dir}/notes.md`;
+    writeFileSync(doc, '# 정리');
+    transcript(box, [channelEntry('telegram')]);
+    const result = await box.service.send({ source: 'reply', text: figureReply, files: [doc], sanitize });
+    assert.equal(result.state, 'sent');
+    assert.deepEqual(renderer.svgs, [FIGURE]);
+    assert.deepEqual(box.fake.uploads.map(row => row.kind), ['photo', 'document']);
+  }
+});
+
+test('a figure nothing can draw goes as its caption, marked as a picture the app shows', async t => {
+  const box = await paired(t, { svgPng: async () => undefined });
+  transcript(box, [channelEntry('telegram'), ...mouth('f', figureReply)]);
+  await settle(box.service);
+  assert.deepEqual(sentTexts(box), ['두 마우스 겹쳐 봤어.', '[그림] 형태 차이를 설명하기 위한 개략도 (앱에서 볼 수 있어)', '앞이 2mm 짧아.']);
+  assert.equal(box.fake.uploads.length, 0);
+});

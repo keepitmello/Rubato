@@ -51,6 +51,7 @@ import { themeEdits, themeOverlays } from './theme-edits.mjs';
 import { polishEdits, polishOverlays } from './polish-edits.mjs';
 import { chatTableEdits, chatTableOverlays } from './chat-table-edits.mjs';
 import { markdownTildeEdits, markdownTildeOverlays } from './markdown-tilde-edits.mjs';
+import { replyVisualsEdits, replyVisualsOverlays } from './reply-visuals-edits.mjs';
 import { windowMaterialEdits, windowMaterialOverlays } from './window-material-edits.mjs';
 import { readOpenEdits, readOpenOverlays } from './read-open-edits.mjs';
 import { projectRailEdits, projectRailOverlays } from './project-rail-edits.mjs';
@@ -1008,6 +1009,11 @@ for (const [relative, changes] of Object.entries(chatTableEdits)) {
 // A lone ~ in a reply stays a tilde on the Mac and the phone (markdown-tilde-edits.mjs).
 overlays.push(...markdownTildeOverlays);
 for (const [relative, changes] of Object.entries(markdownTildeEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// A reply's ```svg fence draws its picture and a toned cell its colour (reply-visuals-edits.mjs).
+overlays.push(...replyVisualsOverlays);
+for (const [relative, changes] of Object.entries(replyVisualsEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // The sidebar material: opaque, macOS vibrancy or Liquid Glass; its CSS imports after the polish (window-material-edits.mjs).

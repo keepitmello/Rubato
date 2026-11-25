@@ -253,6 +253,8 @@
     "apps/mobile/src/features/issues/IssueCommentComposer.tsx": "fb1a7c79bc7c0f69fca91404297d47e8f159ccda70efcc78504e02cd3c4a6768",
     "packages/contracts/src/orchestrationV2.ts": "5315592c553f33938eb9f26c0f4533d22de6148f76a05d6c7857eca35720f250",
     "apps/server/src/provider/antigravityAuthSupport.ts": "e8a3b1e56c882fbf5345259d79c1b01f34ff7ef4adbb57dbfa5967b6d1912777",
-    "apps/server/src/provider/antigravityAuthSupport.test.ts": "e435278cc0cdac18364ddd15b633507bd1b54eb0e9d107ca20118aaf1ac89358"
+    "apps/server/src/provider/antigravityAuthSupport.test.ts": "e435278cc0cdac18364ddd15b633507bd1b54eb0e9d107ca20118aaf1ac89358",
+    "apps/web/src/components/ChatMarkdown.tsx": "f7d91897684071b6b1788daa06f0415f81d591d38b4439a310b019672842201d",
+    "apps/mobile/src/native/EnrichedMarkdownText.tsx": "16bb79a5c2cba132c5973df00a993ad5e6ae0bcec2270987fc18cb8e5cc96de9"
   }
 }

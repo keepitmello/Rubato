@@ -42,6 +42,7 @@ import { readSettings as readCompanionSettings, readState as readCompanionState,
 import { replyBubbleGapMs, replyBubbles } from '../home.mjs';
 import { openInbox } from '../inbox.mjs';
 import { createCallWindows } from '../call-window.mjs';
+import { svgFallbackText, svgSegments, svgToPng } from './svg-figures.mjs';
 
 const PHOTO_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
 /** Videos that go out with Telegram's player; one Telegram refuses still goes, as a document. */
@@ -164,6 +165,7 @@ function plainText(message) {
  *   sessionStats?: (sessionId: string) => Promise<{ contextUsage?: { tokens: number|null, contextWindow: number, percent: number|null } }>,
  *   typingDelay?: () => number,
  *   bubbleGap?: (next: string) => number,
+ *   svgPng?: (svg: string) => Promise<{ file: string, cleanup: () => void } | undefined>,
  *   downloadRetryDelaysMs?: readonly number[],
  *   signal?: AbortSignal,
  *   pollMs?: number,
@@ -180,6 +182,7 @@ export function startCompanionMessenger({
   createBot = createBotOverMtproto, transcribe = defaultTranscriber(env), synthesize = (text) => synthesizeVoice(text, { env }),
   sessionStats, typingDelay: delayTyping = typingDelay, downloadRetryDelaysMs = DOWNLOAD_RETRY_DELAYS_MS,
   signal, pollMs = 1000, longPollSeconds = 25, now = Date.now, callWindows = createCallWindows({ now }), bubbleGap = replyBubbleGapMs,
+  svgPng = (svg) => svgToPng(svg, { env }),
 } = {}) {
   if (typeof deliver !== 'function') throw new TypeError('deliver is required');
   const companionId = env.RUBATO_COMPANION_ID || 'segno';
@@ -216,8 +219,27 @@ export function startCompanionMessenger({
    * companion wrote them, since sanitizing makes every line a paragraph; each bubble then as many
    * messages as Telegram needs. `opens` marks the first message of a bubble after the first.
    */
-  const bubbleParts = (text, clean = (part) => part) => replyBubbles(text).map(clean).filter((bubble) => bubble.trim())
-    .flatMap((bubble, index) => splitText(bubble).map((part, at) => ({ text: part, opens: index > 0 && at === 0 })));
+  const bubbleParts = (text, clean = (part) => part) => replyBubbles(text)
+    .map((bubble) => svgSegments(bubble).flatMap((segment) => segment.svg !== undefined ? [segment]
+      : [clean(segment.text)].filter((words) => words.trim()).flatMap((words) => splitText(words).map((part) => ({ text: part })))))
+    .filter((parts) => parts.length)
+    .flatMap((parts, index) => parts.map((part, at) => ({ ...part, opens: index > 0 && at === 0 })));
+  /**
+   * One part of a reply: its words, or a ```svg fence's picture as a photo captioned with the fence
+   * title (svg-figures.mjs). A picture nothing here can draw goes as its caption. Answers the message id.
+   */
+  async function sendPart(client, chatId, part, options) {
+    if (part.svg === undefined) return (await client.sendMessage({ chatId, text: part.text, ...options })).message_id;
+    const png = await svgPng(part.svg);
+    if (!png) return (await client.sendMessage({ chatId, text: svgFallbackText(part.title), ...options })).message_id;
+    try {
+      return (await client.sendPhoto({ chatId, file: png.file, ...(part.title ? { caption: part.title } : {}), ...options })).message_id;
+    } finally {
+      png.cleanup();
+    }
+  }
+  /** What the typing pause before a part is measured on. */
+  const partWords = (part) => part.text ?? part.title ?? '';
   /** Before the next bubble: "typing…", and a pause as long as typing it would take. */
   async function typeNext(client, chatId, next) {
     Promise.resolve().then(() => client.sendChatAction({ chatId, action: 'typing' })).catch(() => {});
@@ -592,9 +614,9 @@ export function startCompanionMessenger({
     const total = parts.length + files.length;
     try {
       for (const [index, part] of parts.entries()) {
-        if (part.opens) await typeNext(client, chatId, part.text);
+        if (part.opens) await typeNext(client, chatId, partWords(part));
         // Only the first bubble rings; the rest follow it quietly.
-        sent.push((await client.sendMessage({ chatId, text: part.text, ...(index > 0 ? { disableNotification: true } : notification) })).message_id);
+        sent.push(await sendPart(client, chatId, part, index > 0 ? { disableNotification: true } : notification));
       }
       for (const file of files) {
         const ext = path.extname(file).toLowerCase();
@@ -836,9 +858,9 @@ export function startCompanionMessenger({
     countParts?.(parts.length);
     if (said.source !== 'app-user') stopTyping(chatId);
     for (let index = sentParts; index < parts.length; index += 1) {
-      if (parts[index].opens) await typeNext(client, chatId, parts[index].text);
-      await client.sendMessage({ chatId, text: parts[index].text,
-        ...(!said.final || said.disableNotification || index > 0 ? { disableNotification: true } : {}) });
+      if (parts[index].opens) await typeNext(client, chatId, partWords(parts[index]));
+      await sendPart(client, chatId, parts[index],
+        !said.final || said.disableNotification || index > 0 ? { disableNotification: true } : {});
       onPart(index + 1);
     }
     // reply records the person's visible answer once. Mirroring is delivery, not a second answer;

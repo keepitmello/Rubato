@@ -111,7 +111,66 @@ export function sanitizeVoiceText(text) {
 
 /** The plain text Telegram shows for words Segno wrote anywhere (an answer, a tool message). */
 export function telegramText(text) {
-  return stripMarkdownEmphasis(normalizeReplyText(stripVoiceControlTags(String(text))));
+  return stripMarkdownEmphasis(normalizeReplyText(telegramMarkup(stripVoiceControlTags(String(text)))));
+}
+
+const TONE_DOTS = { good: '🟢', warn: '🟡', bad: '🔴' };
+const TABLE_SEPARATOR = /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$/;
+
+function tableCells(line) {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, '|'));
+}
+
+/**
+ * A Markdown table as Telegram can read it: one line per row, its first cell, then each other
+ * cell under its column's name. `| 무게 | 60g | 🟢 매우 큼 |` under `항목 | 값 | 차이` reads
+ * `• 무게 — 값 60g · 차이 🟢 매우 큼`.
+ */
+function tableLines(lines) {
+  const header = tableCells(lines[0]);
+  return lines.slice(2).map((line) => {
+    const cells = tableCells(line);
+    const rest = cells.slice(1).map((cell, index) => (header[index + 1] ? `${header[index + 1]} ${cell}` : cell)).filter((part) => part.trim());
+    return `• ${cells[0]}${rest.length ? ` — ${rest.join(' · ')}` : ''}`;
+  });
+}
+
+/**
+ * What the app draws and Telegram cannot (reply-visuals-edits.mjs), as words: a toned cell's
+ * colour as its dot, <details> open with its <summary> as a line, a table row by row. Code
+ * blocks keep their text as written.
+ */
+export function telegramMarkup(text) {
+  const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
+  const out = [];
+  let fence = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (fence) {
+      out.push(line);
+      if (marker && marker[0] === fence[0] && marker.length >= fence.length && !line.trim().slice(marker.length).trim()) fence = null;
+      continue;
+    }
+    if (marker) { fence = marker; out.push(line); continue; }
+    if (line.includes('|') && TABLE_SEPARATOR.test(lines[index + 1] ?? '')) {
+      let end = index + 2;
+      while (end < lines.length && lines[end].includes('|') && lines[end].trim()) end += 1;
+      out.push(...tableLines(lines.slice(index, end).map(inlineMarkup)));
+      index = end - 1;
+      continue;
+    }
+    out.push(inlineMarkup(line));
+  }
+  return out.join('\n');
+}
+
+function inlineMarkup(line) {
+  return line
+    .replace(/<span\b[^>]*\bdata-tone\s*=\s*["']?(good|warn|bad)["']?[^>]*>/gi, (_tag, tone) => `${TONE_DOTS[tone.toLowerCase()]} `)
+    .replace(/<summary\b[^>]*>/gi, '▸ ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?(?:span|details|summary|sub|sup|kbd|ins|del|b|i|strong|em|p|div)\b[^>]*>/gi, '');
 }
 
 /**
