@@ -1058,22 +1058,25 @@ export class RubatoPiBridge {
    * 2026-11-20 the disk fell to 117 MB, the engine's disk guard cut two leads' model requests, and three
    * hash-game leads stopped reaching their threads while the engine finished them; the phone showed
    * them working for hours. The thread first gets every message it lacks, wherever T3 thinks it had a
-   * stream, then the run closes (RubatoPiSessions settleLostRuns). A companion's conversation, or one
-   * holding its stream for agents under way, keeps a run open on purpose and is left alone. Each
-   * session state is looked at once.
+   * stream, then the run closes (RubatoPiSessions settleLostRuns). Only repair detached threads:
+   * an attached adapter owns the turn even when the engine is idle waiting on a background wake.
+   * Companion conversations are left alone. Each detached session state is checked once.
    */
   async settleLost(rows, threads) {
     if (!this.settleLostRuns) return;
     for (const [threadId, sessionId] of threads) {
       if (this.closed) return;
       const row = typeof sessionId === 'string' ? rows.get(sessionId) : undefined;
-      if (!row || row.companion === true || this.keepsStream(threadId)) continue;
+      if (!row || row.companion === true || this.rpcFor(threadId)) continue;
       if (row.status !== 'idle' && row.status !== 'stored') continue;
       const moved = sessionMoved(row);
       if (!Number.isFinite(moved) || Date.now() - moved < LOST_RUN_QUIET_MS || this.lostChecked.get(threadId) === moved) continue;
       try {
-        if (await this.settleLostRuns(threadId, moved, { write: false }) > 0) {
+        const lost = await this.settleLostRuns(threadId, moved, { write: false });
+        if (this.closed || this.rpcFor(threadId)) continue;
+        if (lost > 0) {
           await this.backfillThread(threadId, sessionId, { everyHole: true });
+          if (this.closed || this.rpcFor(threadId)) continue;
           const closed = await this.settleLostRuns(threadId, moved, { write: true });
           if (closed) t3BridgeLog('settled lost runs', `${threadId} ${closed}`);
         }

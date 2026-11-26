@@ -14,7 +14,7 @@ const said = (text, timestamp) => ({ role: 'assistant', stopReason: 'stop', cont
   provider: 'anthropic', model: 'claude' });
 
 /** A bridge over a fake engine row and a fake T3 thread that still shows one run going. */
-function setup(t, row, { lostRuns = 1, keepsStream = false } = {}) {
+function setup(t, row, { lostRuns = 1 } = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), 'rubato-lost-run-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const stateDir = path.join(dir, 'state');
@@ -41,7 +41,6 @@ function setup(t, row, { lostRuns = 1, keepsStream = false } = {}) {
     if (write) open = 0;
     return found;
   };
-  bridge.keepsStream = () => keepsStream;
   t.after(() => bridge.close());
   return { bridge, calls };
 }
@@ -73,12 +72,36 @@ test('a session still running, or quiet for less than the grace, keeps its run',
   }
 });
 
-test("a companion's conversation, or one holding its stream for agents, keeps its run open on purpose", async (t) => {
+test("a companion's conversation keeps its run open on purpose", async (t) => {
   const moved = minutesAgo(5);
-  const companion = setup(t, { status: 'idle', modifiedAt: moved, companion: true });
-  const holding = setup(t, { status: 'idle', modifiedAt: moved }, { keepsStream: true });
-  await new Promise((resolve) => setTimeout(resolve, 200));
-  assert.equal(settle(companion.calls).length + settle(holding.calls).length, 0);
+  const { bridge, calls } = setup(t, { status: 'idle', modifiedAt: moved, companion: true });
+  await bridge.backfillDetached();
+  assert.equal(settle(calls).length, 0);
+});
+
+test('an attached turn can be idle in the engine while waiting for background work', async (t) => {
+  const row = { status: 'idle', modifiedAt: minutesAgo(5) };
+  const { bridge, calls } = setup(t, row);
+  // An ordinary thread (no keepsStream) still has a live adapter that owns the turn.
+  bridge.rpcFor = () => ({ sessionId: 'S1' });
+  await bridge.backfillDetached();
+  assert.deepEqual(calls, [], 'do not complete the app run behind its live adapter');
+
+  bridge.rpcFor = () => undefined;
+  await bridge.backfillDetached();
+  assert.equal(settle(calls).length, 1, 'the same inventory state can be repaired once detached');
+});
+
+test('attaching during transcript backfill leaves settlement to the new stream', async (t) => {
+  const row = { status: 'idle', modifiedAt: minutesAgo(5) };
+  const { bridge, calls } = setup(t, row);
+  const append = bridge.appendSessionMessage;
+  bridge.appendSessionMessage = async (...args) => {
+    await append(...args);
+    bridge.rpcFor = () => ({ sessionId: 'S1' });
+  };
+  await bridge.backfillDetached();
+  assert.deepEqual(calls.map(([kind]) => kind), ['check', 'append']);
 });
 
 test('a thread with nothing going is only checked, never written', async (t) => {

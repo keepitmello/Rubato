@@ -217,6 +217,26 @@ test('a settle while a wake is awaited is held behind a wait row; the wake conti
   assert.equal(records.some((record) => record.type === 'agent_settled'), false);
 });
 
+test('a follow-up can steer the held turn without stopping its background work', async () => {
+  const waits = [{ id: 'bash_1', description: 'the build' }];
+  const { client, conn, records } = await attached({
+    get_awaited_wakes: () => ({ items: waits }),
+    prompt: { disposition: 'started' },
+  });
+  await settle(conn, client, 1, { type: 'agent_settled' });
+  const followUp = { type: 'prompt', message: 'check the logs too', streamingBehavior: 'steer' };
+  assert.deepEqual(await conn.request(followUp), { disposition: 'started' });
+  await settle(conn, client, 2, { type: 'agent_start' });
+  assert.deepEqual(client.commands.filter(({ type }) => type === 'prompt'), [followUp]);
+  assert.equal(client.commands.some(({ type }) => type === 'abort' || type === 'clear_queue'), false);
+  assert.deepEqual(records.map(({ type }) => type),
+    ['tool_execution_start', 'tool_execution_update', 'tool_execution_end', 'agent_start']);
+  // The resumed reply can wait on the same background work again.
+  await settle(conn, client, 3, { type: 'agent_settled' });
+  assert.equal(records.at(-1).type, 'tool_execution_update');
+  await conn.close();
+});
+
 test('a wait that ends without a wake lets the held settle through after the grace', async () => {
   let waits = [{ id: 'monitor_1' }];
   const { client, conn, records } = await attached({ get_awaited_wakes: () => ({ items: waits }) });
