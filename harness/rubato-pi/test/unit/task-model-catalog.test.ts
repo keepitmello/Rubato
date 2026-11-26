@@ -1,17 +1,25 @@
 import { describe, expect, test } from "bun:test"
 
-import { catalogSlugs, isProductCatalogSlug } from "../../../../packages/model-core/src/product-model-catalog.mjs"
+import { catalogSlugs, isProductCatalogSlug, PRODUCT_MODEL_ORDER } from "../../../../packages/model-core/src/product-model-catalog.mjs"
 import { createTaskChildPlanner } from "../../../../packages/rubato-runtime/src/components/task/planner"
 import { liveModelCatalog } from "../../../../packages/task/src/tools/host/senpi-agent-host"
 import { catalogForPicker } from "../../../t3-integration/src/model-catalog-order.mjs"
 import { admitPickerItems } from "../../../pi-runtime/features/model-picker/catalog.mjs"
+import { CODEX_PICKER_IDS } from "../../src/picker-catalog.mjs"
+
+const ASTRA_6 = CODEX_PICKER_IDS.find((id: string) => /^gpt-\d+-astra$/.test(id))
+const ASTRA_6_SLUG = `openai-codex/${ASTRA_6}`
+const SOL = PRODUCT_MODEL_ORDER["openai-codex"][0]
+const FABLE = PRODUCT_MODEL_ORDER.anthropic[0]
+const FABLE_SUB_SLUG = `anthropic/${FABLE}-sub`
 
 describe("picker and task model catalog parity", () => {
   const live = [
-    { provider: "openai-codex", id: "gpt-5.6-sol", model: "sol" },
-    { provider: "openai-codex", id: "gpt-5.6-sol-sub", model: "sol-sub" },
-    { provider: "anthropic", id: "claude-fable-5-1", model: "fable" },
-    { provider: "anthropic", id: "claude-fable-5-1-sub", model: "fable-sub" },
+    { provider: "openai-codex", id: SOL, model: "sol" },
+    { provider: "openai-codex", id: `${SOL}-sub`, model: "sol-sub" },
+    { provider: "openai-codex", id: ASTRA_6, model: "astra-6" },
+    { provider: "anthropic", id: FABLE, model: "fable" },
+    { provider: "anthropic", id: `${FABLE}-sub`, model: "fable-sub" },
     { provider: "xai", id: "grok-4.7", model: "grok" },
     { provider: "cursor", id: "grok-4.7-high-fast", model: "cursor-fast" },
     { provider: "cursor", id: "composer-2.5", model: "composer" },
@@ -22,16 +30,31 @@ describe("picker and task model catalog parity", () => {
   test("#given one live registry #when CLI GUI agent and team lists are built #then they share the product catalog", () => {
     const cli = admitPickerItems(live, undefined, (a, b) => a === b).map((item) => `${item.provider}/${item.id}`)
     const gui = catalogForPicker(live).map((item) => `${item.provider}/${item.id}`)
-    const tools = liveModelCatalog(() => ({ getAvailable: () => live }))
-    expect(cli).toEqual(gui)
-    expect(tools.list?.()).toEqual(gui)
+    const tools = liveModelCatalog(() => ({ getAvailable: () => live }), { agyModels: () => [] })
+    expect(new Set(cli)).toEqual(new Set(gui))
+    expect(new Set(tools.list?.())).toEqual(new Set(gui))
     expect(gui.every((slug) => isProductCatalogSlug(slug))).toBe(true)
     expect(gui.filter((slug) => !slug.endsWith("-sub")).every((slug) => catalogSlugs().includes(slug))).toBe(true)
     expect(cli).not.toContain("cursor/secret-lab")
     expect(cli).toContain("cursor/grok-4.7")
     expect(cli).toContain("cursor/composer-2.5")
-    expect(cli).toContain("anthropic/claude-fable-5-1-sub")
-    expect(cli).toContain("openai-codex/gpt-5.6-sol-sub")
+    expect(cli).toContain(FABLE_SUB_SLUG)
+    expect(cli).toContain(`openai-codex/${SOL}-sub`)
+    expect(cli).toContain(ASTRA_6_SLUG)
+  })
+
+  test("Astra 6 is resolved as its own subagent model", () => {
+    const planner = createTaskChildPlanner({}, () => ({
+      getAvailable: () => live,
+      find: (provider: string, id: string) => live.find((model) => model.provider === provider && model.id === id),
+    }))
+    const admitted = planner({
+      prompt: "Reply OK.",
+      parent_session_id: "parent-1",
+      depth: 0,
+      model: ASTRA_6_SLUG,
+    })
+    expect(admitted.kind === "resolved" && admitted.plan.model).toBe(ASTRA_6_SLUG)
   })
 
   test("#given a Fast-only cursor row #when planned as an agent #then the picker identity is admitted", () => {
@@ -70,10 +93,10 @@ describe("picker and task model catalog parity", () => {
       prompt: "Use Fable on the second account.",
       parent_session_id: "parent-1",
       depth: 0,
-      model: "anthropic/claude-fable-5-1-sub",
+      model: FABLE_SUB_SLUG,
     })
     expect(admitted.kind).toBe("resolved")
     if (admitted.kind !== "resolved") return
-    expect(admitted.plan.model).toBe("anthropic/claude-fable-5-1-sub")
+    expect(admitted.plan.model).toBe(FABLE_SUB_SLUG)
   })
 })

@@ -31,6 +31,7 @@ export const CODEX_PICKER_IDS = Object.freeze([
   "gpt-6.2-sol",
   "gpt-6-luna",
   "gpt-6.2-astra",
+  "gpt-6-astra",
   "gpt-daybreak-blue-latest",
 ]);
 

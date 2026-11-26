@@ -24,7 +24,7 @@ function model(id) {
 // 세대가 바뀔 때마다 깨진다.
 const CURRENT_XAI = XAI_PICKER_IDS[0];
 const [CURRENT_FABLE, CURRENT_OPUS, CURRENT_SONNET] = ANTHROPIC_PICKER_IDS;
-const [CODEX_SOL, CODEX_LUNA, CODEX_ASTRA, CODEX_DAYBREAK] = CODEX_PICKER_IDS;
+const [CODEX_SOL, CODEX_LUNA, CODEX_ASTRA, CODEX_ASTRA_6, CODEX_DAYBREAK] = CODEX_PICKER_IDS;
 const [CODEX_SOL_SUB, CODEX_ASTRA_SUB] = CODEX_SUB_PICKER_IDS;
 
 test("목록 순서로 남고, 없는 id 는 만들지 않는다", () => {
@@ -69,7 +69,7 @@ test("Codex 피커는 base 만 남기고 Fast 는 /fast 다", () => {
   assert.deepEqual(kept.map((entry) => entry.id), [CODEX_SOL, CODEX_ASTRA]);
 });
 
-test("Codex 는 현재 세대 Sol·Luna·Astra·Daybreak 만 남긴다", () => {
+test("Codex 는 현재 세대와 Astra 6 을 남긴다", () => {
   const kept = keepPickerIds(
     [
       model("gpt-5.4"),
@@ -79,6 +79,7 @@ test("Codex 는 현재 세대 Sol·Luna·Astra·Daybreak 만 남긴다", () => {
       model(CODEX_SOL),
       model(CODEX_LUNA),
       model(CODEX_ASTRA),
+      model(CODEX_ASTRA_6),
       model(CODEX_DAYBREAK),
     ],
     CODEX_PICKER_IDS,
@@ -87,6 +88,7 @@ test("Codex 는 현재 세대 Sol·Luna·Astra·Daybreak 만 남긴다", () => {
     CODEX_SOL,
     CODEX_LUNA,
     CODEX_ASTRA,
+    CODEX_ASTRA_6,
     CODEX_DAYBREAK,
   ]);
 });

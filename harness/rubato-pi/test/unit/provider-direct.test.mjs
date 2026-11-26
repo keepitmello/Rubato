@@ -208,7 +208,7 @@ test("Codex: native metadata 를 보존하되 Rubato context 상한은 272K 고,
   // pin 카탈로그는 6.1 Sol 을 272K 로 적지만 Codex 백엔드는 그보다 넓게 연다.
   assert.equal(models.get("gpt-6.1-sol").contextWindow, CODEX_CONTEXT_WINDOWS["gpt-6.1-sol"]);
   assert.ok(CODEX_CONTEXT_WINDOWS["gpt-6.1-sol"] > 272_000);
-  // 6.2 Sol 도 넓게 열고, 6.2 Astra 는 기본 창이다. 피커에서 내린 6.1 Sol·6 Astra 도 정의는 남는다.
+  // 6.2 Sol 도 넓게 열고, 6.2 Astra 는 기본 창이다. 피커에서 내린 6.1 Sol 도 정의는 남는다.
   assert.equal(models.get("gpt-6.2-sol").contextWindow, CODEX_CONTEXT_WINDOWS["gpt-6.2-sol"]);
   assert.equal(models.get("gpt-6.2-astra").contextWindow, 272_000);
   assert.ok(models.has("gpt-6.1-sol") && models.has("gpt-6-astra"));
