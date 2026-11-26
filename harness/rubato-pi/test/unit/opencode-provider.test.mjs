@@ -89,10 +89,8 @@ test("directProviders 에서 opencode 는 Vertex 바로 앞이고 앞 순서는 
   assert.equal(providers[2].id, "cursor");
   assert.equal(providers[3].id, "anthropic");
   assert.equal(providers[4].id, "kiro");
-  assert.equal(providers[5].id, "google-antigravity");
-  assert.equal(providers[6].id, "opencode");
-  assert.equal(providers[7].id, "google-vertex");
-  assert.equal(providers[8].id, "google");
+  assert.equal(providers[5].id, "opencode");
+  assert.equal(providers[6].id, "google-vertex");
 });
 
 test("OpenCode 는 pinned Muse Spark 1.3 Free 를 그대로 싣는다", async () => {

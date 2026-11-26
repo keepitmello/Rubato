@@ -79,12 +79,12 @@ test("picker admits only the product providers, current model excepted", () => {
   );
   assert.deepEqual(keptOutside.map((item) => `${item.provider}/${item.id}`), ["openai-codex/gpt-5.4"]);
   assert.deepEqual([...PROVIDER_ORDER], [
-    "openai-codex", "anthropic", "xai", "google-antigravity", "google-vertex", "google", "kiro", "cursor", "opencode", "b-ai", "opengateway", "nanogpt",
+    "openai-codex", "anthropic", "xai", "google-vertex", "kiro", "cursor", "opencode", "b-ai", "opengateway", "nanogpt",
   ]);
 });
 
 test("display labels and stock patch replace item.id", () => {
-  // 특수 케이스 라벨(cursor grok 의 `fast`, antigravity 의 `Flash`)은 카탈로그의 현재
+  // 특수 케이스 라벨(cursor grok 의 `fast`)은 카탈로그의 현재
   // id 로 판정된다. fixture 가 그 id 를 따라가야 단언이 값이 아니라 파이프라인을 본다.
   assert.equal(modelPickerLabel({ provider: "cursor", id: CURSOR_GROK_BASE_ID, model: {} }), "Grok 4.7 fast");
   assert.equal(modelPickerLabel({ provider: "xai", id: "grok-4.7", model: {} }), "Grok 4.7");
@@ -99,7 +99,6 @@ test("display labels and stock patch replace item.id", () => {
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-6.1-sol", model: {} }), "Sol 6.1");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-6-sol", model: {} }), "Sol 6");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-5.6-sol", model: {} }), "Sol 5.6");
-  assert.equal(modelPickerLabel({ provider: "google-antigravity", id: PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("flash")), model: {} }), "Gemini 3.8 Flash");
   assert.equal(modelPickerLabel({ provider: "google-vertex", id: PRODUCT_MODEL_ORDER["google-vertex"][0], model: {} }), "Gemini 4 Argon");
   assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-fable-5-1", model: {} }), "Fable 5.1");
   assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-opus-5-5", model: {} }), "Opus 5.5");

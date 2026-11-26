@@ -296,8 +296,9 @@ test("사용자가 적어 둔 modelFallback 은 그대로 둔다", () => {
 });
 
 // 회수 대상은 정적 지원 목록이다. bridge catalog 가 사라지면서 두 가지가 같이 바뀐다:
-// catalog 에 없어서 회수되지 않던 cursor/kiro/google-antigravity 는 이제 회수되고,
+// catalog 에 없어서 회수되지 않던 cursor/kiro 는 이제 회수되고,
 // bridge 가 서비스해서 회수됐던 `openai` 는 우리 id 가 아니므로 disabled 로 남는다.
+// google-antigravity 는 직결이 끊겨(9b0a4eda0) 지원 목록에서 빠졌으므로 foreign 으로 남는다.
 test("models.json reclaims every supported provider and leaves foreign ids disabled", () => {
   const next = ensureModelsConfig("/tmp/agent", {
     exists: () => true,
@@ -307,9 +308,10 @@ test("models.json reclaims every supported provider and leaves foreign ids disab
     }),
     writeFile: () => {},
   });
-  for (const id of ["cursor", "kiro", "google-antigravity", "opencode"]) {
+  for (const id of ["cursor", "kiro", "opencode"]) {
     assert.ok(!next.disabledProviders.includes(id), `${id} 는 직결 소유이므로 회수해야 한다`);
   }
+  assert.ok(next.disabledProviders.includes("google-antigravity"), "직결이 끊긴 google-antigravity 는 끈다");
   assert.ok(next.disabledProviders.includes("openai"), "우리가 등록하지 않는 openai 는 계속 끈다");
   assert.ok(next.disabledProviders.includes("vercel-ai-gateway"), "foreign builtin 은 계속 끈다");
 });
@@ -393,7 +395,7 @@ test("나머지가 현재여도 옛 promptCache 설정은 다음 launch 에서 �
   assert.equal(JSON.parse(written["/tmp/agent/settings.json"]).promptCache.safetyBufferSeconds, 300);
 });
 
-test("자식 입학용 Flash 는 google-antigravity 를 켜 두고 cursor-cli-oauth 를 꺼 둔다", () => {
+test("직결이 끊긴 google-antigravity 는 꺼 둔 채로 두고 cursor-cli-oauth 를 꺼 둔다", () => {
   const written = {};
   const next = ensureSessionDefaults("/tmp/agent", {
     exists: () => true,
@@ -414,7 +416,7 @@ test("자식 입학용 Flash 는 google-antigravity 를 켜 두고 cursor-cli-oa
   });
   assert.ok(next.disabledBuiltinExtensions.includes("cursor-cli-oauth"));
   const models = JSON.parse(written["/tmp/agent/models.json"]);
-  assert.ok(!models.disabledProviders.includes("google-antigravity"));
+  assert.ok(models.disabledProviders.includes("google-antigravity"));
   assert.ok(JSON.parse(written["/tmp/agent/settings.json"]).disabledBuiltinExtensions.includes("cursor-cli-oauth"));
 });
 
