@@ -14,7 +14,7 @@ export function createQuotaReader({
   ttlMs = DEFAULT_QUOTA_TTL_MS,
   staleMs = DEFAULT_QUOTA_STALE_MS,
   timeoutMs = DEFAULT_QUOTA_TIMEOUT_MS,
-  fetchUsage = (env) => usageJson({ env }),
+  fetchUsage = (env) => usageJson({ env, ...(env?.HOME ? { home: env.HOME } : {}) }),
   now = Date.now,
   timeZone,
 } = {}) {

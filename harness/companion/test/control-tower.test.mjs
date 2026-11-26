@@ -11,7 +11,7 @@ import { CAPABILITY_LEASE_MS, capabilityActive, renewCapability, clearCapability
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
 /** A control tower whose default pieces are the ones in this repository, not whatever this Mac has. */
-const startTower = (options) => startControlTower({ defaultsDir, ...options });
+const startTower = (options) => startControlTower({ defaultsDir, readQuota: async () => '', ...options });
 
 /** Rubato's defaults, copied so a test can change one the way an update would. */
 function defaultsCopy(t, edits = {}) {
@@ -344,7 +344,7 @@ async function night(t, { tokens = 600_000, entries = [], start, sleepCheckMs = 
   const clock = { at: start };
   const notices = [];
   const errors = [];
-  const tower = startControlTower({ connect: engine.connect, env, pollMs: 60_000, now: () => clock.at, sleepCheckMs,
+  const tower = startControlTower({ connect: engine.connect, env, pollMs: 60_000, now: () => clock.at, sleepCheckMs, readQuota: async () => '',
     onError: (error) => errors.push(error), notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
   t.after(() => tower.close());
   await tower.ready;
@@ -564,7 +564,7 @@ async function heartbeatDay(t, { entries = [], start = at(20, 12), env = sandbox
   const clock = { at: start };
   const notices = [];
   const errors = [];
-  const tower = startControlTower({ connect: engine.connect, env, pollMs: 60_000, now: () => clock.at, defaultsDir,
+  const tower = startControlTower({ connect: engine.connect, env, pollMs: 60_000, now: () => clock.at, defaultsDir, readQuota: async () => '',
     onError: (error) => errors.push(error), notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
   t.after(() => tower.close());
   await tower.ready;

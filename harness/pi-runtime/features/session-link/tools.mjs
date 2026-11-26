@@ -57,6 +57,9 @@ function toolCwd(ctx) {
  */
 export function resolveModel(requested, ctx) {
   const wanted = requested.trim();
+  // Scheduled/lead Antigravity routes (`rubato-agy-cli/<instanceId>/<slug>`) are mounted by the
+  // host runtime from the session header rather than listed in pi's modelRegistry.
+  if (/^rubato-agy-(cli|profile)\/[\w.:-]+\/gemini-(?:[4-9]|[1-9]\d+)(?:[.-][\w.-]+)?$/.test(wanted)) return wanted;
   const available = ctx?.modelRegistry?.getAvailable?.();
   if (!Array.isArray(available)) {
     if (/^[^/\s]+\/\S+$/.test(wanted)) return wanted;
@@ -377,8 +380,9 @@ function sessionTools(getLink, { companion }) {
         }), signal);
         const runs = result.model || result.thinking
           ? ` It runs on ${result.model ?? "the default model"}${result.thinking ? ` at ${result.thinking} effort` : ""}.` : "";
+        const quota = typeof result.quota === "string" && result.quota ? `\nQuota: ${result.quota}` : "";
         return {
-          content: [text(`Created "${result.title}" (${result.sessionId}) in ${result.cwd}; it is ${result.status}.${runs}\n${json(result)}`)],
+          content: [text(`Created "${result.title}" (${result.sessionId}) in ${result.cwd}; it is ${result.status}.${runs}${quota}\n${json(result)}`)],
           details: result,
         };
       },

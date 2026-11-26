@@ -3,9 +3,11 @@ import { open, readFile, stat, writeFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { COMPANION_ENTRY } from '../../companion/companion.mjs';
+import { readQuotaLine as defaultReadQuotaLine } from '../../companion/quota.mjs';
 import { companionEnv } from '../../companion/registry.mjs';
 import { SessionClient } from './client.mjs';
 import { createFollower } from './companion-follow.mjs';
+import { scheduledAgy } from './scheduled-agy.mjs';
 import { readSessionMetadata } from './session-metadata.mjs';
 import { AWAITED_WAKES_REQUEST, GOAL_PENDING_REQUEST, GOAL_RESUME_REQUEST, GOAL_START_REQUEST, PENDING_WORK_REQUEST, UI_METHODS } from './contracts.mjs';
 import { sideChatEntries } from '../../pi-runtime/features/session-link/side-chat.mjs';
@@ -336,7 +338,7 @@ export async function forkSessionFile({ source, sessionsDir, title, side = false
  * before the host does (extension factories receive it at runtime creation) and is
  * bound once the server listens; until then every method refuses.
  */
-export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPollMs = 2000 } = {}) {
+export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPollMs = 2000, readQuota = defaultReadQuotaLine } = {}) {
   const externalLead = new AsyncLocalStorage();
   let bound;
   const files = new Map();
@@ -891,12 +893,18 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       const origin = await sender(from);
       if (role !== undefined && !origin.companion) throw fail('not_companion', 'Only a companion conversation can select a lead role');
       if (goal === true && !origin.companion) throw fail('not_companion', 'Only a companion conversation can start a lead with a goal');
+      let agy;
+      if (model !== undefined) {
+        try { agy = scheduledAgy(model, thinking); }
+        catch (error) { throw fail('invalid', error?.message ?? String(error)); }
+      }
       // A repeated create is a second conversation, so it counts as a duplicate per folder.
       const release = admit(from, `create:${cwd}`, text, { inbound: false });
       let created;
       try {
         created = await withClient(async (client) => client.create({ cwd, title: title?.trim(), titleLocked: title !== undefined,
-          ...(role === undefined ? {} : { leadRole: { name: role, companionId: origin.companionId } }) }));
+          ...(role === undefined ? {} : { leadRole: { name: role, companionId: origin.companionId } }),
+          ...(agy ? { agy: { model, thinking: thinking ?? null } } : {}) }));
       } catch (error) {
         release();
         throw fail('invalid', `Could not create a conversation in ${cwd}: ${error?.message ?? error}`);
@@ -905,6 +913,12 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       let selected;
       const select = model === undefined && thinking === undefined ? undefined : async (worker) => {
         try {
+          if (agy) {
+            const state = await worker.request({ type: 'get_state' });
+            selected = { model: state?.model?.provider && state?.model?.id ? `${state.model.provider}/${state.model.id}` : model,
+              thinking: agy.thinking ?? state?.thinkingLevel ?? null };
+            return;
+          }
           if (model !== undefined) {
             const split = model.indexOf('/');
             await worker.request({ type: 'set_model', provider: model.slice(0, split), modelId: model.slice(split + 1) });
@@ -929,7 +943,9 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       catch (error) { throw fail(error.code ?? 'delivery_failed', `Created conversation ${created.sessionId}, but its first message was not delivered: ${error.message}`); }
       if (fromCompanion(from)) need().followerFor(from).follow(created.sessionId, from);
       const described = await describe(created.sessionId);
-      return { sessionId: created.sessionId, title: described.title, cwd: described.cwd, status: described.status, ...selected };
+      const quota = fromCompanion(from) ? await readQuota().catch(() => '') : '';
+      return { sessionId: created.sessionId, title: described.title, cwd: described.cwd, status: described.status, ...selected,
+        ...(quota ? { quota } : {}) };
     },
     /** `from` is optional and additive: the first message's sender defaults to the forked conversation. */
     async fork({ sessionId, text, from } = {}) {

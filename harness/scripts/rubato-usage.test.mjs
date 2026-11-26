@@ -9,6 +9,7 @@ import {
   readObservedUsage,
 } from "../pi-runtime/features/providers/auth-pool/usage-observed.mjs";
 import {
+  formatUsageOneLine,
   formatUsageText,
   anthropicUsageWindows,
   antigravitySummaryWindows,
@@ -367,4 +368,29 @@ test("the text view says what is left, when it resets, and when each reset pass 
   assert.match(text, /^Anthropic main: weekly 93% left$/m);
   assert.match(text, /^Anthropic sub: weekly 1% left$/m);
   assert.match(text, /Anthropic weekly, all accounts: 94% left of 200%/);
+});
+
+test("formatUsageOneLine summarizes Anthropic main/sub, Codex + passes, and Neon weekly/5h", () => {
+  const line = formatUsageOneLine({ accounts: [
+    { provider: "anthropic", providerLabel: "Anthropic", account: "setup-token", modelSuffix: "",
+      usageLimits: { windows: [{ label: "Weekly", kind: "weekly", usedPercent: 50, resetsAt: "2026-11-30T10:00:00Z" }] } },
+    { provider: "anthropic", providerLabel: "Anthropic", account: "default", modelSuffix: "-sub",
+      usageLimits: { windows: [{ label: "Weekly", kind: "weekly", usedPercent: 39, resetsAt: "2026-12-01T10:00:00Z" }] } },
+    { provider: "openai-codex", providerLabel: "Codex", account: "default", modelSuffix: "",
+      resetCredits: [{ expiresAt: "2026-12-01T22:31:00Z" }, { expiresAt: "2026-12-12T22:26:00Z" }],
+      usageLimits: { windows: [{ label: "Weekly", kind: "weekly", usedPercent: 12, resetsAt: "2026-11-30T20:10:00Z" }] } },
+    { provider: "antigravity", providerLabel: "Antigravity (agy)", account: "default", modelSuffix: "",
+      usageLimits: { windows: [
+        { label: "Gemini · Weekly", kind: "weekly", usedPercent: 49, resetsAt: "2026-12-01T09:18:00Z" },
+        { label: "Gemini · 5-hour", kind: "session", usedPercent: 23, resetsAt: "2026-11-26T13:52:00Z" },
+        { label: "Claude & GPT (shared) · Weekly", kind: "weekly", usedPercent: 4 },
+      ] } },
+    { provider: "xai", providerLabel: "xAI", account: "default", modelSuffix: "",
+      usageLimits: { windows: [{ label: "Weekly", kind: "weekly", usedPercent: 70 }] } },
+  ] }, { timeZone: "Asia/Seoul" });
+  assert.equal(
+    line,
+    "Anthropic main 50% (11-30 19:00) · sub 61% (12-01 19:00) | Codex 88% (12-01 05:10) +2 passes (12-02 07:31) | Neon wk 51% (12-01 18:18) · 5h 77%",
+  );
+  assert.equal(formatUsageOneLine({ accounts: [] }), "");
 });

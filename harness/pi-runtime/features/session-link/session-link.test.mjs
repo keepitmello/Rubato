@@ -291,6 +291,20 @@ test("session_create picks the model by full or bare id and passes the effort; a
   await assert.rejects(execute(pi, "session_create", { text: "x", model: "gpt-9" }, withModels), /not available .*Available: anthropic\/claude-opus-5-5, anthropic\/shared, cursor\/shared/);
   assert.equal(calls.length, before);
   assert.deepEqual(pi.tools.get("session_create").parameters.properties.effort.enum, [...EFFORT_LEVELS]);
+
+  // Antigravity scheduled/lead routes bypass pi's modelRegistry and pass straight to the engine.
+  result = await execute(pi, "session_create", { text: "neon go", model: "rubato-agy-cli/agy-rubato-lead/gemini-4-neon", effort: "high" }, withModels);
+  assert.deepEqual(calls.at(-1).args, { from: SELF, cwd: "/work/lead", text: "neon go", model: "rubato-agy-cli/agy-rubato-lead/gemini-4-neon", thinking: "high" });
+  assert.match(result.content[0].text, /It runs on rubato-agy-cli\/agy-rubato-lead\/gemini-4-neon at high effort\./);
+});
+
+test("session_create prints Quota line when the engine returns a quota summary", async () => {
+  const { link } = fakeLink({
+    create: (args) => ({ sessionId: "01q", title: "Q", cwd: args.cwd, status: "running", quota: "Anthropic main 50% | Codex 88%" }),
+  });
+  const pi = install(link);
+  const result = await execute(pi, "session_create", { text: "go" });
+  assert.match(result.content[0].text, /\nQuota: Anthropic main 50% \| Codex 88%\n/);
 });
 
 test("engine refusals surface as tool errors carrying their code, and a wait on this conversation itself is refused before the engine", async () => {

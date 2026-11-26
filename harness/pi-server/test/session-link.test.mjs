@@ -11,6 +11,7 @@ import { RpcWorker } from '../src/rpc-worker.mjs';
 import { startSessionServer } from '../src/host.mjs';
 import { SessionClient } from '../src/client.mjs';
 import { createSessionLink, COLD_SEND_TOKENS, LIMITS, TAIL_BYTES } from '../src/session-link.mjs';
+import { SCHEDULED_AGY_ENTRY } from '../src/scheduled-agy.mjs';
 import { LEAD_ACK } from '../../pi-runtime/features/session-link/message.mjs';
 import { LEAD_ROLE_ENTRY_TYPE } from '../../pi-runtime/features/prompt-rules/role-prompt.mjs';
 
@@ -21,7 +22,7 @@ const until = async (predicate, message = 'Condition did not settle') => {
 };
 const keys = (value) => Object.keys(value).sort();
 
-async function setup(t, { now, startDelayMs = 0 } = {}) {
+async function setup(t, { now, startDelayMs = 0, readQuota = async () => '' } = {}) {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), 'rb-link-')));
   const sessionsDir = path.join(root, 'sessions');
   const socketPath = path.join(root, 'pi.sock');
@@ -33,7 +34,7 @@ async function setup(t, { now, startDelayMs = 0 } = {}) {
       if (startDelayMs) { const start = worker.start.bind(worker); worker.start = async () => { await delay(startDelayMs); return start(); }; }
       return worker;
     }, onError: (error) => errors.push(error) });
-  const link = createSessionLink({ pollMs: 20, followPollMs: 20, now });
+  const link = createSessionLink({ pollMs: 20, followPollMs: 20, now, readQuota });
   link.bind({ host: service.host, sessionsDir, socketPath, serverId: service.serverId });
   const clients = [];
   t.after(async () => {
@@ -1383,4 +1384,29 @@ test('remove archives an idle thread, refuses to archive a running one, and dele
   assert.deepEqual((await app.threadRequests()).map(({ action }) => action), ['delete']);
   // The conversation's transcript stays, as when the app archives or deletes its thread.
   assert.ok(env.row(idle.id) && env.row(busy.id));
+});
+
+test('create writes SCHEDULED_AGY_ENTRY for Antigravity Neon models and returns quota for companions', async (t) => {
+  const env = await setup(t, { readQuota: async () => 'Anthropic main 50% | Codex 88% | Neon wk 51%' });
+  const segno = await env.make('Segno', { companion: true, titleLocked: true });
+  const created = await env.api.create({
+    from: segno.id,
+    cwd: env.root,
+    title: 'Neon worker',
+    text: 'check status',
+    model: 'rubato-agy-cli/agy-rubato-lead/gemini-4-neon',
+    thinking: 'high',
+  });
+  assert.equal(created.thinking, 'high');
+  assert.equal(created.quota, 'Anthropic main 50% | Codex 88% | Neon wk 51%');
+  const resolved = await env.host.resolveSession(created.sessionId);
+  const raw = await readFile(resolved.file, 'utf8');
+  const entries = raw.trim().split('\n').map((line) => JSON.parse(line));
+  const agyEntry = entries.find((entry) => entry.type === 'custom' && entry.customType === SCHEDULED_AGY_ENTRY);
+  assert.deepEqual(agyEntry?.data, { model: 'rubato-agy-cli/agy-rubato-lead/gemini-4-neon', thinking: 'high' });
+
+  await assert.rejects(
+    env.api.create({ from: segno.id, cwd: env.root, text: 'bad', model: 'rubato-agy-cli/bad-slug' }),
+    { code: 'invalid' },
+  );
 });

@@ -41,36 +41,38 @@ when new experience changes it.
 Subscription quota runs out before it resets, so every assignment spends a share
 that other work then lacks. Choose the provider first, then the model by role.
 
-**Provider.** Run `rubato auth usage`. It shows how much each account has left,
-when each window resets, and Codex reset passes with their expiry. Go to the
-provider with the most left for the time until its windows reset; a provider's
-room is what its accounts have left together. An account with any window at 0%
-left is out until that window resets. A reset pass refills the Codex weekly window
-to 100% once it is used up and lapses on its expiry, so it counts only if the
-window can be used up before then; a pass close to expiry is a reason to spend
-Codex first. A `sub` account serves the model ids ending in `-sub`
-(`anthropic/claude-opus-5-5-sub`). An account that cannot be read is not proof of
-room.
+**Provider.** Run `rubato auth usage` (or read the latest `QUOTA` / `Quota:` line
+already provided). It shows how much each account has left, when each window
+resets, and Codex reset passes with their expiry. Go to the provider with the
+most left for the time until its windows reset across Claude, Codex, and Google
+(Neon). An account with any window at 0% left is out until that window resets. A
+reset pass refills the Codex weekly window to 100% once it is used up and lapses
+on its expiry, so it counts only if the window can be used up before then; a
+pass close to expiry is a reason to spend Codex first. A `sub` account serves
+the model ids ending in `-sub` (`anthropic/claude-opus-5-5-sub`). The Claude
+`sub` account is shared with family, so favor the main account first and use
+`-sub` as overflow while leaving headroom rather than draining it to zero. An
+account that cannot be read is not proof of room.
 
 **Model by role.**
 
-| Role | Claude | Codex |
-|---|---|---|
-| Owner | Opus | Astra |
-| Subagent | Sonnet | Sol |
-| Reviewer | Opus, for work Codex built | Astra, for work Claude built |
+| Role | Claude | Codex | Google (Neon) |
+|---|---|---|---|
+| Owner (high-tier) | Opus 5.5 | Astra 6.2 | Neon High |
+| Subagent / light single-lead | Sonnet 5.5 | Sol 6.2 | Neon Medium |
+| Reviewer | Opus 5.5 | Astra 6.2 | Neon High |
 
-An owner holds the outcome and the judgement after it, so it runs on the top line.
-A subagent returns one bounded piece, so it runs one line down; give it Opus or
-Astra when the piece carries a judgement the owner would otherwise have to redo.
-An owner can run subagents from both providers at once. A reviewer comes from the
-other provider than the builder; when that provider is out, a fresh session from
-the builder's provider reviews.
+An owner holding complex judgement or multi-piece work runs on the top line; a
+clearly light single-lead task (read-only check, draft, simple setup) or a
+bounded subagent runs one line down. Give a subagent the top line when the piece
+carries a judgement the owner would otherwise have to redo. An owner can run
+subagents from multiple providers at once. A reviewer comes from a different
+provider than the builder (picking the one with more quota left); when other
+providers are out, a fresh session from the builder's provider reviews.
 
 - **Fable**: with explicit approval.
-- **Gemini** (`agy/*`) and **Grok**: when the user names them. Local `agy` runs one
-  single `Agent` call at a time; never use it in teams, parallel fan-outs or
-  automated loops, where team members are rejected.
+- **Neon** (`agy/*` / `rubato-agy-cli/<instanceId>/gemini-4-neon` with `effort: "high"` or `"medium"`): part of the default pool. Local `agy` runs one single `Agent` call at a time; never use it in teams, parallel fan-outs or automated loops, where team members are rejected.
+- **Grok**: when the user names it.
 
 The `Agent` catalog lists only models from providers this user has signed in to,
 and it is the source of exact ids. A family missing from it is one this user does
