@@ -49,12 +49,13 @@ test("catalog는 agy 가 이 계정에 여는 Gemini 모델을 실제 단계·�
   const { getSupportedThinkingLevels } = await import(
     pathToFileURL(join(senpiNested("@earendil-works/pi-ai"), "dist/models.js")).href
   );
-  // The Gemini rows of `agy models` on a Pro account, 2026-11-20, folded per base model.
+  // The Gemini rows of `agy models` on a Pro account, 2026-11-20, folded per base model. Rubato's
+  // thinking-levels feature offers graded levels only, so Flash's off·minimal do not show.
   const expected = {
     "gemini-4-neon": { levels: ["low", "medium", "high", "xhigh"], maxTokens: 262_144, input: ["text", "image"] },
     "gemini-4-hydrogen": { levels: ["low", "medium", "high", "xhigh"], maxTokens: 262_144, input: ["text", "image"] },
     "gemini-4-argon": { levels: ["low", "medium", "high"], maxTokens: 65_536, input: ["text", "image"] },
-    "gemini-3.8-flash": { levels: ["off", "minimal", "low", "medium", "high"], maxTokens: 65_536, input: ["text", "image"] },
+    "gemini-3.8-flash": { levels: ["low", "medium", "high"], maxTokens: 65_536, input: ["text", "image"] },
   };
   const catalog = antigravityModels();
   assert.deepEqual(catalog.map((entry) => entry.id).sort(), Object.keys(expected).sort());

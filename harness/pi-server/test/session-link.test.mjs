@@ -40,7 +40,8 @@ async function setup(t, { now, startDelayMs = 0 } = {}) {
     link.close();
     await Promise.all(clients.map((client) => client.close()));
     await service.close();
-    await rm(root, { force: true, recursive: true });
+    // A worker can land its last session write just after close; retry instead of failing on ENOTEMPTY.
+    await rm(root, { force: true, recursive: true, maxRetries: 5, retryDelay: 100 });
   });
   const files = new SessionFiles(sessionsDir);
   const row = (id) => service.host.directory.value.sessions.find((item) => item.sessionId === id);

@@ -1211,7 +1211,8 @@ function attachmentsComplete(tree, names) {
     const stem = dot > 0 ? name.slice(0, dot) : name;
     const ext = dot > 0 ? name.slice(dot) : '';
     function escape(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-    const label = escape(stem) + '(?:\\s*\\(\\d+\\))?' + escape(ext);
+    // ChatGPT renames a repeated upload: "packet (1).md", "evidence(20261126-105346).zip".
+    const label = escape(stem) + '(?:\\s*\\([\\d-]+\\))?' + escape(ext);
     const chip = new RegExp('^\\s*- (?:group|text|button)(?::)? "(?:파일 삭제:?\\s*|Remove file:?\\s*)?' + label + '"', 'i');
     return text.some((line) => chip.test(line));
   });

@@ -112,7 +112,7 @@ async function createLoopbackServer(t) {
 }
 
 test("media-tools source closure is runtime-owned and carries webfetch, look_at, and the image tools", async () => {
-	assert.equal(files.length, 35);
+	assert.equal(files.length, 37);
 	assert.equal(files.every((entry) => entry.target === "runtime"), true);
 	for (const relativePath of [
 		"src/imagegen/codex.js",
@@ -122,6 +122,8 @@ test("media-tools source closure is runtime-owned and carries webfetch, look_at,
 		"src/anthropic-bash/index.js",
 		"src/host/image-limit.mjs",
 		"src/read-media/index.mjs",
+		"src/research/index.mjs",
+		"src/research/jobs.mjs",
 	]) {
 		assert.equal(
 			files.some((entry) => entry.path.endsWith(relativePath)),
