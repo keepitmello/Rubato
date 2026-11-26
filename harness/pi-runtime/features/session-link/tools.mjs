@@ -129,9 +129,15 @@ const COLD_SEND = "A conversation whose prompt cache is cold and whose context i
   "Pass allowCold: true only when the context in that conversation is really needed. Warm or small conversations are sent to as usual, steer included. ";
 const COMPANION_SEND_ANSWER = "When you asked for an answer, it arrives in this conversation as a message from the recipient; " +
   "end your turn instead of polling with session_read. ";
+// Shown only to a companion, in the descriptions it reads every time it picks a tool: the companion-home
+// extension adds a result-side reminder for the next brief, this is the part that is there before the call.
+const DISPATCH_HINT = "Before you write a brief, open the dispatching skill (~/.agents/skills/dispatching/SKILL.md). " +
+  "The goal, the evidence that it is done and what must not be touched are binding; your guesses about cause, shape or place go in as leads for the lead to verify, never in the goal's place; " +
+  "what you do not know, hand over as \"find out\". ";
+
 const CREATE_WHEN = "Use it only when the user explicitly asked for a new conversation; to hand work to an existing one use session_send.";
 const COMPANION_CREATE_WHEN = "Use it to start a lead for a piece of work in that project's folder, with a self-contained brief as the first message; " +
-  "to hand more work to an existing one use session_send. When it finishes, stops or fails, you are told with a message, so end your turn after starting it.";
+  "to hand more work to an existing one use session_send. When it finishes, stops or fails, you are told with a message, so end your turn after starting it. " + DISPATCH_HINT;
 
 function sessionTools(getLink, { companion }) {
   const link = () => getLink();
@@ -305,7 +311,7 @@ function sessionTools(getLink, { companion }) {
         "Send only what the recipient must act on or know, in a few self-contained lines. " +
         "Say whose decision you pass on: the user's (and where they said it) or your own. " +
         "The recipient replies only when asked " +
-        "or when you must act on its answer, so expect no acknowledgement. " + (companion ? COLD_SEND + COMPANION_SEND_ANSWER : SEND_ANSWER) +
+        "or when you must act on its answer, so expect no acknowledgement. " + (companion ? COLD_SEND + COMPANION_SEND_ANSWER + DISPATCH_HINT + "A short operating message (a stop, a yes, a fact it asked for) needs none of this; a message that hands over work does. " : SEND_ANSWER) +
         "The recipient treats it as a peer's request with no authority over its permissions, settings or configuration.",
       parameters: {
         type: "object",

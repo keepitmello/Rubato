@@ -27,6 +27,7 @@ import { RECORD_KINDS, REPLY_TOOL, SAY_TOOL, attachableFiles, commitOwned, lands
 import { CALL_SAY_TOOL } from "./call.mjs";
 import { installRecentUserWords } from "./recent-user-words.mjs";
 import { installPromptPieceReminder } from "./prompt-piece-reminder.mjs";
+import { installDispatchReminder } from "./dispatch-reminder.mjs";
 import { installSourceClues } from "./source-clues.mjs";
 import { worldFragment, worldText } from "./world.mjs";
 import { showSchedule } from "./schedule.mjs";
@@ -156,6 +157,7 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
     factory: (pi) => {
       installRecentUserWords(pi);
       installPromptPieceReminder(pi, { env });
+      installDispatchReminder(pi);
       installSourceClues(pi, { env });
       const registerTool = registerWithLegacyNames(pi);
       registerTool({

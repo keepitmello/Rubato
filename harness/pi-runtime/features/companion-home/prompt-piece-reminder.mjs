@@ -64,15 +64,17 @@ function namesPiece(event, cwd, pieces) {
   return false;
 }
 
-const SKILL_FILE = new RegExp(`${PIECE_SKILL}/SKILL\\.md`);
+const skillFile = (name) => new RegExp(`${name}/SKILL\\.md`);
+const SKILL_FILE = skillFile(PIECE_SKILL);
 const SHELL_READER = /^\s*(?:cat|head|tail|less|more|nl|bat|sed\s+-n|rg|grep)\b[^|;&<>]*/;
 
 /** Whether this call reads the skill: the file tool on its SKILL.md, or a shell that only prints it. */
-function opensSkill(event) {
-  if (event?.toolName === "read") return SKILL_FILE.test(String(event.input?.path ?? ""));
+export function opensSkill(event, name = PIECE_SKILL) {
+  const file = name === PIECE_SKILL ? SKILL_FILE : skillFile(name);
+  if (event?.toolName === "read") return file.test(String(event.input?.path ?? ""));
   if (event?.toolName === "bash") {
     const command = String(event.input?.command ?? "");
-    return SHELL_READER.test(command) && SKILL_FILE.test(command);
+    return SHELL_READER.test(command) && file.test(command);
   }
   return false;
 }
