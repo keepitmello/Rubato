@@ -53,7 +53,10 @@ test('Telegram reaction and edit remain transport-specific actions, including ap
   const link = fakeLink();
   const tools = toolsOf(link);
   assert.deepEqual([...tools.keys()], [...TELEGRAM_TOOL_NAMES]);
-  for (const tool of tools.values()) assert.equal(tool.exposure, 'direct');
+  for (const tool of tools.values()) {
+    assert.equal(tool.exposure, undefined, `${tool.name} defers to tool_search instead of crowding every prefix`);
+    assert.ok(Array.isArray(tool.searchKeywords) && tool.searchKeywords.length > 0, `${tool.name} carries searchKeywords`);
+  }
 
   const reacted = await tools.get(TELEGRAM_REACT_TOOL).execute('c2', { emoji: '👍' });
   assert.equal(link.queued[0].op, 'react');
@@ -73,7 +76,8 @@ test('the settings tool asks the engine with this conversation\'s id, and is the
   const asked = [];
   const link = { ...fakeLink(), companionSettings: async (request) => { asked.push(request); return { applied: ['companion'] }; } };
   const tool = toolsOf(link).get(COMPANION_SETTINGS_TOOL);
-  assert.equal(tool.exposure, 'direct');
+  assert.equal(tool.exposure, undefined, 'settings defers to tool_search instead of crowding every prefix');
+  assert.ok(Array.isArray(tool.searchKeywords) && tool.searchKeywords.length > 0);
   const answer = await tool.execute('c1', { action: 'change', change: { companion: { greetings: { enabled: false } } } }, undefined, undefined,
     { sessionManager: { getSessionId: () => 'S1' } });
   assert.deepEqual(asked, [{ sessionId: 'S1', action: 'change', piece: undefined, change: { companion: { greetings: { enabled: false } } },

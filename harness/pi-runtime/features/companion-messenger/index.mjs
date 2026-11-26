@@ -60,7 +60,6 @@ function registerTelegramTools(pi, call) {
   pi.registerTool({
     name: TELEGRAM_REACT_TOOL,
     label: "Telegram reaction",
-    exposure: "direct",
     searchKeywords: ["telegram", "react", "reaction", "emoji", "반응", "이모지"],
     description:
       "Put one emoji reaction on a Telegram message: by default the person's latest message to you. " +
@@ -83,7 +82,6 @@ function registerTelegramTools(pi, call) {
   pi.registerTool({
     name: TELEGRAM_EDIT_TOOL,
     label: "Telegram edit",
-    exposure: "direct",
     searchKeywords: ["telegram", "edit", "fix", "correct", "message", "수정", "고치기"],
     description:
       "Change a Telegram message you sent, by its message id. This edits that transport copy, not the app history. " +
@@ -109,7 +107,6 @@ function registerSettingsTool(pi, sessionLink, telegram) {
   pi.registerTool({
     name: COMPANION_SETTINGS_TOOL,
     label: "Companion settings",
-    exposure: "direct",
     searchKeywords: ["settings", "setting", "heartbeat", "greeting", "schedule", "prompt", "proposal", "summary", "onboarding", "picture",
       ...(telegram ? ["voice", "telegram", "pair"] : []),
       "설정", "하트비트", "인사", "일정", "고치기", "프사", "첫 만남", ...(telegram ? ["목소리"] : [])],

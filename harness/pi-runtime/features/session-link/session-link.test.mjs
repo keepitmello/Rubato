@@ -6,7 +6,7 @@ import { InteractiveMode, getMarkdownTheme, initTheme } from "@earendil-works/pi
 
 import { loadPiFeatures, PI_FEATURE_NAMES } from "../../feature-catalog.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
-import { COMPANION_ONLY_TOOLS, COMPANION_WITHHELD_TOOLS, DELIVERY_MODES, DELIVER_REQUEST, EFFORT_LEVELS, SESSION_MESSAGE_TYPE, SESSION_TOOL_NAMES, buildEnvelope, createSessionLinkFactories, createSessionTools, parseDelivery, sessionMessageHeader } from "./index.mjs";
+import { COMPANION_DIRECT_SESSION_TOOLS, COMPANION_ONLY_TOOLS, COMPANION_WITHHELD_TOOLS, DELIVERY_MODES, DELIVER_REQUEST, EFFORT_LEVELS, SESSION_MESSAGE_TYPE, SESSION_TOOL_NAMES, buildEnvelope, createSessionLinkFactories, createSessionTools, parseDelivery, sessionMessageHeader } from "./index.mjs";
 import { LEAD_ACK } from "./message.mjs";
 
 initTheme("dark");
@@ -569,7 +569,10 @@ test("the companion gets every conversation tool except waiting, plus its hands 
   assert.ok(lead.includes("session_wait"));
   for (const tool of companion) assert.doesNotMatch(tool.description, /session_wait/, tool.name);
   assert.match(companion.find((tool) => tool.name === "session_create").description, /start a lead/);
-  assert.ok(companion.every((tool) => tool.exposure === "direct"), "the companion's tools are always in its requests");
+  for (const tool of companion) {
+    assert.equal(tool.exposure, COMPANION_DIRECT_SESSION_TOOLS.includes(tool.name) ? "direct" : undefined,
+      `${tool.name} exposure matches the companion direct-vs-search split`);
+  }
 });
 
 test("only the companion can select a session_create role", async () => {

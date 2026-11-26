@@ -28,6 +28,8 @@ const triggerOf = (payload) => payload.context_management?.edits?.find((edit) =>
 
 test("compact_context makes the next request compact on the server, once", async () => {
   const segno = load();
+  assert.equal(segno.tool.exposure, undefined, "compact_context defers to tool_search instead of crowding every prefix");
+  assert.ok(Array.isArray(segno.tool.searchKeywords) && segno.tool.searchKeywords.length > 0);
   const safetyLine = anthropicServerCompactionTrigger(CLAUDE.contextWindow, CLAUDE);
   assert.deepEqual(triggerOf(segno.send(request())), safetyLine, "before the call: the safety line");
   const answer = await segno.call(CLAUDE);

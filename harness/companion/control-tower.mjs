@@ -373,10 +373,18 @@ function auxiliaryPrompt(env, key) {
   const file = JSON.parse(env.RUBATO_COMPANION_PROMPT_FILES || '{}')[key];
   return file === undefined ? undefined : readFileSync(file, 'utf8').trim();
 }
-export const SLEEP_TEXT = '잘 시간이야. 내 문맥이 50만 토큰을 넘었고 맡긴 리드는 다 끝났어. 프롬프트의 "잠 전 갈무리" 그대로 ' +
+export const SLEEP_TEXT = '잘 시간이야. 내 문맥이 50만 토큰을 넘었고 맡긴 리드는 다 끝났어. ' +
   '다음 나한테 건넬 다리를 놓고 자: daily, 현황판, 일기와 잠드는 기분, 작업 노트, 커밋, 자기 직전 한마디. ' +
   '하던 일이나 기다리는 결과가 남았으면 새 창 말고 `compact_context`로 압축하고, 그게 뭔지 `keep`에 적어. ' +
   '일단락됐으면 압축이나 새 창. 이 턴은 나만 봐. 앱에 안 가.';
+
+/** The sleep turn text: mapped promptFiles.sleep first, path-free SLEEP_TEXT for private homes, else sleep.pi.md. */
+export function sleepText(defaultsDir, env = process.env) {
+  const personal = auxiliaryPrompt(env, 'sleep');
+  if (personal !== undefined) return personal;
+  if (!usesProductTexts(env)) return SLEEP_TEXT;
+  return promptFile(defaultsDir, 'sleep.pi.md') || SLEEP_TEXT;
+}
 /**
  * The review wake for a default that moved: where the new default is and where the copy came from, so
  * Segno reads both with its ordinary file tools. What changed is for Segno to find and report.
@@ -603,7 +611,7 @@ export function startControlTower({ connect, notify, env = process.env, onError 
     if (await wakeDue(active, sessionId, at, settings)) return;
     if (await inboxDue(sessionId, at)) return;
     if (await sleepDue(active, at, rows)) {
-      await notify(sessionId, SLEEP_TEXT, 'sleep');
+      await notify(sessionId, sleepText(defaultsDir, env), 'sleep');
       writeState({ sleptIn: readState(env).woke?.boundary ?? null }, env);
       return;
     }

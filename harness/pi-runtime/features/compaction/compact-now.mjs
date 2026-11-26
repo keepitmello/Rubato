@@ -30,7 +30,6 @@ export function createCompactNowExtension({ armed = anthropicServerCompactionArm
     pi.registerTool({
       name: COMPACT_CONTEXT_TOOL,
       label: "Compact",
-      exposure: "direct",
       searchKeywords: ["compact", "compaction", "sleep", "context", "summary", "압축", "잠"],
       description:
         "Compact this conversation now and carry on in the same window: the next request asks the " +

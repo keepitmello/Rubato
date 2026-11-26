@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { skillsSection, SKILL_DIRS } from "./skills-section.mjs";
 import { resolveRole } from "./role-contract.mjs";
 import { codaLast, composeCompanionPrompt, COMPANION_ROLE } from "../../companion/companion.mjs";
+import { usesProductTexts } from "../../companion/registry.mjs";
 
 // The companion's closing piece goes to the very end of the system prompt (companion.mjs codaLast).
 export { codaLast };
@@ -38,6 +39,40 @@ export const COMPANION_SKILL_DIRS = Object.freeze([
   // its own version, in its skillDirs or beside these, keeps reading that one.
   { dir: join(dirname(fileURLToPath(import.meta.url)), "../../companion/skill-defaults"), source: "companion-default" },
 ]);
+/**
+ * Operational skills for companions that live on Rubato's own texts (Segno and app-created
+ * companions): rhythm/heartbeat, home records, and sleep wrap-up. Hand-registered homes keep
+ * their own skills in `skillDirs` and never borrow these path-bound texts.
+ */
+export const COMPANION_PRODUCT_SKILL_DIRS = Object.freeze([
+  { dir: join(dirname(fileURLToPath(import.meta.url)), "../../companion/product-skills"), source: "companion-product" },
+]);
+/**
+ * Shared skills withheld from every companion's skill listing: coding/repo-only guides, worker
+ * receive contracts, low-level tool fallbacks, and skills that conflict with companion home
+ * memory or persona principles. A companion's own `skillDirs` is never filtered by this list.
+ */
+export const COMPANION_EXCLUDED_SHARED_SKILLS = Object.freeze(new Set([
+  "agent-taskforce",
+  "browser-cli",
+  "chatgpt-work-outpost",
+  "claude-prompting-lab",
+  "dispatched",
+  "find-skills",
+  "frontend-ux-router",
+  "insane-search",
+  "keep-simple",
+  "laws",
+  "macos-computer-use",
+  "memory-discipline",
+  "outpost",
+  "outpost-playwright",
+  "return",
+  "supabase-postgres-best-practices",
+  "vercel-react-best-practices",
+  "wrapping-sessions",
+]));
+const COMPANION_OWN_SKILL_SOURCES = new Set(["personal-companion", "companion", "companion-default", "companion-product"]);
 const NON_INTERACTIVE_MODES = new Set(["json", "print"]);
 const DEFAULT_AGENT_DIR_SEGMENTS = [".rubato-pi", "agent"];
 
@@ -373,9 +408,16 @@ export function replaceSystemPrompt(existing, role, hooks = {}) {
   // incoming prompt already carried a listing, so the two never stack.
   if (!extras.some((part) => part.startsWith(SKILLS_SECTION))) {
     const listSkills = hooks.skillsSection ?? skillsSection;
-    const personal = companion ? JSON.parse((hooks.env ?? process.env).RUBATO_COMPANION_SKILL_DIRS || '[]')
-      .map(dir => ({ dir, source: 'personal-companion' })) : [];
-    parts.push(companion ? listSkills([...personal, ...(hooks.skillDirs ?? SKILL_DIRS), ...COMPANION_SKILL_DIRS]) : listSkills(hooks.skillDirs));
+    const env = hooks.env ?? process.env;
+    if (companion) {
+      const personal = JSON.parse(env.RUBATO_COMPANION_SKILL_DIRS || '[]')
+        .map(dir => ({ dir, source: 'personal-companion' }));
+      const product = usesProductTexts(env) ? COMPANION_PRODUCT_SKILL_DIRS : [];
+      const filter = (skill, source) => COMPANION_OWN_SKILL_SOURCES.has(source) || !COMPANION_EXCLUDED_SHARED_SKILLS.has(skill.name);
+      parts.push(listSkills([...personal, ...(hooks.skillDirs ?? SKILL_DIRS), ...COMPANION_SKILL_DIRS, ...product], { filter }));
+    } else {
+      parts.push(listSkills(hooks.skillDirs));
+    }
   }
   // Print/json sessions start from a brief. Inline the dispatched and return
   // contracts so the worker has them even when the brief forgot the skills.

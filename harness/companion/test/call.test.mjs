@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { CALL_EFFORTS, CALL_SAY_TOOL, CUT_MARK, DEFAULT_SPOKEN_PER_SECOND, heardPrefix, spokenPerSecond, CALL_WAIT_TOOL, CALL_PASS_TOOL, DEFAULT_CALL_EFFORT, createCompanionCall,
+import { CALL_EFFORTS, CALL_SAY_TOOL, CALL_USER_TOOL, CUT_MARK, DEFAULT_SPOKEN_PER_SECOND, heardPrefix, spokenPerSecond, CALL_WAIT_TOOL, CALL_PASS_TOOL, DEFAULT_CALL_EFFORT, createCompanionCall,
   createCompanionCallFactories, stableSentenceCut } from '../../pi-runtime/features/companion-home/call.mjs';
 import { createReplyWait } from '../../pi-runtime/features/companion-home/index.mjs';
 import { SESSION_MESSAGE_TYPE } from '../../pi-runtime/features/session-link/message.mjs';
@@ -412,4 +412,14 @@ test('a line heard while the companion works steers into that work and never sto
   assert.equal(watch.items.some(item => item.t === 'say'), false, 'an answer to a heard line goes out with that line');
   await endCall(box, 'c1', { body: { cancel: async () => {} } });
   assert.equal(box.aborts(), 0, 'hanging up does not stop the work either');
+});
+
+test('live call tools stay direct for low latency while call_user defers to tool_search', async t => {
+  const box = await fixture(t);
+  for (const name of [CALL_SAY_TOOL, CALL_WAIT_TOOL, CALL_PASS_TOOL]) {
+    assert.equal(box.tools.get(name).exposure, 'direct', `${name} stays direct during live calls`);
+  }
+  const ring = box.tools.get(CALL_USER_TOOL);
+  assert.equal(ring.exposure, undefined, 'call_user defers to tool_search');
+  assert.ok(Array.isArray(ring.searchKeywords) && ring.searchKeywords.length > 0);
 });

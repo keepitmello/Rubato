@@ -6,7 +6,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { COMPANION_TITLE, PIECES, defaultPiecePath, basePiecePath, companionPaths, personalPiecePath, readPersonaReviewRequest,
   readState, requestPersonaReview, seedPromptPieces, writeSettings, writeState } from '../companion.mjs';
-import { SLEEP_CONTEXT_TOKENS, SLEEP_TEXT, heartbeatText, locationLine, readUserLocation, localIso, timeLabel, lastUserMessageAt, localDate, nextBoundary, startControlTower } from '../control-tower.mjs';
+import { SLEEP_CONTEXT_TOKENS, SLEEP_TEXT, heartbeatText, locationLine, readUserLocation, localIso, timeLabel, lastUserMessageAt, localDate, nextBoundary, sleepText, startControlTower } from '../control-tower.mjs';
 import { CAPABILITY_LEASE_MS, capabilityActive, renewCapability, clearCapability, noteCompanionActivity, readWakeWish, setWakeWish } from '../home.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
@@ -366,8 +366,20 @@ test('sleep: a long context puts Segno to sleep at any hour, even right after th
   const n = await night(t, { start: at(21, 14, 59), entries: [userMessage(at(21, 14, 58)), assistantMessage(at(21, 14, 59))] });
   noteCompanionActivity({ now: at(21, 14, 59), env: n.env });
   await n.poke(at(21, 15));
-  assert.deepEqual(n.notices, [{ text: SLEEP_TEXT, what: 'sleep' }]);
+  assert.deepEqual(n.notices, [{ text: sleepText(defaultsDir, n.env), what: 'sleep' }]);
+  assert.match(n.notices[0].text, /# 잠 전 갈무리/);
   assert.equal(readState(n.env).sleptIn, null, 'slept in the window that has had no boundary yet');
+});
+
+test('sleepText: product companions read sleep.pi.md; private registered homes use promptFiles.sleep or path-free SLEEP_TEXT', (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-sleep-text-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const custom = path.join(dir, 'sleep.md');
+  writeFileSync(custom, 'CUSTOM_ROO_SLEEP');
+  assert.match(sleepText(defaultsDir, {}), /# 잠 전 갈무리/);
+  assert.match(sleepText(defaultsDir, { RUBATO_COMPANION_ID: 'nova', RUBATO_COMPANION_MADE_IN_APP: '1' }), /# 잠 전 갈무리/);
+  assert.equal(sleepText(defaultsDir, { RUBATO_COMPANION_ID: 'roo' }), SLEEP_TEXT);
+  assert.equal(sleepText(defaultsDir, { RUBATO_COMPANION_ID: 'roo', RUBATO_COMPANION_PROMPT_FILES: JSON.stringify({ sleep: custom }) }), 'CUSTOM_ROO_SLEEP');
 });
 
 test('an active call suppresses the control tower rhythm, but a crashed call expires and cannot hold it awake', async t => {

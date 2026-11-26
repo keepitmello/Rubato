@@ -106,7 +106,7 @@ Permanent notes remain ordinary files; native context notes are separate session
 working memory. `layout.searchCases` points the weekly search check at an existing
 case file instead of the default `memory/search-golden.json`.
 
-Optional `promptFiles` keys `wake`, `recall`, `greet-morning` and `greet-night`
+Optional `promptFiles` keys `wake`, `recall`, `sleep`, `greet-morning` and `greet-night`
 map an existing home's own operational texts. A missing explicitly mapped file
 fails instead of silently selecting another profile's text. Without a greeting
 mapping, an additional profile gets a short path-free reminder, not the built-in

@@ -8,7 +8,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { resolveRole } from '../../rubato-pi/src/role-contract.mjs';
-import { COMPANION_SKILL_DIRS, loadRolePrompt, replaceSystemPrompt } from '../../rubato-pi/src/system-prompt.mjs';
+import { COMPANION_EXCLUDED_SHARED_SKILLS, COMPANION_PRODUCT_SKILL_DIRS, COMPANION_SKILL_DIRS, loadRolePrompt, replaceSystemPrompt } from '../../rubato-pi/src/system-prompt.mjs';
 import { createUiScope } from '../../pi-runtime/features/session-ui/context.mjs';
 import { getShellEnv } from '../../pi-runtime/features/terminal/src/host/shell.ts';
 import { LINKED_WRITE_REFUSAL, OUTSIDE_WRITE_REFUSAL, writeRefusal } from '../../pi-runtime/features/companion-home/index.mjs';
@@ -81,6 +81,47 @@ test("Segno's own skills are listed for Segno only, and the shared skills folder
   assert.ok(!existsSync(path.join(harness, 'skills', 'prompting-principles')));
   assert.ok(!existsSync(path.join(harness, 'skills', 'companion-settings')));
   assert.match(readFileSync(path.join(harness, 'scripts', 'install-skills.sh'), 'utf8'), /for name in [^\n]*companion-settings/);
+});
+
+test('every companion filters out coding/worker/conflicting shared skills while keeping personal skills, and only product-text companions load product workflow skills', (t) => {
+  const { dir } = sandbox(t);
+  const shared = path.join(dir, 'shared');
+  const own = path.join(dir, 'own-skills');
+  for (const name of ['dispatching', 'model-guide', 'vercel-react-best-practices', 'dispatched', 'memory-discipline', 'claude-prompting-lab']) {
+    mkdirSync(path.join(shared, name), { recursive: true });
+    writeFileSync(path.join(shared, name, 'SKILL.md'), `---\nname: ${name}\ndescription: "Shared ${name}."\n---\n`);
+  }
+  mkdirSync(path.join(own, 'roo-heartbeat'), { recursive: true });
+  writeFileSync(path.join(own, 'roo-heartbeat', 'SKILL.md'), '---\nname: roo-heartbeat\ndescription: "Private heartbeat."\n---\n');
+  const baseHooks = { loadRolePrompt: () => 'ROLE', skillDirs: [{ dir: shared, source: 'agents' }] };
+
+  const lead = replaceSystemPrompt('', 'lead', baseHooks);
+  const segno = replaceSystemPrompt('', 'companion', { ...baseHooks, env: {} });
+  const appMade = replaceSystemPrompt('', 'companion', { ...baseHooks, env: { RUBATO_COMPANION_ID: 'nova', RUBATO_COMPANION_MADE_IN_APP: '1' } });
+  const roo = replaceSystemPrompt('', 'companion', {
+    ...baseHooks,
+    env: { RUBATO_COMPANION_ID: 'roo', RUBATO_COMPANION_SKILL_DIRS: JSON.stringify([own]) },
+  });
+
+  for (const excluded of ['vercel-react-best-practices', 'dispatched', 'memory-discipline', 'claude-prompting-lab']) {
+    assert.ok(COMPANION_EXCLUDED_SHARED_SKILLS.has(excluded));
+    assert.match(lead, new RegExp(`"${excluded}"`), `lead keeps ${excluded}`);
+    assert.doesNotMatch(segno, new RegExp(`"${excluded}"`), `Segno excludes ${excluded}`);
+    assert.doesNotMatch(appMade, new RegExp(`"${excluded}"`), `app-made companion excludes ${excluded}`);
+    assert.doesNotMatch(roo, new RegExp(`"${excluded}"`), `registered companion excludes ${excluded}`);
+  }
+  for (const kept of ['dispatching', 'model-guide']) {
+    assert.match(segno, new RegExp(`"${kept}"`));
+    assert.match(roo, new RegExp(`"${kept}"`));
+  }
+  assert.match(roo, /"roo-heartbeat"/, 'personal skillDirs stay intact');
+  for (const product of ['companion-rhythm', 'companion-records', 'companion-sleep']) {
+    assert.ok(existsSync(path.join(COMPANION_PRODUCT_SKILL_DIRS[0].dir, product, 'SKILL.md')));
+    assert.match(segno, new RegExp(`"${product}"`), `Segno gets ${product}`);
+    assert.match(appMade, new RegExp(`"${product}"`), `app-made companion gets ${product}`);
+    assert.doesNotMatch(roo, new RegExp(`"${product}"`), `registered home never borrows ${product}`);
+    assert.doesNotMatch(lead, new RegExp(`"${product}"`), `lead never sees ${product}`);
+  }
 });
 
 test("Segno writes only inside its home: linked repository documents are read-only and other folders are a lead's", (t) => {

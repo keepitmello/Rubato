@@ -18,6 +18,8 @@ import { inboxWakePath, readInboxWakes } from '../inbox.mjs';
 import { WAKES } from '../../pi-runtime/features/session-link/message.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
+const productSkillsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'product-skills');
+const productSkill = (name) => readFileSync(path.join(productSkillsDir, name, 'SKILL.md'), 'utf8');
 const at = (day, hour, minute = 0) => new Date(2026, 9, day, hour, minute).getTime();
 const HOUR = 60 * 60_000;
 
@@ -172,9 +174,9 @@ test('inbox: switched off the lines wait and come when it is on again; busy Segn
 
 test('inbox: the wake kind is one the engine accepts, and Segno\'s rules say what an INBOX line is', () => {
   assert.ok(WAKES.includes('inbox'));
-  const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
-  assert.match(companion, /사용자 일터 방에서 누가 사용자를 부르면 루바토가 `INBOX` 줄로 바로 나를 깨워\. 30초 안에 연달아 온 건 한 번에/);
-  assert.match(companion, /그 밖에 일터 방에서 들어온 건 조용히 인박스에만 쌓이니 하트비트 때 둘러봐\./);
+  const records = productSkill('companion-records');
+  assert.match(records, /사용자 일터 방에서 누가 사용자를 부르면 루바토가 `INBOX` 줄로 바로 나를 깨워\. 30초 안에 연달아 온 건 한 번에/);
+  assert.match(records, /그 밖에 일터 방에서 들어온 건 조용히 인박스에만 쌓이니 하트비트 때 둘러봐\./);
 });
 
 // ── greetings (cron-prompts/night.md, morning.md; cron-launchd-dispatch.sh; heartbeat-tick.sh missed_greet_slot) ──
@@ -747,7 +749,7 @@ test('search: msearch over Segno\'s own memory/, its own channel and index, Ruba
 // ── prompt voice (Roo AGENTS.md: every piece in Roo's own Korean first person) ──
 
 test('prompt: the rule pieces and the clock texts are Segno\'s Korean first person', () => {
-  for (const name of ['companion', 'tools', 'memory', 'coda', 'greet-night', 'greet-morning', 'wake', 'recall']) {
+  for (const name of ['companion', 'tools', 'memory', 'coda', 'greet-night', 'greet-morning', 'wake', 'recall', 'sleep']) {
     const text = readFileSync(path.join(defaultsDir, `${name}.pi.md`), 'utf8');
     const prose = text.split('\n').map((line) => line.trim()).filter((line) => line && !line.startsWith('|') && !line.startsWith('```') && !/^(for |done)/.test(line));
     const hangul = prose.filter((line) => /[가-힣]/.test(line)).length;
@@ -833,22 +835,25 @@ test('schedule: monthly by weekday (first Monday, last Friday), by month day (th
 });
 
 test('prompt: the user\'s own words put Segno to sleep — 컴팩션, 새 세션 / 다음 세션, 자 / 자고 와 — each with its path (user item 8d634009)', () => {
-  const text = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
-  const section = text.slice(text.indexOf('### 사용자가 재울 때'), text.indexOf('## 깨어나기'));
-  assert.ok(section.length > 0, 'the section exists before 깨어나기');
-  assert.match(section, /앱에서 사용자 본인이 한 말일 때만/);
-  assert.match(section, /\*\*"컴팩션"\*\*: 위 갈무리를 하고, `compact_context`를 `keep`/);
-  assert.match(section, /\*\*"새 세션"\*\*, \*\*"다음 세션"\*\*: 위 갈무리를 하고, `new_context`/);
-  assert.match(section, /같은 나고 창만 새거야/);
-  assert.match(section, /\*\*"자"\*\*, \*\*"자고 와"\*\*: 위 갈무리를 하고, 압축할지 새 창을 열지는/);
-  assert.match(section, /짧은 한 줄만/);
+  const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
+  assert.match(companion, /"컴팩션".*"새 세션".*"다음 세션".*"자".*"자고 와".*`companion-sleep`/);
+  const sleepSkill = productSkill('companion-sleep');
+  assert.match(sleepSkill, /앱에서 사용자 본인이 한 말일 때만/);
+  assert.match(sleepSkill, /\*\*"컴팩션"\*\*: 아래 갈무리를 하고, `compact_context`를 `keep`/);
+  assert.match(sleepSkill, /\*\*"새 세션"\*\*, \*\*"다음 세션"\*\*: 아래 갈무리를 하고, `new_context`/);
+  assert.match(sleepSkill, /같은 나고 창만 새거야/);
+  assert.match(sleepSkill, /\*\*"자"\*\*, \*\*"자고 와"\*\*: 아래 갈무리를 하고, 압축할지 새 창을 열지는/);
+  assert.match(sleepSkill, /짧은 한 줄만 `reply`로 보내고/);
 });
 
 test('prompt: Segno speaks only in the app and only through reply — no Telegram, no tell_user in its defaults (intent rev 9, rev 11)', () => {
-  const files = ['preamble', 'soul', 'identity', 'user', 'companion', 'tools', 'memory', 'coda', 'greet-night', 'greet-morning', 'wake', 'recall'];
+  const files = ['preamble', 'soul', 'identity', 'user', 'companion', 'tools', 'memory', 'coda', 'greet-night', 'greet-morning', 'wake', 'recall', 'sleep'];
   for (const name of files) {
     const text = readFileSync(path.join(defaultsDir, `${name}.pi.md`), 'utf8');
     assert.doesNotMatch(text, /telegram|텔레그램|messenger|메신저|voice_text|\/heartbeat|\/context|tell_user/i, name);
+  }
+  for (const skill of ['companion-rhythm', 'companion-records', 'companion-sleep']) {
+    assert.doesNotMatch(productSkill(skill), /telegram|텔레그램|messenger|메신저|voice_text|\/heartbeat|\/context|tell_user/i, skill);
   }
   for (const name of ['greet-night', 'greet-morning']) assert.match(readFileSync(path.join(defaultsDir, `${name}.pi.md`), 'utf8'), /톡은 `reply`로/);
   const tools = readFileSync(path.join(defaultsDir, 'tools.pi.md'), 'utf8');
@@ -881,20 +886,20 @@ test('prompt: Segno leaves its voice and its name for the user behind when it wr
 
 test('prompt: in every turn what Segno writes is monologue; only reply reaches the user, and a user turn without one is reminded (intent rev 11, users 85727ce8, c31022f7)', () => {
   const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
-  const channel = companion.slice(companion.indexOf('## 말하는 통로'), companion.indexOf('## 하트비트'));
+  const channel = companion.slice(companion.indexOf('## 말하는 통로'), companion.indexOf('## 내 시간'));
   assert.match(channel, /내 입은 `reply`야\. 어느 턴이든, 사용자가 연 턴이어도, 이걸로 보낸 말만 앱의 내 스레드에 닿고 폰에 알림이 가\. 그 밖에 내가 쓰는 글은 전부 혼잣말이라 나만 봐\./);
   assert.match(channel, /사용자가 말을 걸면 답은 `reply`로 해\. 답 없이 턴을 닫으면 루바토가 한 번 일깨워 줘\./);
   assert.match(channel, /내가 먼저 하는 말도 `reply`로 해: 안부, 리드가 끝났다는 소식, 다른 대화에서 온 것 중 사용자가 알아야 할 것, 사용자가 시킨 일의 결과, 일정 찌르기/);
   assert.doesNotMatch(companion, /보이는 건 셋뿐|사용자가 연 턴이라 내 글이 앱에 보여/);
   assert.match(companion, /루바토가 나를 깨워\. 그때 읽고 다음 수를 정해\. 사용자가 알아야 할 게 있으면 `reply`로 말해\./);
-  assert.match(companion, /처음에 지금 뭘 하는지 짧은 한 줄만 `reply`로 보내고/);
+  assert.match(productSkill('companion-sleep'), /처음에 지금 뭘 하는지 짧은 한 줄만 `reply`로 보내고/);
 });
 
 test('prompt: a work area gets one canonical file in memory/work/ split like Roo\'s, and the leads\' raw research sits in notes/<area>/ as topic-MMDD, unwalked by the dream (Segno session 01a154ba, relaying the user; Roo ~/.claude/roo-channel memory/work, notes/<area>)', () => {
   const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
   assert.match(companion, /조사를 맡기면 원본을 어디 써 올지도 내 집 절대 경로로 줘: `notes\/<영역>\/주제-MMDD\.md`/);
-  assert.match(companion, /\| 일 정본 \| `memory\/work\/<영역>\.md` \|/);
-  assert.match(companion, /- 일 정본\(`memory\/work\/<영역>\.md`\): .*다른 정본처럼 `## 지금`과 `## 이야기`로 나눠\..*15KB 안쪽이고, 지난 경위는 `## 이야기`로 내려\. 리드가 해 온 조사 원본은 `notes\/<영역>\/주제-MMDD\.md`에 그대로 쌓고, 낡은 건 `notes\/<영역>\/archive\/`로\. 거기서 나온 결론이나 사용자 결정은 그날 `## 지금`으로 올려\./);
+  assert.match(productSkill('companion-rhythm'), /\| 일 정본 \| `memory\/work\/<영역>\.md` \|/);
+  assert.match(productSkill('companion-records'), /- \*\*일 정본 \(`memory\/work\/<영역>\.md`\)\*\*: .*다른 정본처럼 `## 지금`과 `## 이야기`로 나눠\..*15KB 안쪽이고, 지난 경위는 `## 이야기`로 내려\. 리드가 해 온 조사 원본은 `notes\/<영역>\/주제-MMDD\.md`에 그대로 쌓고, 낡은 건 `notes\/<영역>\/archive\/`로\. 거기서 나온 결론이나 사용자 결정은 그날 `## 지금`으로 올려\./);
   assert.match(readFileSync(path.join(defaultsDir, 'recall.pi.md'), 'utf8'), /영역 폴더\(`notes\/<영역>\/`\)는 리드가 해 온 원본이라 필요할 때만/);
   const dream = readFileSync(path.resolve(defaultsDir, '..', '..', 'companion', 'dream', 'dream.md'), 'utf8');
   assert.match(dream, /영역 폴더\(`notes\/<영역>\/`\)는 리드가 해 온 원본이라 안 걸어\./);
@@ -904,6 +909,6 @@ test('prompt: a work area gets one canonical file in memory/work/ split like Roo
 
 test('prompt: repository documents linked under memory/ref/ are found by search and read-only; a wrong line goes to that repository\'s lead (Segno session 01a154ba, relaying the user)', () => {
   const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
-  const records = companion.slice(companion.indexOf('## 기록'), companion.indexOf('## 잠 전 갈무리'));
-  assert.match(records, /- 레포 문서\(`memory\/ref\/`\): .*`companion_search`로 찾혀\. 읽기 전용이야\. 틀린 게 보이면 직접 고치지 않고 그 레포에서 리드한테 맡겨\./);
+  assert.match(companion, /레포 문서\(`memory\/ref\/`\)는 `companion_search`로 찾히는 읽기 전용이라 틀린 게 보이면 직접 고치지 않고 그 레포 리드한테 맡겨\./);
+  assert.match(productSkill('companion-records'), /- \*\*레포 문서 \(`memory\/ref\/`\)\*\*: .*`companion_search`로 찾혀\. 읽기 전용이야\. 틀린 게 보이면 직접 고치지 않고 그 레포에서 리드한테 맡겨\./);
 });

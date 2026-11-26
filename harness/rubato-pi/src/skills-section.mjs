@@ -94,7 +94,8 @@ export function loadSkillFromPath(filePath, source = "agents") {
   };
 }
 
-export function loadSkillEntries(dirs = SKILL_DIRS, { load } = {}) {
+export function loadSkillEntries(dirs = SKILL_DIRS, { load, filter } = {}) {
+  const keep = (skill, source) => !filter || filter(skill, source);
   if (load) {
     const byName = new Map();
     for (const { dir, source } of dirs) {
@@ -105,7 +106,7 @@ export function loadSkillEntries(dirs = SKILL_DIRS, { load } = {}) {
         continue;
       }
       for (const skill of result?.skills ?? []) {
-        if (!byName.has(skill.name)) byName.set(skill.name, skill);
+        if (keep(skill, source) && !byName.has(skill.name)) byName.set(skill.name, skill);
       }
     }
     return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -115,7 +116,7 @@ export function loadSkillEntries(dirs = SKILL_DIRS, { load } = {}) {
     if (!existsSync(dir)) continue;
     for (const filePath of walkSkillFiles(dir)) {
       const skill = loadSkillFromPath(filePath, source);
-      if (skill && !byName.has(skill.name)) byName.set(skill.name, skill);
+      if (skill && keep(skill, source) && !byName.has(skill.name)) byName.set(skill.name, skill);
     }
   }
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));

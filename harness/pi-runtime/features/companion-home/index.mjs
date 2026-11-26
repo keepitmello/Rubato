@@ -144,8 +144,11 @@ function registerWithLegacyNames(pi) {
   return (tool) => {
     pi.registerTool(tool);
     const old = legacy.get(tool.name);
-    if (old) pi.registerTool({ ...tool, name: old, searchKeywords: [old],
-      description: `Former name of ${tool.name}, the same tool. Call ${tool.name}.` });
+    if (old) {
+      const { exposure: _direct, ...rest } = tool;
+      pi.registerTool({ ...rest, name: old, searchKeywords: [old],
+        description: `Former name of ${tool.name}, the same tool. Call ${tool.name}.` });
+    }
   };
 }
 
@@ -163,7 +166,6 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
       registerTool({
         name: RECORD_TOOL,
         label: "Record",
-        exposure: "direct",
         searchKeywords: ["daily", "diary", "note", "mood", "record", "write", "일기", "기록", "메모", "기분"],
         description:
           "Write what lasts: kind 'daily' for the day's facts, decisions and what is still open; " +
@@ -193,7 +195,6 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
       registerTool({
         name: COMMIT_TOOL,
         label: "Commit records",
-        exposure: "direct",
         searchKeywords: ["commit", "git", "history", "record", "커밋", "기록", "이력"],
         description:
           "Commit the files you changed in your home to its history: paths inside memory/, notes/ or prompt/, " +
@@ -234,7 +235,6 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
       pi.registerTool({
         name: "memory_seed",
         label: "Old memory",
-        exposure: "direct",
         searchKeywords: ["seed", "random", "memory", "walk", "old", "씨앗", "산책", "옛 기억"],
         description:
           "An old memory, at random: one time in three a section from your records older than thirty days or " +
@@ -250,7 +250,6 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
       pi.registerTool({
         name: "world_fragment",
         label: "World fragment",
-        exposure: "direct",
         searchKeywords: ["world", "news", "wikipedia", "hacker news", "random", "세계", "뉴스", "조각"],
         description:
           "One fragment of the world outside: half the time AI news, otherwise the Hacker News front page or a " +
@@ -314,7 +313,6 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
       pi.registerTool({
         name: "sent_messages",
         label: "Sent messages",
-        exposure: "direct",
         searchKeywords: ["sent", "told", "already", "reply", "보낸", "톡", "꺼낸"],
         description:
           "What actually reached the user from you (reply) in the last days, from the record of what was sent: one " +
@@ -338,7 +336,6 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
       pi.registerTool({
         name: "user_schedule",
         label: "Schedule",
-        exposure: "direct",
         searchKeywords: ["schedule", "calendar", "deadline", "today", "tomorrow", "일정", "달력", "마감"],
         description:
           "The user's schedule from the sources in your settings (calendar ICS addresses, .ics files, schedule " +
@@ -356,7 +353,6 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
       pi.registerTool({
         name: "wake_wish",
         label: "Wake wish",
-        exposure: "direct",
         searchKeywords: ["wake", "wish", "heartbeat", "reflect", "later", "깨워", "하트비트", "다음에"],
         description:
           "When you next want to look in, and why: minutes from now, HH:MM (the next one; a time already past " +
@@ -381,7 +377,6 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
       pi.registerTool({
         name: "inbox_list",
         label: "Inbox",
-        exposure: "direct",
         searchKeywords: ["inbox", "issue", "bug", "report", "ticket", "인박스", "버그", "리포트"],
         description:
           "The issues you keep: bug reports from other chats, things the user handed over, work it " +
@@ -414,7 +409,6 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
       pi.registerTool({
         name: "inbox_add",
         label: "Add to inbox",
-        exposure: "direct",
         searchKeywords: ["inbox", "issue", "bug", "report", "add", "인박스", "추가"],
         description:
           "Put one issue in the inbox so it does not get lost: what it is, as a short title, and the " +
@@ -441,7 +435,6 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
       pi.registerTool({
         name: "inbox_update",
         label: "Update inbox",
-        exposure: "direct",
         searchKeywords: ["inbox", "issue", "status", "link", "close", "인박스", "상태", "닫기"],
         description:
           "Move one issue: its status (open, in-progress, waiting, done, dropped), the lead conversation " +

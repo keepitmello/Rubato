@@ -36,6 +36,11 @@ test('the companion writes a daily and a diary with its own tools', async (t) =>
   assert.deepEqual([...tools.keys()].sort(), ['companion_commit', 'companion_record', 'companion_search', 'inbox_add', 'inbox_list',
     'inbox_update', 'memory_seed', 'reply', 'segno_commit', 'segno_record', 'segno_search', 'sent_messages', 'user_schedule',
     'wake_wish', 'world_fragment']);
+  const direct = new Set(['reply', 'companion_search']);
+  for (const [name, tool] of tools) {
+    assert.equal(tool.exposure, direct.has(name) ? 'direct' : undefined,
+      `${name} should be ${direct.has(name) ? 'direct' : 'catalogued for tool_search'}`);
+  }
   await tools.get('companion_record').execute('c1', { kind: 'daily', text: '리드 하나 시작했어. 우용이 말 그대로 옮겼어.' });
   await tools.get('companion_record').execute('c2', { kind: 'diary', heading: '버그 리포트가 들어온 오후', text: '오랜만에 판이 살아 있는 느낌이었어.' });
   // A former name still answers, as the same tool, and says which name to call.

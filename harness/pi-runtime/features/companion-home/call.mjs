@@ -482,7 +482,8 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
     declined: "They declined the call.",
     missed: "No answer. The call was missed.",
   };
-  pi.registerTool({ name: CALL_USER_TOOL, label: "Call the person", exposure: "direct",
+  pi.registerTool({ name: CALL_USER_TOOL, label: "Call the person",
+    searchKeywords: ["call", "phone", "ring", "voice", "전화", "통화", "걸기"],
     description: "Ring the person for a live voice call, on their phone and desktop at once. Call whenever a voice call is what you want; the timing is yours. Waits while it rings and returns whether they picked up, declined or missed it. When they pick up you speak first.",
     parameters: { type: "object", additionalProperties: false, required: ["reason"],
       properties: { reason: { type: "string", minLength: 1, description: "Why you are calling, for your own opening line." } } },
