@@ -135,10 +135,10 @@ const COLD_SEND = "A conversation whose prompt cache is cold and whose context i
   "Pass allowCold: true only when the context in that conversation is really needed. Warm or small conversations are sent to as usual, steer included. ";
 const COMPANION_SEND_ANSWER = "When you asked for an answer, it arrives in this conversation as a message from the recipient; " +
   "end your turn instead of polling with session_read. ";
-// Shown only to a companion, in the descriptions it reads every time it picks a tool: the companion-home
-// extension adds a result-side reminder for the next brief, this is the part that is there before the call.
-const DISPATCH_HINT = "Before you write a brief, open the dispatching skill (~/.agents/skills/dispatching/SKILL.md). " +
-  "The goal, the evidence that it is done and what must not be touched are binding; your guesses about cause, shape or place go in as leads for the lead to verify, never in the goal's place; " +
+// Shown only to a companion, in the descriptions it reads every time it picks a tool. The companion-home
+// extension stops a hand-over until both skills were read this turn; this is what the companion learns before that.
+const DISPATCH_HINT = "Handing over work is stopped until, in the same turn, you have read the dispatching skill (~/.agents/skills/dispatching/SKILL.md) for the brief and the model-guide skill (~/.agents/skills/model-guide/SKILL.md) for the model. " +
+  "In the brief the goal, the evidence that it is done and what must not be touched are binding; your guesses about cause, shape or place go in as leads for the lead to verify, never in the goal's place; " +
   "what you do not know, hand over as \"find out\". ";
 
 const CREATE_WHEN = "Use it only when the user explicitly asked for a new conversation; to hand work to an existing one use session_send.";

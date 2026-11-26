@@ -1,26 +1,24 @@
-// A reminder for the companion when it hands work to a lead: `session_create` (always a brief) and a
-// `session_send` long enough to be one. It never blocks. The skill's own "read before every spawn" never
-// reaches a companion, which starts leads with session tools instead of `Agent`, so the reminder sits where
-// the companion does look.
+// A check before the companion hands work to a lead: `session_create` (always a brief) and a
+// `session_send` long enough to be one. The call is stopped once with one line that points at the two
+// skills, and goes through as soon as this turn has read both. The skill's own "read before every spawn"
+// never reaches a companion, which starts leads with session tools instead of `Agent`, and a reminder
+// after the send came too late: the brief had already left.
 //
-// Two places, because no hook runs between the companion writing a brief and the call leaving:
-//   - before the call: session-link's companion tool descriptions (DISPATCH_HINT there) name the skill and
-//     the three rules; the model reads a description every time it chooses a tool.
-//   - after the call, here: the result carries the reminder for the next brief (a follow-up counts), and
-//     says what to do when the brief just sent put a guess in the goal's place.
-// A run that has already opened the skill is not reminded again; the next run (a new turn) is. A short
-// `session_send` (under SHORT_SEND chars: a stop, a yes, a fact the lead asked for) carries nothing: it is an
-// operating message, not a brief, and a reminder on each would teach the companion to skim all of them.
+// The one condition to pass is the two reads, nothing else: a second try with no reading is stopped
+// again. A run is the turn the last user or wake message opened (agent_start), so the next turn must read
+// again. A short `session_send` (under SHORT_SEND chars: a stop, a yes, a decision handed on) is an
+// operating message, not a brief, and is never stopped. The skills' content is not carried here; the line
+// only says what to read and to do.
 //
 // Only a companion session loads this (bootstrap.mjs adds companion-home for RUBATO_PI_ROLE=companion), so a
 // lead or any other conversation never sees it.
 import { opensSkill } from "./prompt-piece-reminder.mjs";
 
 export const DISPATCH_SKILL = "dispatching";
+export const MODEL_SKILL = "model-guide";
 export const SHORT_SEND = 200;
-export const DISPATCH_REMINDER = `리드한테 일을 넘겼어. 다음 브리프(후속 지시도 새 일이면 똑같이)를 쓰기 전에 ${DISPATCH_SKILL} 스킬(~/.agents/skills/${DISPATCH_SKILL}/SKILL.md)을 열어. ` +
-  "목표·다 됐다는 증거·손대면 안 되는 것은 단단하게 적고, 내 짐작(원인·모양·위치)은 리드가 확인할 단서로 따로 두고 목표 자리에 넣지 않아. 모르는 건 사실처럼 쓰지 말고 \"확인해 와\"로 맡겨. " +
-  "방금 보낸 브리프의 목표 자리에 짐작이 들어갔으면 리드가 파기 전에 바로잡아 다시 보내.";
+export const DISPATCH_BLOCK = `일을 넘기기 전에 skill(${DISPATCH_SKILL})(~/.agents/skills/${DISPATCH_SKILL}/SKILL.md)로 브리프를 쓰고 ` +
+  `skill(${MODEL_SKILL})(~/.agents/skills/${MODEL_SKILL}/SKILL.md)로 모델을 고른 뒤 다시 보내.`;
 
 /** Whether this call hands over work: a new lead, or a message long enough to be a brief. */
 export function sendsBrief(event) {
@@ -29,14 +27,19 @@ export function sendsBrief(event) {
 }
 
 export function installDispatchReminder(pi) {
-  let skillOpened = false;
-  pi.on("agent_start", () => { skillOpened = false; });
+  const read = new Set();
+  const reading = new Map();
+  pi.on("agent_start", () => { read.clear(); reading.clear(); });
   pi.on("tool_call", (event) => {
-    if (opensSkill(event, DISPATCH_SKILL)) skillOpened = true;
+    if (sendsBrief(event)) return read.has(DISPATCH_SKILL) && read.has(MODEL_SKILL) ? undefined : { block: true, reason: DISPATCH_BLOCK };
+    for (const skill of [DISPATCH_SKILL, MODEL_SKILL]) if (opensSkill(event, skill)) reading.set(event.toolCallId, skill);
     return undefined;
   });
+  // A read that failed has not opened the skill.
   pi.on("tool_result", (event) => {
-    if (skillOpened || event?.isError || !sendsBrief(event)) return undefined;
-    return { content: [...(event.content ?? []), { type: "text", text: `\n\n${DISPATCH_REMINDER}` }] };
+    const skill = reading.get(event?.toolCallId);
+    reading.delete(event?.toolCallId);
+    if (skill && !event?.isError) read.add(skill);
+    return undefined;
   });
 }
