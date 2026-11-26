@@ -28,7 +28,7 @@ function store(t) {
 
 function session(t, { env = {}, file = store(t) } = {}) {
   const handlers = {};
-  installSourceClues({ on: (name, handler) => { handlers[name] = handler; } }, { env: { HOME: '/nonexistent', RUBATO_COMPANION_TG_DB: file, ...env }, now: () => NOW });
+  installSourceClues({ on: (name, handler) => { handlers[name] = handler; } }, { env: { HOME: '/nonexistent', RUBATO_COMPANION_TG_DB: file, RUBATO_COMPANION_SOURCE_CLUES: '1', ...env }, now: () => NOW });
   const messages = [];
   let stamp = 0;
   return {
@@ -107,6 +107,13 @@ test('only Segno\'s session installs it, and a missing store stays silent', asyn
   assert.equal(await other.say('카카오페이 405만 출금되나?'), undefined);
   const gone = session(t, { file: '/nonexistent/tg.db' });
   assert.equal(await gone.say('카카오페이 405만 출금되나?'), undefined);
+});
+
+test('it is off unless switched on: the question that got lines before gets none', async (t) => {
+  const off = session(t, { env: { RUBATO_COMPANION_SOURCE_CLUES: undefined } });
+  assert.equal(await off.say('카페 400만은 그럼 출금가능인거야?'), undefined);
+  assert.equal(await session(t, { env: { RUBATO_COMPANION_SOURCE_CLUES: '0' } }).say('카페 400만은 그럼 출금가능인거야?'), undefined);
+  assert.ok(await session(t).say('카페 400만은 그럼 출금가능인거야?'));
 });
 
 test('it is a part of the companion-home extension', () => {

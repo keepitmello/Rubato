@@ -1,6 +1,8 @@
 // Original lines attached to an incoming message that talks about money, people or who did what, so the
 // companion answers from the room's own words and not from a summary or a memory of them.
 //
+// - Off unless RUBATO_COMPANION_SOURCE_CLUES=1: the first run attached lines from unrelated rooms
+//   (a meeting transcript, another vendor's DB talk), and the user turned it off until that is fixed.
 // - Only Segno's session (the default companion) and only two kinds of incoming words: the user's own
 //   app message and the "원문:" lines of an inbox wake. Other conversations, heartbeats and notices get nothing.
 // - A message that carries no money, no known account holder and no "who did it" gets nothing.
@@ -205,6 +207,7 @@ const keyOf = (message) => `${message.role}:${message.timestamp ?? ""}:${textOf(
 const isIncoming = (message) => message?.role === "user" || (message?.role === "custom" && message.customType === "rubato-session-message");
 
 export function installSourceClues(pi, { env = process.env, now = Date.now, open = openStore } = {}) {
+  if (env.RUBATO_COMPANION_SOURCE_CLUES !== "1") return;
   if ((env.RUBATO_COMPANION_ID || "segno") !== "segno") return;
   const memo = new Map();
   const seen = new Map();
