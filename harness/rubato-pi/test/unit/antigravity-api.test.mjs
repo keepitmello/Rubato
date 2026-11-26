@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
-import { PRODUCT_MODEL_ORDER } from "../../../../packages/model-core/src/product-model-catalog.mjs";
 import { senpiNested } from "../../src/engine-paths.mjs";
+import { antigravityModels } from "../../src/antigravity-route.mjs";
 import {
   ANTIGRAVITY_API,
   ANTIGRAVITY_PROJECT_ENV,
@@ -20,8 +20,10 @@ const { normalizeContext } = await import(
   pathToFileURL(join(senpiNested("@earendil-works/pi-ai"), "dist/utils/transcript.js")).href
 );
 
-// Antigravity flash id 는 제품 카탈로그가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
-const FLASH_ID = PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("flash"));
+// Antigravity 행은 직결이 끊긴 뒤(9b0a4eda0) 제품 카탈로그를 떠나 antigravity-route 의 카탈로그에만 있다.
+// 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
+const ANTIGRAVITY_IDS = antigravityModels().map((entry) => entry.id);
+const FLASH_ID = ANTIGRAVITY_IDS.find((id) => id.includes("flash"));
 const wireId = (level) => `${FLASH_ID}-${level}`;
 
 const model = Object.freeze({
@@ -89,7 +91,7 @@ test("Flash는 생략된 reasoning을 medium으로 보낸다", () => {
 });
 
 test("Neon은 네 단계를 그대로, 없는 minimal은 low로, 생략은 high로 보낸다", () => {
-  const neon = PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("neon"));
+  const neon = ANTIGRAVITY_IDS.find((id) => id.includes("neon"));
   for (const level of ["low", "medium", "high", "xhigh"]) {
     assert.equal(resolveAntigravityWireModel(neon, level), `${neon}-${level}`);
   }

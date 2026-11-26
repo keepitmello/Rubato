@@ -67,8 +67,8 @@ async function collect(stream) {
   return events;
 }
 
-test("google-vertex 는 Gemini API 레인 바로 앞이고 foreign 목록과 disabledProviders 에서 빠진다", () => {
-  assert.equal(SUPPORTED_PROVIDER_IDS.at(-2), "google-vertex");
+test("google-vertex 는 지원 레인 맨 뒤이고 foreign 목록과 disabledProviders 에서 빠진다", () => {
+  assert.equal(SUPPORTED_PROVIDER_IDS.at(-1), "google-vertex");
   assert.equal(foreignProviderIds().includes("google-vertex"), false);
   const next = ensureModelsConfig("/tmp/agent", {
     exists: () => true,

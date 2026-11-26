@@ -470,7 +470,7 @@ function Writing(props: { readonly work?: SegnoLiveWork | null }) {
 }
 
 /**
- * One room per conversation: Segno's and Roo's rooms share this seat in ChatView, so the room is
+ * One room per conversation: Segno's and Roo's rooms share this spot in ChatView, so the room is
  * keyed by its thread and every room opens fresh, at its end, instead of carrying the last room's
  * place, drawn days and arrivals along.
  */
