@@ -135,6 +135,7 @@
     "apps/web/src/components/ThreadRouteView.tsx": "624142ff371e421820c0778141ccf18d3af3e70129995b651b8643c7725084a6",
     "apps/web/src/components/chat/ChatComposer.tsx": "bd273b96cf8fb1ccaf074b389b4f92b0ef1547571bd8667dc6cb3747fc781631",
     "apps/web/src/components/chat/ChatHeader.tsx": "97e6cb266df5ade2fbc496904c0f4e646bd9020f18da3675313123f6ad19d321",
+    "apps/web/src/components/chat/ChatRightPanel.tsx": "f149a30f1ab8aa193cfbfd995971198410f6adb0c250d97d4fbaefad900a2513",
     "apps/web/src/components/chat/ComposerPrimaryActions.tsx": "4d7c26fa890350d6d83092c1c9cbbc1934126c8f2913c440bf3940466a8c1c2a",
     "apps/web/src/components/chat/DraftHeroHeadline.tsx": "3e511ba14c0eae08412f5c46ddee626beb54061ee9f32104c4c752dce879da68",
     "apps/web/src/components/chat/MessagesTimeline.logic.ts": "2644382b3549c0a1201c402061307bcaf8a59cfb363de4d87a202a8a8636546d",

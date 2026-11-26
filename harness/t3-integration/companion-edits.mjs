@@ -44,6 +44,10 @@ export const companionOverlays = [
   'apps/web/src/components/chat/RubatoSegnoChat.tsx',
   'apps/web/src/components/chat/RubatoSegnoChat.css',
   'apps/web/src/components/chat/RubatoSegnoChat.test.tsx',
+  'apps/web/src/components/chat/RubatoCompanionHtmlCard.tsx',
+  'apps/web/src/components/chat/RubatoCompanionHtmlCard.test.tsx',
+  'apps/web/src/components/chat/RubatoCompanionOverlayDrawer.tsx',
+  'apps/web/src/components/chat/RubatoCompanionOverlayDrawer.test.tsx',
   'apps/web/src/components/chat/RubatoSegnoInner.tsx',
   'apps/web/src/hooks/useRubatoRoomVisible.ts',
   'apps/web/src/components/chat/RubatoRoomActivity.test.tsx',
@@ -217,6 +221,54 @@ export const companionEdits = {
     ['      showThreadPanelControl={!inlineRightPanelOwnsTitleBar}\n',
       '      showThreadPanelControl={!inlineRightPanelOwnsTitleBar && !isCompanionThread(activeThread.id)}\n',
       'replace'],
+    // Companion rooms never open an inline coding right panel: attachments and HTML previews float
+    // in a right overlay drawer over the companion stage and records panel (RubatoCompanionOverlayDrawer),
+    // leaving the chat column untouched and keeping ordinary panel toggle buttons out of the title bar.
+    ['  const rightPanelPresent = rightPanelPresence.present;\n'
+        + '  const rightPanelControlsInPanel =\n'
+        + '    shouldUsePlanSidebarSheet && rightPanelPresent && rightPanelOpen;\n'
+        + '  const rightPanelControlsAtRoot = rightPanelPresent && !shouldUsePlanSidebarSheet;\n',
+      '  const rightPanelPresent = rightPanelPresence.present;\n'
+        + '  const rubatoCompanionOverlay = isCompanionThread(activeThread?.id);\n'
+        + '  const rightPanelControlsInPanel =\n'
+        + '    shouldUsePlanSidebarSheet && rightPanelPresent && rightPanelOpen && !rubatoCompanionOverlay;\n'
+        + '  const rightPanelControlsAtRoot =\n'
+        + '    rightPanelPresent && !shouldUsePlanSidebarSheet && !rubatoCompanionOverlay;\n',
+      'replace'],
+    ['  const rightPanelMaximized =\n'
+        + '    !embedded && canMaximizeRightPanel && rightPanelState.maximized === true;\n'
+        + '  const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;\n',
+      '  const rightPanelMaximized =\n'
+        + '    !embedded && !rubatoCompanionOverlay && canMaximizeRightPanel && rightPanelState.maximized === true;\n'
+        + '  const inlineRightPanelOwnsTitleBar =\n'
+        + '    rightPanelOpen && !shouldUsePlanSidebarSheet && !rubatoCompanionOverlay;\n',
+      'replace'],
+    ['  const panelLayoutControls = (\n'
+        + '    <WorkspaceTitlebarControls\n'
+        + '      showMaximizeControl={!shouldUsePlanSidebarSheet}\n'
+        + '      rightPanelOpen={rightPanelOpen}\n'
+        + '      animationsActive={panelAnimationsActive}\n'
+        + '      maximized={rightPanelMaximized}\n'
+        + '      onToggleMaximized={toggleRightPanelMaximizedStable}\n'
+        + '    >\n'
+        + '      {panelToggleControls}\n'
+        + '    </WorkspaceTitlebarControls>\n'
+        + '  );\n',
+      '  const panelLayoutControls = rubatoCompanionOverlay ? null : (\n'
+        + '    <WorkspaceTitlebarControls\n'
+        + '      showMaximizeControl={!shouldUsePlanSidebarSheet}\n'
+        + '      rightPanelOpen={rightPanelOpen}\n'
+        + '      animationsActive={panelAnimationsActive}\n'
+        + '      maximized={rightPanelMaximized}\n'
+        + '      onToggleMaximized={toggleRightPanelMaximizedStable}\n'
+        + '    >\n'
+        + '      {panelToggleControls}\n'
+        + '    </WorkspaceTitlebarControls>\n'
+        + '  );\n',
+      'replace'],
+    ['        <ChatRightPanel\n          sheet={shouldUsePlanSidebarSheet}\n',
+      '        <ChatRightPanel\n          sheet={shouldUsePlanSidebarSheet}\n          companionOverlay={rubatoCompanionOverlay}\n',
+      'replace'],
     // Segno's thread is a chat room (chat/RubatoSegnoChat.tsx, user f38c36a6): it reads the same
     // timeline as the ordinary one and draws it as bubbles. Every other thread keeps the timeline.
     // Its rewind is the timeline's own, with files left as they are (user f8828a9f): straight to
@@ -240,6 +292,74 @@ export const companionEdits = {
     // The room floats its own "Scroll to end", from its own scroll (RubatoSegnoChat.tsx).
     ['              {showScrollToBottom && !isThreadFindActive && (\n',
       '              {showScrollToBottom && !isThreadFindActive && !isCompanionThread(activeThread.id) && (\n',
+      'replace'],
+  ],
+  // The companion room's right panel opens as a floating right overlay drawer instead of an inline
+  // split column, with an expand toggle and auto-close when the last tab closes.
+  'apps/web/src/components/chat/ChatRightPanel.tsx': [
+    ['import { usePreviewPanelInlineSize } from "../../hooks/usePreviewPanelInlineSize";\n',
+      'import { useState } from "react";\n'
+        + 'import { usePreviewPanelInlineSize } from "../../hooks/usePreviewPanelInlineSize";\n'
+        + 'import {\n'
+        + '  CompanionOverlayControls,\n'
+        + '  RubatoCompanionOverlayDrawer,\n'
+        + '} from "./RubatoCompanionOverlayDrawer";\n',
+      'replace'],
+    ['  readonly sheet: boolean;\n',
+      '  readonly sheet: boolean;\n  readonly companionOverlay?: boolean;\n',
+      'replace'],
+    ['  const {\n    sheet,\n',
+      '  const {\n    sheet,\n    companionOverlay = false,\n',
+      'replace'],
+    ['  if (!sheet) {\n',
+      '  const [companionExpanded, setCompanionExpanded] = useState(false);\n'
+        + '  if (companionOverlay) {\n'
+        + '    const closeCompanionOverlay = () => {\n'
+        + '      setCompanionExpanded(false);\n'
+        + '      onCloseSheet();\n'
+        + '    };\n'
+        + '    return (\n'
+        + '      <RubatoCompanionOverlayDrawer\n'
+        + '        open={tabs.open === true}\n'
+        + '        maximized={companionExpanded}\n'
+        + '        onToggleMaximized={() => setCompanionExpanded((current) => !current)}\n'
+        + '        onClose={closeCompanionOverlay}\n'
+        + '      >\n'
+        + '        <RightPanelTabs\n'
+        + '          {...tabs}\n'
+        + '          mode="sheet"\n'
+        + '          hideAddSurface\n'
+        + '          inlineSize={inlineSize}\n'
+        + '          onCloseSurface={(surface) => {\n'
+        + '            tabs.onCloseSurface(surface);\n'
+        + '            if (tabs.surfaces.length <= 1) closeCompanionOverlay();\n'
+        + '          }}\n'
+        + '          onCloseAllSurfaces={() => {\n'
+        + '            tabs.onCloseAllSurfaces();\n'
+        + '            closeCompanionOverlay();\n'
+        + '          }}\n'
+        + '          layoutControls={\n'
+        + '            <CompanionOverlayControls\n'
+        + '              maximized={companionExpanded}\n'
+        + '              onToggleMaximized={() => setCompanionExpanded((current) => !current)}\n'
+        + '              onClose={closeCompanionOverlay}\n'
+        + '            />\n'
+        + '          }\n'
+        + '        />\n'
+        + '      </RubatoCompanionOverlayDrawer>\n'
+        + '    );\n'
+        + '  }\n'
+        + '  if (!sheet) {\n',
+      'replace'],
+  ],
+  'apps/web/src/components/RightPanelTabs.tsx': [
+    ['  mode: PreviewPanelMode;\n  maximized?: boolean;\n  open?: boolean;\n',
+      '  mode: PreviewPanelMode;\n  maximized?: boolean;\n  open?: boolean;\n  hideAddSurface?: boolean;\n',
+      'replace'],
+    ['            {props.open !== false ? (\n'
+        + '              <Menu open={addSurfaceMenuOpen} onOpenChange={setAddSurfaceMenuOpen}>',
+      '            {props.open !== false && !props.hideAddSurface ? (\n'
+        + '              <Menu open={addSurfaceMenuOpen} onOpenChange={setAddSurfaceMenuOpen}>',
       'replace'],
   ],
   // The room in place of the timeline, from the same entries (see the ChatView block above).

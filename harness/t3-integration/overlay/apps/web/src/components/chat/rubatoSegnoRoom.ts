@@ -66,6 +66,74 @@ export function personText(text: string): string {
 /** A file line as the engine writes it (companion home.mjs filesMarkdown): `![name](</abs>)` or `[name](</abs>)`. */
 const FILE_LINE = /^!?\[([^\]\n]*)\]\(<(\/[^>\n]+)>\)$/;
 
+/** A standalone markdown link line (not an image) pointing to a local/workspace HTML file. */
+const STANDALONE_LINK_LINE = /^\[([^\]\n]*)\]\((?:<([^>\n]+)>|([^\s)\n]+))\)$/;
+const HTML_FILE_EXT = /\.html?$/i;
+const EXTERNAL_URL_SCHEME = /^(?:https?|mailto|tel|data|javascript):/i;
+const FENCE_LINE = /^\s*(```|~~~)/;
+
+export interface HtmlFileAttachment {
+  readonly label: string;
+  readonly path: string;
+}
+
+function parseStandaloneHtmlLink(line: string): HtmlFileAttachment | null {
+  const match = STANDALONE_LINK_LINE.exec(line.trim());
+  if (!match) return null;
+  const rawLabel = (match[1] ?? "").trim();
+  const rawTarget = (match[2] ?? match[3] ?? "").trim();
+  if (!rawTarget || EXTERNAL_URL_SCHEME.test(rawTarget)) return null;
+  let path = rawTarget.split(/[?#]/, 1)[0] ?? "";
+  if (path.toLowerCase().startsWith("file://")) {
+    path = path.slice("file://".length);
+    try {
+      path = decodeURIComponent(path);
+    } catch {
+      // Keep raw path when percent-encoding is malformed.
+    }
+  }
+  if (!HTML_FILE_EXT.test(path)) return null;
+  const fallbackName = path.split("/").filter(Boolean).at(-1) ?? path;
+  return { label: rawLabel || fallbackName, path };
+}
+
+/**
+ * Separates standalone HTML attachment links from a bubble's markdown so the room can render
+ * them inline as live preview cards (RubatoCompanionHtmlCard.tsx) while keeping fenced code
+ * blocks and inline links untouched.
+ */
+export function splitHtmlFileLines(text: string): {
+  readonly text: string;
+  readonly htmlFiles: ReadonlyArray<HtmlFileAttachment>;
+} {
+  if (!text) return { text: "", htmlFiles: [] };
+  const htmlFiles: HtmlFileAttachment[] = [];
+  const kept: string[] = [];
+  let fence: string | null = null;
+  for (const line of text.replace(/\r\n?/g, "\n").split("\n")) {
+    if (fence !== null) {
+      kept.push(line);
+      if (line.trim().startsWith(fence)) fence = null;
+      continue;
+    }
+    const fenceMatch = FENCE_LINE.exec(line);
+    if (fenceMatch) {
+      fence = fenceMatch[1]!;
+      kept.push(line);
+      continue;
+    }
+    const html = parseStandaloneHtmlLink(line);
+    if (html) {
+      htmlFiles.push(html);
+      continue;
+    }
+    kept.push(line);
+  }
+  if (htmlFiles.length === 0) return { text, htmlFiles };
+  const cleaned = kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return { text: cleaned, htmlFiles };
+}
+
 /** The person's words and their file lines, apart. */
 export function splitFileLines(text: string): { words: string; files: string } {
   const blocks = text.split(/\n{2,}/);

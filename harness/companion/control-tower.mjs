@@ -63,6 +63,7 @@ import path from 'node:path';
 import { COMPANION_TITLE, ONBOARDING_ITEMS, clearPersonaReviewRequest, onboardingActive, readProfile, companionPaths, composePanel, followingStore, moveBaseToDefault,
   pendingDefaultChanges, readFinished, readPersonaReviewRequest, readSettings, readState, seedPromptPieces, writePanel,
   writeState } from './companion.mjs';
+import { readQuotaLine as defaultReadQuotaLine } from './quota.mjs';
 import { capabilityActive, companionActivityAt, clearWakeWish, ensureHomeRepo, ensureSegnoHome, readMood, readWakeWish, segnoPaths, wakeWishState } from './home.mjs';
 import { expandHome, scheduleNudges } from './schedule.mjs';
 import { INBOX_WAKE_STALE_MS, INBOX_WAKE_WINDOW_MS, inboxWakePath, readInboxWakes } from './inbox.mjs';
@@ -133,7 +134,7 @@ export function localIso(at) {
  * text after a blank line, where Roo's heartbeat skill sends Roo to open cron-prompts/<slot>.md. A
  * reflect tick carries the companion's reflect note the same way (`note`).
  */
-export function heartbeatText({ tick, at, action = 'none', wish, location = '', schedule = [], docs = '', greeting = '', note = '' }) {
+export function heartbeatText({ tick, at, action = 'none', wish, location = '', schedule = [], docs = '', quota = '', greeting = '', note = '' }) {
   const parts = ['HEARTBEAT', `tick=${tick}`, `now="${timeLabel(at)}"`];
   if (action !== 'none') parts.push(`action=${action}`);
   if (wish) parts.push('reason=wake_wish');
@@ -142,6 +143,7 @@ export function heartbeatText({ tick, at, action = 'none', wish, location = '', 
   if (location) lines.push(location);
   lines.push(...schedule);
   if (docs) lines.push(docs);
+  if (quota) lines.push(`QUOTA ${quota}`);
   const body = [greeting, note].filter(Boolean).join('\n\n');
   return body ? `${lines.join('\n')}\n\n${body}` : lines.join('\n');
 }
@@ -439,7 +441,7 @@ export function localDate(at) {
  *   prompt pieces live (rubato-pi system-prompt companionDefaultsDir).
  */
 export function startControlTower({ connect, notify, env = process.env, onError = () => {}, pollMs = 3000, now = Date.now,
-  sleepCheckMs = SLEEP_CHECK_MS, defaultsDir = companionDefaultsDir(env), sessionExists }) {
+  sleepCheckMs = SLEEP_CHECK_MS, defaultsDir = companionDefaultsDir(env), sessionExists, readQuota = defaultReadQuotaLine }) {
   let client;
   // The engine's directory as its subscription last delivered it (see `open`).
   let directory;
@@ -735,7 +737,8 @@ export function startControlTower({ connect, notify, env = process.env, onError 
     }
     const location = locationLine(readUserLocation(settings.location.source, env), at);
     const docs = docsReportLine(env, state.docsReportSeen);
-    await notify(sessionId, heartbeatText({ tick, at, action, wish, location, schedule, docs: docs?.line ?? '', greeting: missed ? greetingText(missed, defaultsDir, env) : '',
+    const quota = await readQuota({ env }).catch(() => '');
+    await notify(sessionId, heartbeatText({ tick, at, action, wish, location, schedule, docs: docs?.line ?? '', quota, greeting: missed ? greetingText(missed, defaultsDir, env) : '',
       note: action === 'reflect' ? settings.heartbeat.reflectNote : '' }), 'heartbeat');
     // Marked once it went, as Roo marks cron-last-run after the greeting: a failed send is caught up later.
     if (missed) writeState({ greeted: { ...readState(env).greeted, [missed]: localDate(at) } }, env);

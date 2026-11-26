@@ -32,6 +32,16 @@ const EMPTY: SegnoPanel = { leads: [], finished: [], held: [] };
 /** The last panel the server gave, so coming back to the space starts from it, not from nothing. */
 const lastPanels = new Map<string, SegnoPanel>();
 const CompanionSpace = createContext({ id: "segno", title: "Segno" });
+const CompanionOverlayHostContext = createContext<HTMLDivElement | null>(null);
+
+/**
+ * The root element of a companion's space (covering chat, stage and records panel).
+ * Attachment and HTML overlays mount into it via a portal so they float over the right side
+ * without squeezing the chat column or colliding with the character stage.
+ */
+export function useCompanionOverlayHost(): HTMLDivElement | null {
+  return useContext(CompanionOverlayHostContext);
+}
 
 /** `known` is false until the server has answered once; Segno's face waits for it. */
 function usePanel(environmentId: ReturnType<typeof useReadyEnvironmentId>, companionId: string) {
@@ -385,9 +395,11 @@ export function RubatoSegnoSpace({ children, companionId = "segno" }: { children
   const layout = art.size > 0 ? stage.layout : null;
   const compact = stageWidth > 0 && stageWidth < STAGE_FULL_PX;
   const [panelOpen, setPanelOpen] = useSegnoPanelOpen();
+  const [overlayHost, setOverlayHost] = useState<HTMLDivElement | null>(null);
   return (
     <CompanionSpace.Provider value={identity}>
-    <div className="flex min-h-0 min-w-0 flex-1">
+    <CompanionOverlayHostContext.Provider value={overlayHost}>
+    <div ref={setOverlayHost} data-rubato-segno-root="" className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
     <div ref={space} data-rubato-segno-space="" className="relative flex min-h-0 min-w-0 flex-1">
       {/* The chat is the ordinary chat at its ordinary width. */}
       <div data-rubato-segno-chat="" className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -463,6 +475,7 @@ export function RubatoSegnoSpace({ children, companionId = "segno" }: { children
       />
     ) : null}
     </div>
+    </CompanionOverlayHostContext.Provider>
     </CompanionSpace.Provider>
   );
 }

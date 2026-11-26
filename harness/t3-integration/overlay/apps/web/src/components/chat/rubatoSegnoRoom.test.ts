@@ -7,6 +7,7 @@ import {
   personText,
   previewText,
   splitFileLines,
+  splitHtmlFileLines,
   SEPARATOR_GAP_MS,
   segnoChatItems,
   segnoDays,
@@ -256,5 +257,41 @@ describe("the work between bubbles (user f8828a9f)", () => {
     expect(spanDuration(3 * 60_000, "en-US")).toBe("3m");
     expect(spanDuration(80 * 60_000, "en-US")).toBe("1h 20m");
     expect(spanDuration(41_000, "ko-KR")).toBe("41초");
+  });
+});
+
+describe("splitHtmlFileLines", () => {
+  it("extracts standalone local HTML links from companion replies while keeping prose and non-HTML links", () => {
+    const input = [
+      "이번 주 지표 정리했어.",
+      "",
+      "[weekly-report.html](</tmp/주간 리포트/weekly-report.html>)",
+      "",
+      "[summary.pdf](</tmp/summary.pdf>)",
+      "",
+      "[chart.htm](file:///tmp/chart%201.htm?v=2)",
+    ].join("\n");
+    expect(splitHtmlFileLines(input)).toEqual({
+      text: "이번 주 지표 정리했어.\n\n[summary.pdf](</tmp/summary.pdf>)",
+      htmlFiles: [
+        { label: "weekly-report.html", path: "/tmp/주간 리포트/weekly-report.html" },
+        { label: "chart.htm", path: "/tmp/chart 1.htm" },
+      ],
+    });
+  });
+
+  it("ignores external web URLs, inline prose links, images, and fenced code blocks", () => {
+    const input = [
+      "[외부 사이트](https://example.com/report.html)",
+      "문장 중간 [링크](/tmp/inline.html)는 그대로 둠",
+      "![pic](/tmp/pic.html)",
+      "```markdown",
+      "[inside-fence.html](</tmp/inside.html>)",
+      "```",
+    ].join("\n");
+    expect(splitHtmlFileLines(input)).toEqual({
+      text: input,
+      htmlFiles: [],
+    });
   });
 });

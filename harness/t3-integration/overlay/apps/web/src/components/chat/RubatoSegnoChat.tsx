@@ -79,9 +79,11 @@ import {
   segnoIsWriting,
   segnoSpans,
   segnoTurnMarks,
+  splitHtmlFileLines,
   type SegnoChatItem,
   type SegnoChatMessageInput,
 } from "./rubatoSegnoRoom";
+import { RubatoCompanionHtmlCard } from "./RubatoCompanionHtmlCard";
 import "./RubatoSegnoChat.css";
 import { RubatoCallCard } from "./RubatoCallCard";
 import { callPlacement, withoutCallSpeech } from "./rubatoCallRoom";
@@ -313,6 +315,9 @@ function Bubble({
       </div>
     );
   }
+  const segnoSplit = item.side === "segno" ? splitHtmlFileLines(item.text) : null;
+  const personFilesSplit = item.files ? splitHtmlFileLines(item.files) : null;
+  const htmlFiles = segnoSplit ? segnoSplit.htmlFiles : (personFilesSplit?.htmlFiles ?? []);
   return (
     <div
       data-rubato-segno-row=""
@@ -325,6 +330,7 @@ function Bubble({
     >
       <div
         data-rubato-segno-bubble=""
+        data-has-html={htmlFiles.length > 0 ? "" : undefined}
         data-thread-find-text=""
         onContextMenu={(event: ReactMouseEvent) => {
           if (selectsWithin(event.currentTarget)) return;
@@ -341,14 +347,27 @@ function Bubble({
         onPointerCancel={endPress}
       >
         {item.images.length > 0 && environmentId ? <Images images={item.images} environmentId={environmentId} /> : null}
-        {item.side === "segno" ? (
-          <ChatMarkdown text={item.text} cwd={cwd} threadRef={threadRef} isStreaming={item.streaming} lineBreaks />
+        {segnoSplit ? (
+          segnoSplit.text ? (
+            <ChatMarkdown text={segnoSplit.text} cwd={cwd} threadRef={threadRef} isStreaming={item.streaming} lineBreaks />
+          ) : null
         ) : item.text ? (
           <p className="whitespace-pre-wrap break-words" style={item.voiced ? VOICE_UNDERLINE : undefined}>
             {item.text}
           </p>
         ) : null}
-        {item.files ? <ChatMarkdown text={item.files} cwd={cwd} threadRef={threadRef} isStreaming={false} /> : null}
+        {personFilesSplit?.text ? <ChatMarkdown text={personFilesSplit.text} cwd={cwd} threadRef={threadRef} isStreaming={false} /> : null}
+        {htmlFiles.map((htmlFile, index) => (
+          <RubatoCompanionHtmlCard
+            // oxlint-disable-next-line react/no-array-index-key -- a message can link the same file path more than once
+            key={`${htmlFile.path}:${index}`}
+            label={htmlFile.label}
+            path={htmlFile.path}
+            cwd={cwd}
+            environmentId={environmentId}
+            threadRef={threadRef}
+          />
+        ))}
         {item.attachmentNames.length > 0 ? (
           <div data-rubato-segno-attachments="">
             {item.attachmentNames.map((name) => (

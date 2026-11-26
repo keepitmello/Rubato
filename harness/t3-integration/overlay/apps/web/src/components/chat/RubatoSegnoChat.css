@@ -107,6 +107,10 @@
   line-height: 1.38;
   overflow-wrap: anywhere;
 }
+[data-rubato-segno-bubble][data-has-html] {
+  width: min(92%, 34rem);
+  max-width: min(92%, 34rem);
+}
 [data-rubato-segno-bubble] p {
   margin: 0;
 }

@@ -534,3 +534,49 @@ export function formatUsageText({ accounts }, { timeZone } = {}) {
     ? ["sub accounts serve the model ids ending in -sub (anthropic/claude-opus-5-5-sub)."] : [];
   return [...lines, ...(totals.length || lanes.length ? ["", ...totals, ...lanes] : [])].join("\n");
 }
+
+/**
+ * Compact one-line quota summary across the three default worker providers (Anthropic main/sub,
+ * Codex + reset passes, Antigravity Gemini/Neon) for companion heartbeats and session_create
+ * results so the companion always sees live room without spending an extra shell turn.
+ */
+export function formatUsageOneLine({ accounts = [] } = {}, { timeZone } = {}) {
+  const stamp = (iso) => (iso ? ` (${localStamp(iso, timeZone)})` : "");
+  const parts = [];
+
+  const anthropicRows = accounts.filter((row) => row.provider === "anthropic" && Array.isArray(row.usageLimits?.windows) && row.usageLimits.windows.length > 0);
+  if (anthropicRows.length > 0) {
+    const lanes = anthropicRows.map((row) => {
+      const weekly = row.usageLimits.windows.find((w) => w.kind === "weekly") ?? row.usageLimits.windows[0];
+      const name = typeof row.modelSuffix === "string"
+        ? (row.modelSuffix === "" ? "main" : row.modelSuffix.replace(/^-/, ""))
+        : (row.account || "main");
+      return `${name} ${leftOf(weekly)}%${stamp(weekly.resetsAt)}`;
+    });
+    parts.push(`Anthropic ${lanes.join(" · ")}`);
+  }
+
+  const codexRows = accounts.filter((row) => row.provider === "openai-codex" && Array.isArray(row.usageLimits?.windows) && row.usageLimits.windows.length > 0);
+  for (const row of codexRows) {
+    const weekly = row.usageLimits.windows.find((w) => w.kind === "weekly") ?? row.usageLimits.windows[0];
+    let piece = `Codex ${leftOf(weekly)}%${stamp(weekly.resetsAt)}`;
+    if (Array.isArray(row.resetCredits) && row.resetCredits.length > 0) {
+      const firstExpiry = row.resetCredits[0]?.expiresAt ? ` (${localStamp(row.resetCredits[0].expiresAt, timeZone)})` : "";
+      piece += ` +${row.resetCredits.length} pass${row.resetCredits.length === 1 ? "" : "es"}${firstExpiry}`;
+    }
+    parts.push(piece);
+  }
+
+  const agyRows = accounts.filter((row) => row.provider === "antigravity" && Array.isArray(row.usageLimits?.windows) && row.usageLimits.windows.length > 0);
+  for (const row of agyRows) {
+    const geminiWindows = row.usageLimits.windows.filter((w) => /gemini/i.test(w.label ?? ""));
+    const weekly = geminiWindows.find((w) => w.kind === "weekly");
+    const session = geminiWindows.find((w) => w.kind !== "weekly");
+    const bits = [];
+    if (weekly) bits.push(`wk ${leftOf(weekly)}%${stamp(weekly.resetsAt)}`);
+    if (session) bits.push(`5h ${leftOf(session)}%`);
+    if (bits.length > 0) parts.push(`Neon ${bits.join(" · ")}`);
+  }
+
+  return parts.join(" | ");
+}
