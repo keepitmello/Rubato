@@ -305,6 +305,8 @@ assert.deepEqual(knownPreparationDialog('- dialog "Share"\\n  - button "Close" [
                  {present: true, dismiss: null});
 assert.equal(findRefByName('- button "Pro" [ref=e1]\n- button "Pro" [ref=e2]', 'button', 'Pro'), null);
 assert.equal(attachmentsComplete('- group "packet (1).md"\n- button "Remove file: evidence.zip"', ['packet.md', 'evidence.zip']), true);
+assert.equal(attachmentsComplete('- button "evidence(20261126-105346).zip" [ref=e140]', ['evidence.zip']), true);
+assert.equal(attachmentsComplete('- button "evidence(abc).zip"', ['evidence.zip']), false);
 assert.equal(attachmentsComplete('- group "packet.md"', ['packet.md', 'evidence.zip']), false);
 assert.equal(attachmentsComplete('- group "packet.md"\n- progressbar "Uploading"', ['packet.md']), false);
 
