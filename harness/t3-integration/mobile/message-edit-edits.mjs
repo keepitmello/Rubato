@@ -8,6 +8,7 @@
 // widths (a share of the row) stay as T3 set them.
 export const mobileMessageEditOverlays = [
   'apps/mobile/src/features/rubato-message-edit/beforeSend.ts',
+  'apps/mobile/src/features/rubato-message-edit/restoreAttachments.ts',
   'apps/mobile/src/features/rubato-message-edit/sentMessageEdit.ts',
   'apps/mobile/src/features/rubato-message-edit/SentMessageMenu.tsx',
   'apps/mobile/src/features/rubato-message-edit/sentMessageEdit.test.ts',
@@ -38,25 +39,20 @@ export const mobileMessageEditEdits = {
   'apps/mobile/src/features/threads/ThreadFeed.tsx': [
     ['import { CollapsibleUserMessageBody } from "./CollapsibleUserMessageBody";\n',
       'import {\n  SENT_MESSAGE_LABELS_EN,\n  SentMessageMenu,\n} from "../rubato-message-edit/SentMessageMenu";\n'],
-    ['          {hasBubble ? (\n            <View\n              className="min-w-0 rounded-[20px]"\n',
-      '          {hasBubble ? (\n'
-        + '            <SentMessageMenu\n'
+    ['          {mediaAttachments.length + pendingMedia.length > 0 ? (\n',
+      '          <SentMessageMenu\n'
         + '            threadKey={scopedThreadKey(props.environmentId, props.threadId)}\n'
+        + '            environmentId={props.environmentId}\n'
         + '            message={message}\n'
         + '            companion={false}\n'
-        + '            editable={\n'
-        + '              foldRowId === null &&\n'
-        + '              !entry.pendingMessage &&\n'
-        + '              message.attachments.length === 0 &&\n'
-        + '              (message.context?.records.length ?? 0) === 0\n'
-        + '            }\n'
+        + '            editable={foldRowId === null && !entry.pendingMessage}\n'
         + '            labels={SENT_MESSAGE_LABELS_EN}\n'
         + '            style={{ alignSelf: "stretch" }}\n'
         + '            contentStyle={{ alignItems: "flex-end" }}\n'
-        + '            >\n'
-        + '            <View\n              className="min-w-0 rounded-[20px]"\n', 'replace'],
+        + '          >\n'
+        + '          {mediaAttachments.length + pendingMedia.length > 0 ? (\n', 'replace'],
     ['            </View>\n          ) : null}\n          {bubbleBodyVisible ? (\n            <View className="mt-1 flex-row items-center justify-end gap-1 pr-0.5">\n',
-      '            </View>\n            </SentMessageMenu>\n          ) : null}\n          {bubbleBodyVisible ? (\n            <View className="mt-1 flex-row items-center justify-end gap-1 pr-0.5">\n', 'replace'],
+      '            </View>\n          ) : null}\n          </SentMessageMenu>\n          {bubbleBodyVisible ? (\n            <View className="mt-1 flex-row items-center justify-end gap-1 pr-0.5">\n', 'replace'],
   ],
   'apps/mobile/src/features/threads/ThreadDetailScreen.tsx': [
     ['import { scopedThreadKey } from "../../lib/scopedEntities";\n',

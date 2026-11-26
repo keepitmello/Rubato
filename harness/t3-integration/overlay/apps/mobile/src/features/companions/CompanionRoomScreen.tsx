@@ -300,9 +300,10 @@ function RoomRow(props: {
         // The menu hugs the bubble, so iOS lifts just the bubble.
         <SentMessageMenu
           threadKey={props.threadKey}
-          message={{ id: item.id as MessageId, text: item.text }}
+          environmentId={props.environmentId as EnvironmentId}
+          message={{ id: item.id as MessageId, text: item.text, attachments: item.attachments }}
           companion
-          editable={item.attachments.length === 0 && item.files === "" && item.text !== ""}
+          editable
           labels={ROOM_EDIT_LABELS}
           style={{ alignSelf: "flex-end" }}
         >

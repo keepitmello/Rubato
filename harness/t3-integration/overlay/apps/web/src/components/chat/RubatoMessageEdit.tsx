@@ -2,6 +2,8 @@ import type { EnvironmentId, MessageId, OrchestrationMessageContext } from "@t3t
 import {
   collectComposerContextReferences,
   replaceComposerContextReferences,
+  restoreAttachmentOnlyBootstrapPrompt,
+  stripAttachmentOnlyBootstrapPrompt,
 } from "@t3tools/shared/composerContextReferences";
 import { PencilIcon } from "lucide-react";
 import {
@@ -305,7 +307,10 @@ export function RubatoMessageEditor(props: {
   const { threadKey, message, busy = false } = props;
   const [initial] = useState(() => {
     const resolved = resolveUserMessageContext(message);
-    return { ...toEditableText(resolved.text), records: resolved.records };
+    return {
+      ...toEditableText(stripAttachmentOnlyBootstrapPrompt(resolved.text)),
+      records: resolved.records,
+    };
   });
   const [draft, setDraft] = useState(initial.text);
   const [sending, setSending] = useState(false);
@@ -319,13 +324,18 @@ export function RubatoMessageEditor(props: {
   }, []);
   const cancel = () => setEditing(threadKey, undefined);
   const text = fromEditableText(draft, initial.links).trim();
+  const kept = keptContext(text, initial.records, message.attachments ?? []);
+  const canSend = text.length > 0 || kept.attachments.length > 0;
   const send = async () => {
     const host = hosts.get(threadKey);
-    if (sending || busy || text.length === 0 || !host) return;
-    const kept = keptContext(text, initial.records, message.attachments ?? []);
+    if (sending || busy || !canSend || !host) return;
     setSending(true);
     try {
-      await host.current({ messageId: message.id, text, ...kept });
+      await host.current({
+        messageId: message.id,
+        text: restoreAttachmentOnlyBootstrapPrompt(text, kept.attachments.length > 0),
+        ...kept,
+      });
       setEditing(threadKey, undefined);
     } catch (error) {
       toastManager.add(
@@ -373,7 +383,7 @@ export function RubatoMessageEditor(props: {
         </Button>
         <Button
           size="xs"
-          disabled={sending || busy || text.length === 0}
+          disabled={sending || busy || !canSend}
           onClick={() => void send()}
         >
           {sending ? "Sending…" : "Send"}

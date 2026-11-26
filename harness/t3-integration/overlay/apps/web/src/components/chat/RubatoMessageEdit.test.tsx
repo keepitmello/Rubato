@@ -101,4 +101,19 @@ describe("editing a sent message", () => {
     expect(busy).toContain("고쳐줘</textarea>");
     expect(busy).toMatch(/<button[^>]*disabled=""[^>]*>Send<\/button>/);
   });
+
+  it("allows sending an attachment-only message even when the text box is empty", () => {
+    const message = {
+      id: "message-2",
+      role: "user",
+      text: "",
+      attachments: [attachment("att-photo")],
+      runId: null,
+      createdAt: "2026-10-15T00:00:00.000Z",
+      updatedAt: "2026-10-15T00:00:00.000Z",
+      streaming: false,
+    } as unknown as ChatMessage;
+    const html = renderToStaticMarkup(<RubatoMessageEditor threadKey="thread" message={message} />);
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Send<\/button>/);
+  });
 });

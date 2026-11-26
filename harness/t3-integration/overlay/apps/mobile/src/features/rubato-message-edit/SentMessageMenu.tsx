@@ -3,7 +3,7 @@
 // (sentMessageEdit.ts); the banner over the composer says what sending will do and cancels it.
 import { useAtomValue } from "@effect/atom-react";
 import * as Haptics from "expo-haptics";
-import type { ReactElement } from "react";
+import type { ReactNode } from "react";
 import { Pressable, View, type StyleProp, type ViewStyle } from "react-native";
 import Animated, { FadeInDown, FadeOut } from "react-native-reanimated";
 
@@ -11,8 +11,14 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Menu } from "../../components/ui/Menu";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
-import { beginSentMessageEdit, cancelSentMessageEdit, editableText, sentMessageEditsAtom } from "./sentMessageEdit";
-import type { MessageId } from "@t3tools/contracts";
+import {
+  beginSentMessageEdit,
+  cancelSentMessageEdit,
+  editableText,
+  sentMessageEditsAtom,
+  type EditableSentMessage,
+} from "./sentMessageEdit";
+import type { EnvironmentId, MessageId } from "@t3tools/contracts";
 
 export interface SentMessageLabels {
   readonly edit: string;
@@ -30,20 +36,25 @@ export const SENT_MESSAGE_LABELS_EN: SentMessageLabels = {
 
 export function SentMessageMenu(props: {
   readonly threadKey: string;
-  readonly message: { readonly id: MessageId; readonly text: string };
+  readonly environmentId: EnvironmentId;
+  readonly message: EditableSentMessage;
   readonly companion: boolean;
-  /** A message that carries files is copied but not edited yet: its files would not come along. */
+  /** Whether the message can be edited now (not pending or folded). */
   readonly editable: boolean;
   readonly labels: SentMessageLabels;
   /** Where the menu sits in the row; the bubble keeps its own width inside it. */
   readonly style?: StyleProp<ViewStyle>;
   readonly contentStyle?: StyleProp<ViewStyle>;
-  readonly children: ReactElement;
+  readonly children: ReactNode;
 }) {
+  const copyable = editableText(props.message.text);
   const actions = [
     ...(props.editable ? [{ id: "edit", title: props.labels.edit, image: "pencil" }] : []),
-    { id: "copy", title: props.labels.copy, image: "doc.on.doc" },
+    ...(copyable.length > 0 ? [{ id: "copy", title: props.labels.copy, image: "doc.on.doc" }] : []),
   ];
+  if (actions.length === 0) {
+    return <View style={[props.style, props.contentStyle]}>{props.children}</View>;
+  }
   return (
     <Menu
       style={props.style}
@@ -51,8 +62,11 @@ export function SentMessageMenu(props: {
       shouldOpenOnLongPress
       onMenuInteractionStart={() => void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined)}
       onPressAction={({ nativeEvent }) => {
-        if (nativeEvent.event === "edit") beginSentMessageEdit(props.threadKey, props.message, props.companion);
-        else if (nativeEvent.event === "copy") copyTextWithHaptic(editableText(props.message.text));
+        if (nativeEvent.event === "edit") {
+          beginSentMessageEdit(props.threadKey, props.message, props.companion, props.environmentId);
+        } else if (nativeEvent.event === "copy") {
+          copyTextWithHaptic(copyable);
+        }
       }}
     >
       {/* The long press is the native menu's own; the bubble keeps its links and text selection. */}
