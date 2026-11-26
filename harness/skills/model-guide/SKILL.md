@@ -58,9 +58,11 @@ account that cannot be read is not proof of room.
 
 | Role | Claude | Codex | Google (Neon) |
 |---|---|---|---|
-| Owner (high-tier) | Opus 5.5 | Astra 6.2 | Neon High |
+| Owner (high-tier) | Opus 5.5 | Astra 6 | Neon High |
 | Subagent / light single-lead | Sonnet 5.5 | Sol 6.2 | Neon Medium |
-| Reviewer | Opus 5.5 | Astra 6.2 | Neon High |
+| Reviewer | Opus 5.5 | Astra 6 | Neon High |
+
+Astra 6 is `openai-codex/gpt-6-astra`, always at `effort: "xhigh"`.
 
 An owner holding complex judgement or multi-piece work runs on the top line; a
 clearly light single-lead task (read-only check, draft, simple setup) or a
@@ -102,7 +104,8 @@ same display name on two routes may spend different resources.
 
 Omit `effort` so the configured default applies. Keep explicit user settings;
 override only for a supported, authorized reason; a role label or your reading of
-difficulty is not one. Report the requested model and
+difficulty is not one. The exception is Astra 6, where you always pass
+`effort: "xhigh"` explicitly (set by 우용, 2026-11-27). Report the requested model and
 effort separately from what the runtime confirms actually ran. If identity is not
 reported, say so rather than provoking errors to find out.
 
