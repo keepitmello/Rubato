@@ -307,9 +307,9 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
   const rooms = new Map();
   /** Who answers whether a thread's run is one a companion opened (the bridge, companionRuns). */
   const openers = new Set();
-  const companionOpened = async (threadId, startedAt) => {
+  const companionOpened = async (threadId, startedAt, openedByPerson = false) => {
     for (const answer of openers) {
-      try { if (await answer(threadId, startedAt) === true) return true; } catch { /* unknown counts as the person's */ }
+      try { if (await answer(threadId, startedAt, openedByPerson) === true) return true; } catch { /* unknown counts as the person's */ }
     }
     return false;
   };
@@ -446,8 +446,8 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
       if (!isNews(state, previous, at)) return null;
       // Only routine outcomes are optional. An ask for approval or an answer still uses
       // the normal thread preference: only the person can give it.
-      const companionOutcome = TERMINAL.has(state.phase) && !run?.openedByPerson
-        && await companionOpened(threadId, run?.startedAt ?? run?.requestedAt);
+      const companionOutcome = TERMINAL.has(state.phase)
+        && await companionOpened(threadId, run?.startedAt ?? run?.requestedAt, run?.openedByPerson === true);
       const preference = companionOutcome ? 'companionThreads' : 'threads';
       const preview = readPreview();
       const reply = preview === 'full' && TERMINAL.has(state.phase) ? await lastReply(threadId) : null;
@@ -472,8 +472,9 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
       return sendActivity();
     },
     /**
-     * `answer(threadId, startedAt)` resolves true when that run is one a companion opened, not the
-     * person. Returns the call that takes the answer back.
+     * `answer(threadId, startedAt, openedByPerson)` resolves true when the run belongs to companion
+     * notifications. The bridge checks thread ownership before the run's opener.
+     * Returns the call that takes the answer back.
      */
     companionRuns(answer) {
       if (typeof answer !== 'function') return () => {};

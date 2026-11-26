@@ -10,7 +10,7 @@ import { RubatoPiBridge } from '../src/bridge.mjs';
 import { RubatoRpcConnection, T3_RESTART_CONTINUE_TEXT } from '../src/rpc-connection.mjs';
 import { REPLY_TOOL } from '../../companion/home.mjs';
 import { createGrantStore } from '../../push-relay/mac/grants.mjs';
-import { createPushService } from '../src/push/service.mjs';
+import { createPushService, handlePushRequest } from '../src/push/service.mjs';
 
 const user = { role: 'user', content: '오늘 뭐 있어?', timestamp: 3 };
 const replyCall = (id, text) => ({ role: 'assistant', stopReason: 'toolUse', timestamp: 6, content: [{ type: 'toolCall', id, name: REPLY_TOOL, arguments: { text } }] });
@@ -122,7 +122,7 @@ test("the bridge tells push whether a thread's newest run is one a companion ope
   assert.equal(await asked('L-sibling'), true, "another lead's message to a companion's lead is still companion work");
   assert.equal(await asked('L-woken'), true, "a companion's lead woken by its own background work is companion work");
   assert.equal(await asked('L-restart'), true, "a restart's continue is not the person's");
-  assert.equal(await asked('L-person'), false, 'what the person typed into a companion lead is theirs to hear about');
+  assert.equal(await asked('L-person'), true, 'typing into a companion lead does not turn its notifications back on');
   assert.equal(await asked('T-from-lead'), true, "a companion lead's message opens companion work in any thread");
   assert.equal(await asked('T-person-restart'), false, "a restart resumes the person's run");
   await bridge.close();
@@ -146,6 +146,7 @@ test('a steer cannot change which iPhones hear about the run that just ended', a
   const bridge = new RubatoPiBridge({ descriptorPath: path.join(home, 'none.json'), instanceId: 'rubato-test', sessionStateDir: null, push });
   t.after(() => bridge.close());
   bridge.boundSession = async () => ({ sessionId: 'pi-lead', serverId: null });
+  bridge.viaInventory = async (call) => call({ list: async () => [] });
   const sessionMessage = (timestamp, companion) => ({ timestamp, role: 'custom', customType: 'rubato-session-message',
     details: { kind: 'message', from: { companion } } });
   const messages = [sessionMessage(now - 60_000, true), sessionMessage(now - 1000, false)];
@@ -167,4 +168,61 @@ test('a steer cannot change which iPhones hear about the run that just ended', a
     ['Bearer loud', 'completed'],
     ['Bearer quiet', '⚠︎ failed'], ['Bearer loud', '⚠︎ failed'],
   ]);
+});
+
+test("a companion-created lead stays quiet after a person's message, background wakes and restarts", async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), 'rubato-push-lead-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const delivered = [];
+  const grants = createGrantStore({ home, fetch: async (_url, init) => {
+    delivered.push([init.headers.authorization, JSON.parse(init.body)]);
+    return Response.json({ ok: true });
+  } });
+  for (const [deviceId, companionThreads] of [['quiet', false], ['loud', true]]) {
+    grants.add({ relay: 'https://push.example.dev', grant: deviceId, grantId: deviceId, deviceId,
+      preferences: { threads: true, companionThreads, liveActivity: false } });
+  }
+  const now = Date.UTC(2026, 10, 26, 20, 41, 25);
+  const push = createPushService({ home, grants, now: () => now, setTimer: () => null });
+  const bridge = new RubatoPiBridge({ descriptorPath: path.join(home, 'none.json'), instanceId: 'rubato-test', sessionStateDir: null, push });
+  t.after(() => bridge.close());
+  bridge.boundSession = async () => ({ sessionId: 'companion-lead', serverId: null });
+  bridge.viaInventory = async (call) => call({ list: async () => [{ sessionId: 'companion-lead', companionLead: true }] });
+  const messages = [
+    { role: 'custom', customType: 'rubato-session-message', timestamp: now - 120_000,
+      details: { kind: 'create', from: { companion: true, companionId: 'segno' } } },
+    { role: 'user', content: 'Use Astra instead.', timestamp: now - 60_000 },
+  ];
+  bridge.transcript = async () => ({ messages });
+  const change = (phase, openedByPerson = false) => push.threadChanged('lead', {
+    threadId: 'lead', phase, updatedAt: new Date(now).toISOString(), threadTitle: 'Companion lead',
+    headline: phase, environmentId: 'mac',
+  }, { startedAt: new Date(now - 1000).toISOString(), openedByPerson });
+
+  // Even the actual user turn keeps the thread's chosen notification category.
+  await change('running', true);
+  await change('completed', true);
+  messages.push({ role: 'custom', customType: 'senpi-terminal:notification', timestamp: now - 2000 });
+  await change('running');
+  await change('completed');
+  messages.push({ role: 'user', content: `${T3_RESTART_CONTINUE_TEXT} Your last turn was cut short.`, timestamp: now - 1500 });
+  await change('running');
+  await change('failed');
+  assert.deepEqual(delivered.map(([phone, alert]) => [phone, alert.body]), [
+    ['Bearer loud', 'completed'], ['Bearer loud', 'completed'], ['Bearer loud', '⚠︎ failed'],
+  ]);
+
+  await handlePushRequest(push, new Request('http://mac/rubato/push/desktop-companion-threads', {
+    method: 'POST', body: JSON.stringify({ enabled: false }),
+  }));
+  const muted = await handlePushRequest(push, new Request('http://mac/rubato/push/desktop-thread-muted', {
+    method: 'POST', body: JSON.stringify({ threadId: 'lead' }),
+  }));
+  assert.deepEqual(await muted.json(), { muted: true }, 'desktop uses the same companion ownership');
+
+  bridge.transcript = async () => { throw new Error('transcript unavailable'); };
+  await change('running');
+  await change('completed');
+  assert.equal(delivered.at(-1)[0], 'Bearer loud', 'known ownership does not depend on reading the transcript');
+  assert.equal(delivered.length, 4);
 });

@@ -323,7 +323,7 @@ export class RubatoPiBridge {
     // companion said in one, and asked whether a thread's run is one a companion opened.
     // createBridge, the server's, sets it; a bridge built bare pushes nothing.
     this.push = push;
-    this.forgetCompanionRuns = push?.companionRuns?.((threadId, startedAt) => this.companionOpened(threadId, startedAt)) ?? (() => {});
+    this.forgetCompanionRuns = push?.companionRuns?.((threadId, startedAt, openedByPerson) => this.companionOpened(threadId, startedAt, openedByPerson)) ?? (() => {});
     this.forgetThreadReplies = push?.threadReplies?.((threadId) => this.lastAnswer(threadId)) ?? (() => {});
     // cwd -> the last catalogue the engine answered, kept for while it cannot answer (catalogue).
     this.lastCatalogues = new Map();
@@ -572,17 +572,18 @@ export class RubatoPiBridge {
     return [...this.rpcConnections].find((connection) => connection.threadId === threadId && !connection.closed && connection.sessionId);
   }
   /**
-   * Whether the run in `threadId` is companion work, not the person's: any run of a lead a companion
-   * created that the person did not type, whatever woke it (another lead's message, its own
-   * background work, a restart); in any other thread, a run a companion or one of its leads opened.
+   * Whether the run in `threadId` uses companion notifications: a lead a companion created keeps
+   * that category even when the person speaks in it. In any other thread, use who opened the run.
+   * T3's explicit person opener wins over transcript timing, but never over companion ownership.
    */
-  async companionOpened(threadId, startedAt = null) {
+  async companionOpened(threadId, startedAt = null, openedByPerson = false) {
     const sessionId = this.rpcFor(threadId)?.sessionId ?? (await this.boundSession?.(threadId))?.sessionId;
     if (typeof sessionId !== 'string' || !sessionId) return false;
+    if (await this.companionLeadSession(sessionId)) return true;
+    if (openedByPerson) return false;
     const opener = runOpener((await this.transcript(sessionId))?.messages, startedAt);
     if (opener?.kind === 'person') return false;
     if (opener?.kind === 'session' && opener.companion) return true;
-    if (await this.companionLeadSession(sessionId)) return true;
     if (opener?.kind !== 'session') return false;
     return typeof opener.sessionId === 'string'
       && (await this.companionSession(opener.sessionId) || await this.companionLeadSession(opener.sessionId));
