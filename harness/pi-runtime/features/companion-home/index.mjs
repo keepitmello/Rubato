@@ -26,6 +26,7 @@ import { openInbox, INBOX_STATUSES } from "./inbox.mjs";
 import { RECORD_KINDS, REPLY_TOOL, SAY_TOOL, attachableFiles, commitOwned, landsInside, oldMemorySeed, segnoPaths, record, recordTold, replyDisplayText, searchSegnoMemory, seedText, sentMessages, sentText, setWakeWish } from "./home.mjs";
 import { CALL_SAY_TOOL } from "./call.mjs";
 import { installRecentUserWords } from "./recent-user-words.mjs";
+import { installPromptPieceReminder } from "./prompt-piece-reminder.mjs";
 import { worldFragment, worldText } from "./world.mjs";
 import { showSchedule } from "./schedule.mjs";
 import path from "node:path";
@@ -153,6 +154,7 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
     name: "companion-home",
     factory: (pi) => {
       installRecentUserWords(pi);
+      installPromptPieceReminder(pi, { env });
       const registerTool = registerWithLegacyNames(pi);
       registerTool({
         name: RECORD_TOOL,
