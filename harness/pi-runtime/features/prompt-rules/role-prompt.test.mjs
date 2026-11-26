@@ -9,7 +9,7 @@ import { isAnthropicCompactionBlock } from "../compaction/anthropic-server-compa
 import { SYSTEM_PROMPT_REPLACEMENT_ENTRY } from "../session-prompt/patches.mjs";
 import { promptForAgentStart, replaceSystemPrompt } from "../../../rubato-pi/src/system-prompt.mjs";
 import { resolveRole } from "../../../rubato-pi/src/role-contract.mjs";
-import { COMPANION_ROLE, PIECES, writePiece } from "../../../companion/companion.mjs";
+import { COMPANION_ROLE, defaultPiecePath, PIECES, writePiece } from "../../../companion/companion.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const promptHref = pathToFileURL(resolve(here, "../../../rubato-pi/src/system-prompt.mjs")).href;
@@ -302,7 +302,8 @@ async function companionSession(t) {
   const prompts = join(dir, "prompts");
   const defaultsDir = join(prompts, "companion");
   mkdirSync(defaultsDir, { recursive: true });
-  for (const { id } of PIECES) writeFileSync(join(defaultsDir, `${id}.pi.md`), `default ${id}\n`);
+  // A shared piece (delivery) sits beside the leads' pieces, one folder up from the companion's.
+  for (const { id } of PIECES) writeFileSync(defaultPiecePath(defaultsDir, id), `default ${id}\n`);
   writeFileSync(join(prompts, "opening-turn.pi.md"), "I am Lea.\n");
   const env = {
     RUBATO_PI_ROLE: COMPANION_ROLE,

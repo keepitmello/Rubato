@@ -36,7 +36,13 @@ jobs:
         # tests run the real encoder.
         run: command -v ffmpeg >/dev/null || brew install ffmpeg
       - name: Install the isolated stock dependency tree
-        run: npm --prefix harness/pi-runtime ci --workspaces=false --ignore-scripts
+        run: |
+          npm --prefix harness/pi-runtime ci --workspaces=false --ignore-scripts
+          # The terminal backpressure tests start harness/pi-server's host.
+          npm --prefix harness/pi-server install --ignore-scripts --workspaces=false
+          # The session-rules test runs the user-memory CLI with bun, which imports the
+          # @rubato/* workspace packages.
+          bun install --frozen-lockfile --ignore-scripts
       - name: Compose role prompts and skills into the standard install location
         run: |
           bash harness/prompts/build.sh
