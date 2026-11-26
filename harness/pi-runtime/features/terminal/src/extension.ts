@@ -14,6 +14,7 @@ import {
 	TERMINAL_PENDING_WORK_REQUEST,
 	terminalAwaitedWakes,
 	terminalPendingWork,
+	UNBOUNDED_BACKGROUND_HOLD_MS,
 } from "./pending-work.ts";
 import { type RestoreDigest, type RestoreHandlers, type RestoreOutcome, restoreTerminalState } from "./restore.ts";
 import type { TerminalRuntimeSession } from "./runtime-session.ts";
@@ -101,6 +102,8 @@ function bundleSinks(pi: ExtensionAPI, state: TerminalExtensionState): TerminalE
 			pi.events?.emit(WAKE_SOURCE_STATE_EVENT, {
 				source: "terminal-monitors",
 				activeCount: snapshot.length,
+				awaitedCount: state.settings.notify !== "off" && state.ctx?.model
+					? snapshot.filter((entry) => !entry.persistent && !state.monitorNotifier?.hasReported(entry.id)).length : 0,
 				monitors: snapshot.map((entry) => ({
 					id: entry.id,
 					description: entry.description,
@@ -110,9 +113,16 @@ function bundleSinks(pi: ExtensionAPI, state: TerminalExtensionState): TerminalE
 			if (state.manifestWriter) void state.manifestWriter.observeMonitorState(snapshot);
 		},
 		onBackgroundState: (snapshot) => {
+			const held = state.bundle?.heldBackgrounds() ?? [];
 			pi.events?.emit(WAKE_SOURCE_STATE_EVENT, {
 				source: "terminal-background-sessions",
 				activeCount: snapshot.length,
+				awaitedCount: state.settings.notify !== "off" && state.ctx?.model
+					? held.length : 0,
+				// run_in_background is also used for tests, not just servers. Give it the
+				// same completion hold as one-shot runs rather than waking the model every minute.
+				awaitedUntilMs: held.some(entry => entry.bounded) ? null
+					: Math.max(0, ...held.map(entry => entry.startedAtMs + UNBOUNDED_BACKGROUND_HOLD_MS)),
 				items: snapshot,
 			});
 			const writer = state.manifestWriter;
@@ -410,19 +420,9 @@ export function registerTerminalExtension(pi: ExtensionAPI, host: TerminalExtens
 		const settingsManager = host.createSettingsManager?.(ctx.cwd) ?? SettingsManager.create(ctx.cwd);
 		state.settings = loadTerminalSettings(settingsManager);
 		state.shellPath = settingsManager.getShellPath();
-		state.notifier = new TerminalNotifier({
-			sendMessage: (message, options) => pi.sendMessage(message, options),
-			getContext: () => state.ctx,
-			getMode: () => state.settings.notify,
-		});
 		state.monitorNotifier?.dispose();
-		state.monitorNotifier = new MonitorNotifier({
-			sendMessage: (message, options) => pi.sendMessage(message, options),
-			getContext: () => state.ctx,
-			getMode: () => state.settings.notify,
-			getSettings: () => state.settings.monitor,
-			pauseMonitors: (ids) => state.bundle?.monitors.pause(ids) ?? [],
-		});
+		state.monitorNotifier = null;
+		state.notifier = null;
 		const sessionKey = sessionKeyOf(ctx);
 		if (event.reason === "reload") {
 			const claimed = sessionKey === undefined ? undefined : claimParkedBundle(sessionKey);
@@ -436,6 +436,24 @@ export function registerTerminalExtension(pi: ExtensionAPI, host: TerminalExtens
 			state.bundle = createBundle(state);
 		}
 		state.bundle ??= createBundle(state);
+		state.notifier = new TerminalNotifier({
+			sendMessage: (message, options) => pi.sendMessage(message, options),
+			getContext: () => state.ctx,
+			getMode: () => state.settings.notify,
+			wakeBudget: state.bundle.wakeBudget,
+		});
+		state.monitorNotifier = new MonitorNotifier({
+			sendMessage: (message, options) => pi.sendMessage(message, options),
+			getContext: () => state.ctx,
+			getMode: () => state.settings.notify,
+			getSettings: () => state.settings.monitor,
+			pauseMonitors: (ids) => state.bundle?.monitors.pause(ids) ?? [],
+			getRuntime: (id) => state.bundle?.manager.get(id) ?? undefined,
+			wakeBudget: state.bundle.wakeBudget,
+			onDelivery: () => {
+				if (state.bundle) bundleSinks(pi, state).onMonitorState(state.bundle.monitors.snapshot());
+			},
+		});
 		state.bundle.bind(bundleSinks(pi, state));
 		if (event.reason === "reload") {
 			// Park/claim and the lease stay untouched: the same pid keeps holding it. The
@@ -460,13 +478,9 @@ export function registerTerminalExtension(pi: ExtensionAPI, host: TerminalExtens
 	pi.on("input", (event) => {
 		if (event.source === "extension") return;
 		state.lastPersonInputAtMs = Date.now();
-		state.monitorNotifier?.noteActivity();
+		state.monitorNotifier?.notePersonInput();
 		const resumed = state.bundle?.monitors.resume() ?? [];
 		if (resumed.length > 0) state.monitorNotifier?.resume(resumed.map((monitor) => monitor.id));
-	});
-
-	pi.on("tool_call", () => {
-		state.monitorNotifier?.noteActivity();
 	});
 
 	// The terminal tools describe themselves in their schemas; no prompt section is added.

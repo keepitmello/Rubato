@@ -49,6 +49,7 @@ function toolText(text, details) {
 export function createGoalExtension(options = {}) {
   return (pi) => {
     const wakeSources = new Map();
+    const awaitedWakes = new Map();
     let started = false;
     let ctxNow; // the session's latest context: the engine's requests carry none
     let queued = false; // a continuation was sent and its run has not started
@@ -118,8 +119,23 @@ export function createGoalExtension(options = {}) {
       const goal = await readGoal(ref);
       if (!goal || goal.status !== "active" || stopped) return;
       if (!ctx.isIdle() || ctx.hasPendingMessages() || heldMessages() > 0) return;
+      const awaited = [...awaitedWakes.values()].filter(wait => wait.count > 0 && (wait.until === null || wait.until > Date.now()));
+      if (awaited.length > 0) {
+        // The completion owns the next turn. A timer must not replace a deliberately quiet
+        // wait notification with a goal wake when its watcher exits.
+        clearTimeout(recheckTimer);
+        recheckTimer = undefined;
+        // A command explicitly left in the background may be a server. Its source bounds
+        // the completion hold; only that expiry, not each one-minute tick, can reconsider.
+        if (awaited.every(wait => wait.until !== null)) {
+          const delay = Math.min(2 ** 31 - 1, Math.max(1, Math.max(...awaited.map(wait => wait.until)) - Date.now()));
+          recheckTimer = setTimeout(() => { recheckTimer = undefined; void continueGoal(ctx, { waitHolds: false }).catch(() => {}); }, delay);
+          recheckTimer.unref?.();
+        }
+        return;
+      }
       if (waitHolds && activeWakeSourceCount() > 0) {
-        // Background work will wake the lead when it owes a wake; when it owes none (a server left running) this looks again.
+        // A server left running owes no completion; it must not hold the goal indefinitely.
         clearTimeout(recheckTimer);
         recheckTimer = setTimeout(() => { recheckTimer = undefined; void continueGoal(ctx, { waitHolds: false }).catch(() => {}); }, options.recheckMs ?? GOAL_WAIT_RECHECK_MS);
         recheckTimer.unref?.();
@@ -138,10 +154,14 @@ export function createGoalExtension(options = {}) {
     pi.events?.on(WAKE_SOURCE_STATE_EVENT, (data) => {
       if (!isWakeSourceStateEvent(data)) return;
       wakeSources.set(data.source, data.activeCount);
+      awaitedWakes.set(data.source, {
+        count: Number.isFinite(data.awaitedCount) ? Math.max(0, data.awaitedCount) : 0,
+        until: Number.isFinite(data.awaitedUntilMs) ? data.awaitedUntilMs : null,
+      });
     });
 
     pi.on("session_start", async (_event, ctx) => {
-      if (started) wakeSources.clear();
+      if (started) { wakeSources.clear(); awaitedWakes.clear(); }
       else started = true;
       ctxNow = ctx;
       clearTimers();

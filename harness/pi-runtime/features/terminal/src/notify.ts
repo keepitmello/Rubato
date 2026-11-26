@@ -3,6 +3,7 @@ import { sanitizeTerminalOutput } from "./output-format.ts";
 import type { TerminalRuntimeSession } from "./runtime-session.ts";
 import type { NotifyMode } from "./settings.ts";
 import { describeExit } from "./tools/spawn.ts";
+import { IntermediateWakeBudget, intermediateWakeSubjects, WAKE_LIMIT_NOTICE } from "./wake-budget.ts";
 
 /**
  * One-shot runs. Completions still wake them: the run stays alive while terminal work is
@@ -19,6 +20,7 @@ export interface TerminalNotifierDeps {
 	) => void;
 	readonly getContext: () => ExtensionContext | undefined;
 	readonly getMode: () => NotifyMode;
+	readonly wakeBudget?: IntermediateWakeBudget;
 }
 
 /** Max chars of sanitized final output embedded in a completion notification; bash_output reads the rest. */
@@ -78,9 +80,11 @@ function buildNotice(id: string, runtime: TerminalRuntimeSession): string {
 export class TerminalNotifier {
 	private readonly notified = new Set<string>();
 	private readonly deps: TerminalNotifierDeps;
+	private readonly wakeBudget: IntermediateWakeBudget;
 
 	constructor(deps: TerminalNotifierDeps) {
 		this.deps = deps;
+		this.wakeBudget = deps.wakeBudget ?? new IntermediateWakeBudget();
 	}
 
 	notifyCompletion(id: string, runtime: TerminalRuntimeSession): void {
@@ -94,6 +98,9 @@ export class TerminalNotifier {
 
 		this.notified.add(id);
 		// A wait set while the agent's own background session ran: that completion already woke it.
-		delivery.send(buildNotice(id, runtime), runtime.waitOvertaken ? { quiet: true } : undefined);
+		const decision = runtime.waitOvertaken ? "quiet"
+			: runtime.waitingOn !== undefined ? this.wakeBudget.take(intermediateWakeSubjects(runtime, id)) : "allow";
+		const content = buildNotice(id, runtime) + (decision === "last" ? `\n${WAKE_LIMIT_NOTICE}` : "");
+		delivery.send(content, decision === "quiet" ? { quiet: true } : undefined);
 	}
 }

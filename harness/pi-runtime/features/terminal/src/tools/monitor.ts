@@ -30,7 +30,7 @@ export const MAX_MONITOR_TIMEOUT_MS = 3_600_000;
 export const monitorSchema = Type.Object({
 	action: Type.Optional(
 		StringEnum(["create", "rearm"] as const, {
-			description: "Defaults to create. rearm resumes a monitor paused by the wake budget.",
+			description: "Defaults to create. rearm resumes delivery but does not refill the intermediate wake limit; only new user input does.",
 		}),
 	),
 	description: Type.Optional(
@@ -146,8 +146,9 @@ async function createMonitor(
 		cwd: execCtx?.cwd,
 		...(persistent ? {} : { timeoutMs: resolveTimeoutMs(input.timeout_ms) }),
 	});
-	const waitingOn = classifySleepWait(input.command) ? runningBackgroundSessions(ctx) : [];
-	if (waitingOn.length > 0) runtime.waitingOn = waitingOn.map((entry) => entry.runtime);
+	const sleepWait = classifySleepWait(input.command);
+	const waitingOn = sleepWait ? runningBackgroundSessions(ctx) : [];
+	if (sleepWait) runtime.waitingOn = waitingOn.map((entry) => entry.runtime);
 	ctx.onMonitorRearmed?.(id);
 	const monitorId = registry.register({
 		id,

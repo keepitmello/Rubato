@@ -10,7 +10,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { toolExecutionFeature } from "../tool-execution/index.mjs";
 import { feature, files } from "./patches.mjs";
-import { TERMINAL_AWAITED_WAKES_REQUEST } from "./src/pending-work.ts";
+import { TERMINAL_AWAITED_WAKES_REQUEST, UNBOUNDED_BACKGROUND_HOLD_MS } from "./src/pending-work.ts";
+import { INTERMEDIATE_WAKE_LIMIT } from "./src/wake-budget.ts";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -620,12 +621,13 @@ async function startTerminal(t, terminalSettings) {
 	const handlers = new Map();
 	const rpc = new Map();
 	const sent = [];
+	const wakeStates = [];
 	const tools = new Map();
 	const pi = {
 		registerTool: (tool) => tools.set(tool.name, tool),
 		on: (event, handler) => handlers.set(event, handler),
 		rpc: { handle: (name, handler) => rpc.set(name, handler), emit() {} },
-		events: { emit() {} },
+		events: { emit: (name, data) => { if (name === "wake_source_state") wakeStates.push(data); } },
 		sendMessage: (message, options) => sent.push({ message, options }),
 		getActiveTools: () => [],
 		setActiveTools() {},
@@ -653,12 +655,63 @@ async function startTerminal(t, terminalSettings) {
 	return {
 		tools,
 		sent,
+		wakeStates,
 		waitForSent,
 		pending: () => rpc.get("rubato.terminal.pending-work")(),
 		awaited: () => rpc.get(TERMINAL_AWAITED_WAKES_REQUEST)(),
 		personSays: (text) => handlers.get("input")({ type: "input", text, source: "rpc" }),
+		toolCalled: () => handlers.get("tool_call")?.({ type: "tool_call", toolName: "bash_output" }),
 	};
 }
+
+test("replacement polling monitors cannot wake a running job more than three times, even after tool calls", async (t) => {
+	const { tools, sent, waitForSent, toolCalled, personSays } = await startTerminal(t, {
+		notify: "wake", monitorCoalesceWindowMs: 1, monitorRateLimitMs: 1,
+	});
+	const started = await tools.get("bash").execute("real-job", {
+		command: "read _; printf 'actual result\\n'", run_in_background: true,
+	});
+	for (let i = 0; i < INTERMEDIATE_WAKE_LIMIT + 2; i++) {
+		toolCalled();
+		await tools.get("monitor").execute(`observer-${i}`, {
+			command: `while true; do sleep 2; done; echo observer-${i}`,
+			description: `same job, new watcher ${i}`, timeout_ms: 50,
+		});
+		await waitForSent(i + 1);
+	}
+	assert.equal(sent.filter(entry => entry.options.triggerTurn).length, INTERMEDIATE_WAKE_LIMIT);
+	personSays("Check this job again.");
+	await tools.get("monitor").execute("after-person", {
+		command: "while true; do sleep 2; done", description: "new user request", timeout_ms: 50,
+	});
+	await waitForSent(INTERMEDIATE_WAKE_LIMIT + 3);
+	assert.equal(sent.at(-1).options.triggerTurn, true);
+	await tools.get("bash_input").execute("finish", { bash_id: started.details.bash_id, input: "done" });
+	await waitForSent(INTERMEDIATE_WAKE_LIMIT + 4);
+	assert.equal(sent.at(-1).options.triggerTurn, true);
+	assert.match(sent.at(-1).message.content, /actual result/);
+});
+
+test("goal liveness waits for background tests too, with a bounded hold for a server left running", async (t) => {
+	const previous = process.env.PI_BASH_FOREGROUND_SECONDS;
+	process.env.PI_BASH_FOREGROUND_SECONDS = "0.1";
+	t.after(() => {
+		if (previous === undefined) delete process.env.PI_BASH_FOREGROUND_SECONDS;
+		else process.env.PI_BASH_FOREGROUND_SECONDS = previous;
+	});
+	const { tools, wakeStates } = await startTerminal(t, { notify: "wake" });
+	await tools.get("bash").execute("server", { command: "read _", run_in_background: true });
+	const latest = () => wakeStates.findLast(state => state.source === "terminal-background-sessions");
+	assert.equal(latest().activeCount, 1);
+	assert.equal(latest().awaitedCount, 1, "a background test also owes a completion");
+	assert.ok(latest().awaitedUntilMs > Date.now());
+	assert.ok(latest().awaitedUntilMs <= Date.now() + UNBOUNDED_BACKGROUND_HOLD_MS, "a server does not block the goal indefinitely");
+	const bounded = await tools.get("bash").execute("test", { command: "read _", timeout: 30 });
+	assert.equal(bounded.details.auto_detached, true);
+	assert.equal(latest().activeCount, 2);
+	assert.equal(latest().awaitedCount, 2, "both jobs owe their completions");
+	assert.equal(latest().awaitedUntilMs, null, "a bounded test's completion owns the next turn");
+});
 
 test("a watch that already reported and then only hits its deadline is recorded without a wake", async (t) => {
 	const { tools, sent, waitForSent } = await startTerminal(t, { notify: "wake", monitorCoalesceWindowMs: 20 });

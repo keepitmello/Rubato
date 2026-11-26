@@ -1,5 +1,6 @@
 import type { SettingsManager } from "./host-sdk.ts";
 import { DEFAULT_COLS, DEFAULT_MAX_SESSIONS, DEFAULT_ROWS, DEFAULT_SCROLLBACK } from "./shared.ts";
+import { INTERMEDIATE_WAKE_LIMIT } from "./wake-budget.ts";
 
 export type TimeoutAction = "background" | "kill";
 export type NotifyMode = "wake" | "next-turn" | "off";
@@ -48,7 +49,7 @@ export const TERMINAL_SETTINGS_DEFAULTS: ResolvedTerminalSettings = {
 		rateLimitMs: 5000,
 		maxLinesPerInjection: 50,
 		maxCharsPerInjection: 4096,
-		wakeBudget: 5,
+		wakeBudget: INTERMEDIATE_WAKE_LIMIT,
 	},
 };
 
@@ -93,7 +94,7 @@ export function resolveTerminalSettings(raw: TerminalSettings | undefined): Reso
 				TERMINAL_SETTINGS_DEFAULTS.monitor.maxCharsPerInjection,
 				16_384,
 			),
-			wakeBudget: positiveInt(raw.monitorWakeBudget, TERMINAL_SETTINGS_DEFAULTS.monitor.wakeBudget, 100),
+			wakeBudget: positiveInt(raw.monitorWakeBudget, TERMINAL_SETTINGS_DEFAULTS.monitor.wakeBudget, INTERMEDIATE_WAKE_LIMIT),
 		},
 	};
 }

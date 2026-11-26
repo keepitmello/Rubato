@@ -2,12 +2,13 @@ import type { MonitorEvent } from "./monitor-registry.ts";
 import { getTerminalNotificationDelivery, type TerminalNotifierDeps } from "./notify.ts";
 import { sanitizeTerminalOutput } from "./output-format.ts";
 import type { MonitorDeliverySettings } from "./settings.ts";
+import type { TerminalRuntimeSession } from "./runtime-session.ts";
+import { IntermediateWakeBudget, intermediateWakeSubjects, INTERMEDIATE_WAKE_LIMIT, WAKE_LIMIT_NOTICE, type WakeDecision } from "./wake-budget.ts";
 
 const SYSTEM_REMINDER_OPEN = "<system-reminder>";
 const SYSTEM_REMINDER_CLOSE = "</system-reminder>";
 const QUEUE_OVERHEAD_CHARS = 512;
 const MONITOR_NOTIFICATION_CUSTOM_TYPE = "senpi-monitor:notification";
-const WAKE_STREAK_QUIET_GAP_MULTIPLIER = 2;
 
 export interface MonitorNotificationScheduler {
 	now(): number;
@@ -26,6 +27,8 @@ export interface MonitorNotifierDeps extends TerminalNotifierDeps {
 	/** Pause the monitors contributing to a shared wake-budget exhaustion. */
 	readonly pauseMonitors: (ids: readonly string[]) => readonly string[];
 	readonly scheduler?: MonitorNotificationScheduler;
+	readonly getRuntime?: (id: string) => TerminalRuntimeSession | undefined;
+	readonly onDelivery?: () => void;
 }
 
 interface Overflow {
@@ -44,7 +47,7 @@ function resolveSettings(settings: MonitorDeliverySettings): MonitorDeliverySett
 		rateLimitMs: boundedPositiveInt(settings.rateLimitMs, 5000, 1, 3_600_000),
 		maxLinesPerInjection: boundedPositiveInt(settings.maxLinesPerInjection, 50, 1, 200),
 		maxCharsPerInjection: boundedPositiveInt(settings.maxCharsPerInjection, 4096, 512, 16_384),
-		wakeBudget: boundedPositiveInt(settings.wakeBudget, 5, 1, 100),
+		wakeBudget: boundedPositiveInt(settings.wakeBudget, INTERMEDIATE_WAKE_LIMIT, 1, INTERMEDIATE_WAKE_LIMIT),
 	};
 }
 
@@ -89,12 +92,12 @@ export class MonitorNotifier {
 	#reported = new Set<string>();
 	#timer: unknown;
 	#scheduledAt: number | undefined;
-	#consecutiveWakes = 0;
-	#lastWakeAt: number | undefined;
+	readonly #wakeBudget: IntermediateWakeBudget;
 
 	constructor(deps: MonitorNotifierDeps) {
 		this.#deps = deps;
 		this.#scheduler = deps.scheduler ?? systemScheduler;
+		this.#wakeBudget = deps.wakeBudget ?? new IntermediateWakeBudget();
 	}
 
 	notifyEvent(event: MonitorEvent): void {
@@ -131,9 +134,9 @@ export class MonitorNotifier {
 		return this.#reported.has(id);
 	}
 
-	/** Any explicit user or tool activity breaks a consecutive monitor-only wake streak. */
-	noteActivity(): void {
-		this.#consecutiveWakes = 0;
+	/** Only the person's new instruction refills intermediate wakes; tool calls are not progress. */
+	notePersonInput(): void {
+		this.#wakeBudget.reset();
 	}
 
 	/** Clear delivery bookkeeping for monitors explicitly resumed by the registry. */
@@ -143,7 +146,6 @@ export class MonitorNotifier {
 			this.#lastInjectedBatch.delete(id);
 			this.#reported.delete(id);
 		}
-		this.#consecutiveWakes = 0;
 	}
 
 	rearm(id: string): void {
@@ -217,32 +219,50 @@ export class MonitorNotifier {
 		const overflowCount = [...this.#overflow.values()]
 			.filter((overflow) => injectedIds.has(overflow.id))
 			.reduce((total, overflow) => total + overflow.count, 0);
-		if (
-			this.#lastWakeAt !== undefined &&
-			now - this.#lastWakeAt > settings.rateLimitMs * WAKE_STREAK_QUIET_GAP_MULTIPLIER
-		) {
-			this.#consecutiveWakes = 0;
+		const decisions = new Map<string, WakeDecision>();
+		const subjects = new Map<object | string, WakeDecision>();
+		for (const id of injectedIds) {
+			const events = selected.filter(event => event.id === id);
+			const runtime = this.#deps.getRuntime?.(id);
+			// A real job's outcome stays deliverable. The end of a disposable wait is only
+			// another progress check on the still-running job, not that job's completion.
+			if (events.some(event => event.type === "summary" && !event.cutShort) && runtime?.waitingOn === undefined) {
+				this.#wakeBudget.finish(intermediateWakeSubjects(runtime, id));
+				decisions.set(id, "allow");
+				continue;
+			}
+			if (events.length > 0 && events.every(event => event.overtaken || (event.type === "summary" && event.cutShort && this.#reported.has(id)))) {
+				decisions.set(id, "quiet");
+				continue;
+			}
+			const group = intermediateWakeSubjects(runtime, id);
+			// An exhausted job must not spend another job's allowance on a batch that
+			// will stay quiet. Shared subjects already charged in this batch count once.
+			if (!this.#wakeBudget.canTake(group.filter(subject => !subjects.has(subject)), settings.wakeBudget)) {
+				decisions.set(id, "quiet");
+				continue;
+			}
+			const taken = group.map(subject => {
+				let decision = subjects.get(subject);
+				if (decision === undefined) {
+					decision = this.#wakeBudget.take([subject], settings.wakeBudget);
+					subjects.set(subject, decision);
+				}
+				return decision;
+			});
+			decisions.set(id, taken.includes("quiet") ? "quiet" : taken.includes("last") ? "last" : "allow");
 		}
-		const deliversSummary = selected.some((event) => event.type === "summary");
 		// A watch that already reported and then only hit its deadline or got killed brings no news:
 		// waking an idle session for it buys a turn that says "nothing to do". Neither does a wait
 		// whose background session already ended and woke the agent itself.
-		const quiet =
-			overflowCount === 0 &&
-			selected.length > 0 &&
-			selected.every(
-				(event) =>
-					event.overtaken === true ||
-					(event.type === "summary" && event.cutShort && this.#reported.has(event.id)),
-			);
-		const reachesBudget = !deliversSummary && this.#consecutiveWakes + 1 >= settings.wakeBudget;
+		const quiet = injectedIds.size > 0 && [...injectedIds].every(id => decisions.get(id) === "quiet");
+		const reachesBudget = [...decisions.values()].includes("last");
 		const pauseNotice = reachesBudget
-			? "Monitor paused after repeated updates. Completion still wakes this session; peek bash_output or re-arm only for intermediate events."
+			? WAKE_LIMIT_NOTICE
 			: "";
 		const content = this.#buildMessage(selected, overflowCount, pauseNotice, settings.maxCharsPerInjection);
 
 		delivery.send(content, quiet ? { quiet: true } : reachesBudget ? { forceWake: true } : undefined);
-		if (!quiet) this.#lastWakeAt = now;
 		for (const id of injectedIds) {
 			this.#reported.add(id);
 			this.#lastInjectionAt.set(id, now);
@@ -251,21 +271,13 @@ export class MonitorNotifier {
 			if (fingerprint === undefined) this.#lastInjectedBatch.delete(id);
 			else this.#lastInjectedBatch.set(id, fingerprint);
 		}
+		this.#deps.onDelivery?.();
 		this.#events = deferred;
 		this.#eventChars = deferred.reduce(
 			(total, event) => total + `Monitor event(${event.description}): ${eventBody(event)}`.length,
 			0,
 		);
-		this.#consecutiveWakes = deliversSummary ? 0 : this.#consecutiveWakes + 1;
-
-		if (reachesBudget) {
-			this.#deps.pauseMonitors([...injectedIds]);
-			this.#events = [];
-			this.#eventChars = 0;
-			this.#overflow.clear();
-			this.#consecutiveWakes = 0;
-			return;
-		}
+		this.#deps.pauseMonitors([...decisions].filter(([, decision]) => decision !== "allow").map(([id]) => id));
 		const remainingIds = new Set([...this.#events.map((event) => event.id), ...this.#overflow.keys()]);
 		if (remainingIds.size > 0) this.#scheduleNextRateLimit(remainingIds, now, settings);
 	}

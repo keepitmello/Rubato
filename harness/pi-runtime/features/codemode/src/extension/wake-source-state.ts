@@ -25,5 +25,9 @@ export interface WakeSourceStateItem {
 export interface WakeSourceState {
 	readonly source: string;
 	readonly activeCount: number;
+	/** Work that promises a completion: goal timers recheck liveness without starting a model turn. */
+	readonly awaitedCount?: number;
+	/** A background server cannot hold a goal forever. Null/absent means wait for actual delivery. */
+	readonly awaitedUntilMs?: number | null;
 	readonly items?: readonly WakeSourceStateItem[];
 }

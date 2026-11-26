@@ -408,9 +408,46 @@ test("background work holds the goal's next turn back, and it looks again later 
   await until(async () => (await readGoal(goalRef(fixture)))?.status === "complete", "the recheck starts another turn that completes it");
 });
 
+test("a promised completion owns the next goal turn; liveness changes alone cannot bypass a quiet wait", async () => {
+  const captures = [];
+  let emitWake;
+  let deliverCompletion;
+  const fixture = await session({ only: ["rubato-goal"], captures, tools: ["update_goal"], factoryOptions: { recheckMs: 20 },
+    extraFactories: [{ name: "wake-probe", factory: (pi) => {
+      emitWake = (data) => pi.events.emit(WAKE_SOURCE_STATE_EVENT, data);
+      deliverCompletion = () => pi.sendMessage({ customType: "test-completion", content: "The actual test completed.", display: false },
+        { triggerTurn: true, deliverAs: "followUp" });
+    } }],
+    streamSimple: (model) => { captures.push({ model: model.id }); return captures.length === 2 ? toolCall("update_goal", { status: "complete" }) : complete("waiting for the test result"); } });
+  emitWake({ source: "terminal-background-sessions", activeCount: 1, awaitedCount: 1 });
+  await fixture.session.prompt("/goal finish after the test result");
+  await until(() => captures.length === 1 && !fixture.session.isStreaming, "the first turn ends");
+  await new Promise(resolve => setTimeout(resolve, 120));
+  assert.equal(captures.length, 1, "the recheck must not buy another model turn while the test still owes its completion");
+  emitWake({ source: "terminal-background-sessions", activeCount: 0, awaitedCount: 0 });
+  await new Promise(resolve => setTimeout(resolve, 80));
+  assert.equal(captures.length, 1, "an observer exiting without a wake is not permission to resume the goal");
+  deliverCompletion();
+  await until(async () => (await readGoal(goalRef(fixture)))?.status === "complete", "completion releases the wait");
+});
+
 test("a goal keeps the whole objective a companion's first message can carry", async () => {
   const fixture = await session({ only: ["rubato-goal"] });
   const objective = "x".repeat(7000) + " acceptance: all green";
   const goal = await createGoal(goalRef(fixture), objective);
   assert.equal(goal.objective, objective);
+});
+
+test("a background test holds the goal until its source's bounded hold expires, not every recheck", async () => {
+  const captures = [];
+  let emitWake;
+  const fixture = await session({ only: ["rubato-goal"], captures, tools: ["update_goal"], factoryOptions: { recheckMs: 10 },
+    extraFactories: [{ name: "wake-probe", factory: (pi) => { emitWake = data => pi.events.emit(WAKE_SOURCE_STATE_EVENT, data); } }],
+    streamSimple: (model) => { captures.push({ model: model.id }); return captures.length === 2 ? toolCall("update_goal", { status: "complete" }) : complete("waiting"); } });
+  emitWake({ source: "terminal-background-sessions", activeCount: 1, awaitedCount: 1, awaitedUntilMs: Date.now() + 300 });
+  await fixture.session.prompt("/goal wait on the background test");
+  await until(() => captures.length === 1 && !fixture.session.isStreaming, "the first turn ends");
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.equal(captures.length, 1);
+  await until(async () => (await readGoal(goalRef(fixture)))?.status === "complete", "a server cannot hold the goal forever");
 });

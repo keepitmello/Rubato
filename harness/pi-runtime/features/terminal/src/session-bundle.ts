@@ -3,6 +3,7 @@ import type { HeldBackground } from "./pending-work.ts";
 import { TerminalManager, type TerminalManagerOptions } from "./manager.ts";
 import { type MonitorEvent, MonitorRegistry, type MonitorSnapshotEntry } from "./monitor-registry.ts";
 import type { TerminalRuntimeSession } from "./runtime-session.ts";
+import { IntermediateWakeBudget } from "./wake-budget.ts";
 
 export interface TerminalEventSinks {
 	readonly onMonitorEvent: (event: MonitorEvent) => void;
@@ -24,6 +25,7 @@ const MAX_PARKED_EXITS = 32;
 export class TerminalSessionBundle {
 	readonly manager: TerminalManager;
 	readonly monitors: MonitorRegistry;
+	readonly wakeBudget = new IntermediateWakeBudget();
 	#sinks: TerminalEventSinks | null = null;
 	#parkedMonitorEvents: MonitorEvent[] = [];
 	#parkedExits = new Map<string, TerminalRuntimeSession>();

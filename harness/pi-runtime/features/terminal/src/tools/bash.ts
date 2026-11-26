@@ -392,6 +392,9 @@ async function runBackground(
 		cwd,
 		envOverrides: sessionEnvOverrides(ctx, execCtx),
 	});
+	if (classifySleepWait(input.command)) {
+		runtime.waitingOn = runningBackgroundSessions(ctx).map(entry => entry.runtime);
+	}
 	ctx.onBackgroundStart?.(id, input.description ?? input.command, Date.now(), false);
 	if (ctx.onBackgroundExit) runtime.session.onExit(() => ctx.onBackgroundExit?.(id, runtime));
 
