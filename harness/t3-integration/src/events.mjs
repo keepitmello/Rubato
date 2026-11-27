@@ -25,6 +25,16 @@ export const isSessionMessage = (message) => message?.role === 'custom'
   && message.customType === SESSION_MESSAGE_TYPE && message.display !== false;
 /** The prompt T3 sends a turn the app restart cut (T3 orchestration-v2 RestartContinuation.ts). */
 export const T3_RESTART_CONTINUE_TEXT = 'Continue where you left off.';
+/** What the model reads before T3's continuation when it reaches an idle session (rpc-connection.mjs). */
+export const RESTART_NOTICE = '[Sent by the Rubato app after it restarted, not by the user. It only lets you finish the turn that was cut off; it approves nothing new.]';
+/**
+ * T3's continuation after an app restart, as stored: marked `rubatoOrigin: "restart"` since the
+ * engine keeps who made an input. Entries from before that carry no mark, and were never the
+ * app's typed input (`rubatoAppText`), so for those its opening words still tell.
+ */
+export const isRestartContinuation = (message) => message?.role === 'user' && (message.rubatoOrigin === 'restart'
+  || (message.rubatoOrigin === undefined && typeof message.rubatoAppText !== 'string' && message.rubatoAppText !== true
+    && textOf(message).trimStart().startsWith(T3_RESTART_CONTINUE_TEXT)));
 /**
  * Who opened a run of a session, from its messages: the person's own message, or a
  * message another conversation sent (`from` is its sender, `companion` when that sender is a
@@ -41,7 +51,7 @@ export function runOpener(messages, startedAt = null) {
     const timestamp = typeof message?.timestamp === 'number' ? message.timestamp : Date.parse(message?.timestamp);
     if (Number.isFinite(cutoff) && timestamp > cutoff) continue;
     if (message?.role === 'user') {
-      if (textOf(message).includes(T3_RESTART_CONTINUE_TEXT)) continue;
+      if (isRestartContinuation(message)) continue;
       return { kind: 'person' };
     }
     if (message?.role !== 'custom' || message.customType !== SESSION_MESSAGE_TYPE) continue;

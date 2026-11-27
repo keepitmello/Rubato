@@ -40,6 +40,16 @@ test('nothing waits after a reply that answered, for a proactive message, or for
     ['인피녹스 출금이 왜 안돼?'], 'the app\'s restart line is not the user talking');
 });
 
+test('the app\'s restart line is told by its mark, or for old entries by its opening; the same words typed stay the user\'s', () => {
+  const said = (text, extra) => { const entry = user(text); Object.assign(entry.message, extra); return entry; };
+  const lines = (entries) => pendingAsk(entries, { now: T0 })?.lines.map((line) => line.text) ?? [];
+  const asked = user('배포 됐어?');
+  assert.deepEqual(lines([asked, said(`${T3_RESTART_CONTINUE_TEXT} Your last turn was cut short.`, { rubatoAppText: null })]), ['배포 됐어?'],
+    'the app sends a note after the words, which equality never matched');
+  assert.deepEqual(lines([asked, said('[Sent by the Rubato app after it restarted] …', { rubatoOrigin: 'restart', rubatoAppText: null })]), ['배포 됐어?']);
+  assert.deepEqual(lines([said(T3_RESTART_CONTINUE_TEXT, { rubatoAppText: true })]), [T3_RESTART_CONTINUE_TEXT], 'typed in the app: the user talking');
+});
+
 test('a reply that only promised to look leaves the question waiting, and the next reply sees what was already sent', () => {
   const entries = [user('P000191 처리됐어?'), ...replied('확인해볼게', { cleared: false }), wake('notice')];
   const pending = pendingAsk(entries, { now: T0 });

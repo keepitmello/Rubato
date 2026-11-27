@@ -123,7 +123,7 @@ function patchAgentSessionRuntime(source) {
             return;
         }
         const { text: currentText, images: currentImages } = processedInput;`,
-    `        const processedInput = await this._runInputHandlers(text, options?.images, options?.source ?? "interactive", this.isStreaming ? options?.streamingBehavior : undefined, options?.rubatoAppText, options?.rubatoAppMessageId);
+    `        const processedInput = await this._runInputHandlers(text, options?.images, options?.source ?? "interactive", this.isStreaming ? options?.streamingBehavior : undefined, options?.rubatoAppText, options?.rubatoAppMessageId, options?.rubatoOrigin);
         if (!processedInput) {
             preflightResult?.("handled");
             return;
@@ -151,7 +151,7 @@ function patchAgentSessionRuntime(source) {
         }
         return { text, images };
     }`,
-    `    async _runInputHandlers(text, images, source, streamingBehavior, rubatoAppText, rubatoAppMessageId) {
+    `    async _runInputHandlers(text, images, source, streamingBehavior, rubatoAppText, rubatoAppMessageId, rubatoOrigin) {
         const inputId = this._inputLifecycle.begin({
             sessionId: this.sessionId,
             text,
@@ -160,6 +160,7 @@ function patchAgentSessionRuntime(source) {
             streamingBehavior,
             rubatoAppText,
             rubatoAppMessageId,
+            rubatoOrigin,
         });
         if (!this._extensionRunner.hasHandlers("input")) {
             return { text, images, inputId };
@@ -454,7 +455,7 @@ function patchRpcRuntime(source) {
   return replaceOnce(
     source,
     '                    source: "rpc",\n                    preflightResult:',
-    '                    source: "rpc",\n                    rubatoAppText: command.rubatoAppText,\n                    rubatoAppMessageId: command.rubatoAppMessageId,\n                    preflightResult:',
+    '                    source: "rpc",\n                    rubatoAppText: command.rubatoAppText,\n                    rubatoAppMessageId: command.rubatoAppMessageId,\n                    rubatoOrigin: command.rubatoOrigin,\n                    preflightResult:',
     "prompt-app-original",
   );
 }

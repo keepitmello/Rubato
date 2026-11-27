@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RubatoRpcConnection } from '../src/rpc-connection.mjs';
+import { RESTART_NOTICE, runOpener } from '../src/events.mjs';
 
 /** An engine attachment: commands answer from `answers`, state goes to the subscriber. */
 function fakeClient(answers = {}) {
@@ -556,7 +557,7 @@ test('T3\'s continuation after an app restart adopts a run still going instead o
     { sequence: 1, event: { type: 'agent_start' } },
     { sequence: 2, event: { type: 'message_start', message: { role: 'assistant' } } },
     { sequence: 3, event: { type: 'tool_execution_start', toolCallId: 'c1', toolName: 'bash', args: {} } }] });
-  conn.send({ type: 'prompt', message: 'Continue where you left off.', streamingBehavior: 'steer' });
+  conn.send({ type: 'prompt', message: 'Continue where you left off.', rubatoOrigin: 'restart', streamingBehavior: 'steer' });
   await pause();
   await conn.inbound;
   assert.equal(client.commands.some((command) => command.type === 'prompt'), false, 'no extra message reaches the model');
@@ -565,14 +566,51 @@ test('T3\'s continuation after an app restart adopts a run still going instead o
   assert.deepEqual(records.find((record) => record.type === 'response'), { type: 'response', command: 'prompt', success: true, data: { disposition: 'started' } });
 });
 
-test('T3\'s continuation on a session that is not running is an ordinary prompt', async () => {
+test('T3\'s continuation on a session that is not running reaches the model as the app\'s notice, marked on the message', async () => {
   const client = fakeClient({ get_state: { isStreaming: false }, prompt: { disposition: 'started' } });
   const { conn } = connection(client);
   await conn.request({ type: 'switch_session', sessionPath: 's1' });
   client.listener({ runtimeId: 'r1', sequence: 0, status: 'idle', events: [] });
-  conn.send({ type: 'prompt', message: 'Continue where you left off.', streamingBehavior: 'steer' });
+  conn.send({ type: 'prompt', message: 'Continue where you left off.', rubatoOrigin: 'restart', streamingBehavior: 'steer' });
   await pause();
-  assert.ok(client.commands.some((command) => command.type === 'prompt' && command.message === 'Continue where you left off.'));
+  const prompt = client.commands.find((command) => command.type === 'prompt');
+  assert.equal(prompt.message, `${RESTART_NOTICE}\n\nContinue where you left off.`, 'the turn still continues, told it is not the person');
+  assert.equal(prompt.rubatoOrigin, 'restart', 'the engine stores who made it');
+});
+
+for (const isStreaming of [true, false]) {
+  test(`the same words typed by the person stay the person's prompt (session ${isStreaming ? 'running' : 'idle'})`, async () => {
+    const client = fakeClient({ get_state: { isStreaming }, prompt: { disposition: 'started' } });
+    const { conn } = connection(client);
+    await conn.request({ type: 'switch_session', sessionPath: 's1' });
+    client.listener({ runtimeId: 'r1', sequence: 0, status: isStreaming ? 'running' : 'idle', events: [] });
+    conn.send({ type: 'prompt', message: 'Continue where you left off.', rubatoAppText: 'Continue where you left off.', streamingBehavior: 'steer' });
+    await pause();
+    const prompt = client.commands.find((command) => command.type === 'prompt');
+    assert.equal(prompt?.message, 'Continue where you left off.', 'delivered as typed, not adopted or relabelled');
+    assert.equal(prompt.rubatoOrigin, undefined);
+  });
+}
+
+test('an app built before the mark: its unmarked continuation (no app original) is still the app\'s', async () => {
+  const client = fakeClient({ get_state: { isStreaming: false }, prompt: { disposition: 'started' } });
+  const { conn } = connection(client);
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  client.listener({ runtimeId: 'r1', sequence: 0, status: 'idle', events: [] });
+  conn.send({ type: 'prompt', message: 'Continue where you left off. Your last turn was cut short.', streamingBehavior: 'steer' });
+  await pause();
+  const prompt = client.commands.find((command) => command.type === 'prompt');
+  assert.equal(prompt.rubatoOrigin, 'restart');
+  assert.ok(prompt.message.startsWith(RESTART_NOTICE));
+});
+
+test('a run the app\'s restart continuation opened is not the person\'s; the same words typed in the app are', () => {
+  const said = (text, extra = {}) => ({ role: 'user', content: [{ type: 'text', text }], timestamp: 1, ...extra });
+  const asked = said('배포해 줘', { rubatoAppText: true });
+  assert.equal(runOpener([asked, said(`${RESTART_NOTICE}\n\nContinue where you left off.`, { rubatoOrigin: 'restart', rubatoAppText: null })]).kind, 'person',
+    'passed over to the person who asked before it');
+  assert.equal(runOpener([said('Continue where you left off. Your last turn was cut short.', { rubatoAppText: null })]), null, 'an older unmarked one');
+  assert.equal(runOpener([said('Continue where you left off.', { rubatoAppText: true })]).kind, 'person');
 });
 
 // An engine that goes away without announcing a restart (killed, stopped without drain): T3 keeps

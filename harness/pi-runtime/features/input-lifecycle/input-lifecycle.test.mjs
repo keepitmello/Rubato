@@ -271,3 +271,15 @@ test("actual SDK assigns one disposition and preserves duplicate queued text/ima
   assert.deepEqual(session.getSteeringMessages(), []);
   assert.deepEqual(session.getFollowUpMessages(), []);
 });
+
+test("an input the app made after a restart keeps that on the stored message; a person's input carries no origin", async () => {
+  const { InputLifecycle } = await import("./state.mjs");
+  const lifecycle = new InputLifecycle();
+  const restart = { role: "user", content: [{ type: "text", text: "Continue where you left off." }] };
+  lifecycle.bindMessage(lifecycle.begin({ sessionId: "s", text: "x", source: "rpc", rubatoOrigin: "restart" }), restart);
+  assert.equal(restart.rubatoOrigin, "restart");
+  const typed = { role: "user", content: [{ type: "text", text: "Continue where you left off." }] };
+  lifecycle.bindMessage(lifecycle.begin({ sessionId: "s", text: "x", source: "rpc", rubatoAppText: "Continue where you left off." }), typed);
+  assert.equal("rubatoOrigin" in typed, false);
+  assert.equal(typed.rubatoAppText, true);
+});

@@ -3,7 +3,7 @@ import { controlCommandFor, rewriteSkillMentions } from './commands.mjs';
 import { applySelectionOptions, serviceTierPrompts } from './model-catalog-order.mjs';
 import { messageFingerprint } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
 import { cacheFrom, cacheMoved } from './session-state.mjs';
-import { T3_RESTART_CONTINUE_TEXT, sessionMessageFrom, textOf } from './events.mjs';
+import { RESTART_NOTICE, T3_RESTART_CONTINUE_TEXT, sessionMessageFrom, textOf } from './events.mjs';
 import { sameWords } from './backfill.mjs';
 import { isBookkeepingTool } from './activity.mjs';
 import { channelItem, createSaidEcho, saidEchoes } from './said-echo.mjs';
@@ -726,7 +726,7 @@ export class RubatoRpcConnection {
       if (this.closed) throw new Error('Rubato connection is closed');
     }
     if (!this.sessionId) await this.openThreadSession();
-    const { id: _id, rubatoAppText, rubatoAppMessageId, ...command } = record;
+    const { id: _id, rubatoAppText, rubatoAppMessageId, rubatoOrigin, ...command } = record;
     if (this.companion && command.type === 'prompt' && typeof rubatoAppText === 'string')
       command.rubatoAppText = rubatoAppText;
     // The app's id rides along, so the room's rewind finds this prompt by id, not by its words.
@@ -742,8 +742,18 @@ export class RubatoRpcConnection {
         await this.client.command({ type: 'continue' });
         return { disposition: 'started' };
       }
-      if (typeof command.message === 'string' && command.message.trim().endsWith(T3_RESTART_CONTINUE_TEXT)
-        && !command.images?.length && await this.adoptRunningRun()) return { disposition: 'started' };
+      // T3's continuation after an app restart, as the adapter marked it (pi-adapter-edits.mjs), never
+      // by its words: a person may type them. A run still going takes it up; an idle session gets it
+      // as the app's notice, kept on the stored message, so nobody reads it as the person's approval.
+      // An app built before that mark sends it unmarked; the person's own prompts always carry the
+      // app original (`rubatoAppText`), so only an unmarked one without it still goes by its opening.
+      const restart = rubatoOrigin === 'restart' || (rubatoOrigin === undefined && rubatoAppText === undefined
+        && typeof command.message === 'string' && command.message.trimStart().startsWith(T3_RESTART_CONTINUE_TEXT));
+      if (restart && typeof command.message === 'string') {
+        if (!command.images?.length && await this.adoptRunningRun()) return { disposition: 'started' };
+        command.message = `${RESTART_NOTICE}\n\n${command.message}`;
+        command.rubatoOrigin = 'restart';
+      }
       if (this.bridge.engineRunShows?.delete(this.threadId) && command.message === ENGINE_RUN_TEXT && !command.images?.length) {
         // The engine's run, not a message for Pi. One that ended before the turn opened goes into the
         // thread as stored messages, and its turn ends at once.

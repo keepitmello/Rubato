@@ -58,6 +58,14 @@ export const LEAD_IN_CHARS = 20;
  * the test holds the two equal). It is not the user talking.
  */
 export const RESTART_CONTINUE_TEXT = "Continue where you left off.";
+/**
+ * The app's continuation as stored: marked `rubatoOrigin: "restart"` (the engine keeps who made an
+ * input); older entries carry no mark and were never typed in the app (`rubatoAppText`), so their
+ * opening words tell. The app adds a note after those words, so equality never matched one.
+ */
+export const isRestartContinuation = (message) => message?.rubatoOrigin === "restart"
+  || (message?.rubatoOrigin === undefined && typeof message?.rubatoAppText !== "string" && message?.rubatoAppText !== true
+    && textOf(message?.content).trimStart().startsWith(RESTART_CONTINUE_TEXT));
 
 const textOf = (content) => typeof content === "string" ? content
   : Array.isArray(content) ? content.map((part) => part?.type === "text" ? part.text ?? ""
@@ -82,7 +90,7 @@ export function conversation(entries) {
     const at = atOf(message.timestamp ?? entry?.timestamp);
     if (message.role === "user") {
       const text = textOf(message.content).trim();
-      if (text && !text.startsWith("[voice] ") && text !== RESTART_CONTINUE_TEXT) out.push({ who: "user", text, at, index });
+      if (text && !text.startsWith("[voice] ") && !isRestartContinuation(message)) out.push({ who: "user", text, at, index });
     } else if (message.role === "custom") {
       const details = message.details ?? {};
       if (message.customType === "rubato-session-message" && details.kind === "channel" && details.from?.isUser === true) {
@@ -190,7 +198,7 @@ export function evidenceOf(entries) {
       out.push({ index, kind: user ? "user" : "message", label: user ? "사용자" : `${details.kind ?? "message"}${details.from?.title ? ` · ${details.from.title}` : ""}`, text, at });
     } else if (message?.role === "user") {
       const text = textOf(message.content).trim();
-      if (text && text !== RESTART_CONTINUE_TEXT) out.push({ index, kind: "user", label: "사용자", text, at });
+      if (text && !isRestartContinuation(message)) out.push({ index, kind: "user", label: "사용자", text, at });
     } else if (message?.role === "assistant") {
       for (const part of Array.isArray(message.content) ? message.content : []) {
         if (part?.type === "toolCall") calls.set(part.id, { name: part.name, args: part.arguments ?? {} });

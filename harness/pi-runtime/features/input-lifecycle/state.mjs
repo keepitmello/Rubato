@@ -20,7 +20,7 @@ export class InputLifecycle {
   #messageRecords = new WeakMap();
   #pendingMessages = new WeakSet();
 
-  begin({ sessionId, text, images, source, streamingBehavior, rubatoAppText, rubatoAppMessageId }) {
+  begin({ sessionId, text, images, source, streamingBehavior, rubatoAppText, rubatoAppMessageId, rubatoOrigin }) {
     const inputId = `${sessionId}:${++this.#nextInputId}`;
     this.#openInputs.set(inputId, {
       id: inputId,
@@ -29,6 +29,7 @@ export class InputLifecycle {
       text,
       rubatoAppText,
       rubatoAppMessageId,
+      rubatoOrigin,
       imageCount: Array.isArray(images) ? images.length : 0,
       enqueuedAt: Date.now(),
       ...(streamingBehavior === undefined ? {} : { delivery: streamingBehavior }),
@@ -60,6 +61,11 @@ export class InputLifecycle {
     // the outline a long session's listing comes as (pi-server session-worker outlineEntry).
     if (typeof record.rubatoAppMessageId === "string" && record.rubatoAppMessageId)
       message.rubatoAppMessageId = record.rubatoAppMessageId;
+    // Who made this input when it was not the person: "restart" is the app's own continuation
+    // after it restarted mid-turn (t3-integration rpc-connection.mjs). It continues work; it
+    // approves nothing new, so readers of the session must not take it as the person's words.
+    if (typeof record.rubatoOrigin === "string" && record.rubatoOrigin)
+      message.rubatoOrigin = record.rubatoOrigin;
     this.#messageRecords.set(message, record);
     if (pending) this.#pendingMessages.add(message);
     return record;
