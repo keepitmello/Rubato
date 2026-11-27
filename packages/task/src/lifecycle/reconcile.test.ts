@@ -11,6 +11,8 @@ import type { ManagedChildHandle } from "../manager/child-handle"
 import type { TaskRecord, TaskStatus } from "../state"
 import type { TaskRecordStore } from "../store"
 import { createTaskLifecycle } from "./create"
+import { createCompletionNotifier } from "../completion/notifier"
+import type { ParentNotifierMessage } from "../completion/types"
 import type { ProcessSignaller } from "./port"
 import {
   cleanupProjects,
@@ -253,6 +255,26 @@ describe("reconcileOnSessionStart reattach", () => {
     // then
     expect(result.outcomes[0]?.kind).toBe("lost")
     expect(respawnRunner.startedSpecs).toHaveLength(0)
+  })
+  test("#given the engine died while a background agent ran #when the lead's session starts again #then the agent reads lost and the idle lead is woken with it", async () => {
+    // given: an in-process agent the previous engine ran for its lead, never finished
+    const store = tempStore()
+    seedRecord(store, { task_id: "st_00000021", parent_session_id: "lead-1", status: "running", residency_state: "resident",
+      execution_mode: "in-process", notify_on_terminal: true })
+    createManager(store, new FakeRespawnRunner())
+    const lifecycle = createTaskLifecycle({ store, registry: new FakeRegistry(), config: settings(), now, signaller: fakeSignaller(new Set(), []) })
+    const calls: ParentNotifierMessage[] = []
+    const completion = createCompletionNotifier({ notifier: { enqueue: (message) => calls.push(message) }, store })
+
+    // when
+    await lifecycle.reconcileOnSessionStart()
+    completion.reconcileUnnotifiedNotifications({ sessionId: "lead-1", parentState: { kind: "idle" } })
+
+    // then
+    expect(store.load("st_00000021")?.status).toBe("lost")
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.triggerTurn).toBe(true)
+    expect(calls[0]?.details.map((detail) => detail.agentId)).toEqual(["st_00000021"])
   })
   test(" w2reattach #given a live in-process resident visible in the registry snapshot #when reconciled #then it stays running and resident for completion delivery", async () => {
     // given
