@@ -3,7 +3,8 @@ import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { acpModelSelection, HYDROGEN, resolveCompanionAgy, runCompanionAgy } from '../src/companion-agy.mjs';
+import { acpModelSelection, createCompanionAgyProvider, HYDROGEN, resolveCompanionAgy, runCompanionAgy } from '../src/companion-agy.mjs';
+import { scheduledAgy } from '../src/scheduled-agy.mjs';
 
 test('Hydrogen base plus Medium stays Medium on the ACP config-option surface', () => {
   const config = { id: 'model', category: 'model', currentValue: 'gemini-4-neon', options: [{ value: 'gemini-4-hydrogen' }] };
@@ -28,6 +29,85 @@ test('account selection uses the configured official binary, not an arbitrary pr
     { home, profile: path.join(home, '.gemini'), isolated: false, command: '/official/agy', model: HYDROGEN });
   await assert.rejects(resolveCompanionAgy({ instanceId: 'other', model: HYDROGEN }, env), /not configured/);
   assert.equal(await resolveCompanionAgy({ instanceId: 'rubato', model: 'anthropic/other' }, env), null);
+});
+
+test('official account routes distinguish the CLI login from an isolated profile without claiming an expired login', async t => {
+  const home = await mkdtemp(path.join(tmpdir(), 'rb-agy-routes-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const state = path.join(home, 'state');
+  await mkdir(state);
+  const main = {
+    driver: 'antigravity', enabled: true, config: { binaryPath: '/official/agy' },
+    environment: [{ name: 'RUBATO_LOCAL_AGY_AGENT', value: 'rubato-lead' }],
+  };
+  const sub = { ...main, environment: [...main.environment, { name: 'RUBATO_LOCAL_AGY_ISOLATED', value: '1' }] };
+  await writeFile(path.join(state, 'settings.json'), JSON.stringify({
+    providerInstances: {
+      main, sub,
+      alias: { ...sub, environment: [...sub.environment, { name: 'RUBATO_LOCAL_AGY_LOGIN', value: 'sub' }] },
+    },
+  }));
+  const env = { HOME: home, RUBATO_T3_STATE_DIR: state };
+  const mainRoute = `rubato-agy-cli/main/${HYDROGEN}`;
+  const subRoute = `rubato-agy-profile/sub/${HYDROGEN}`;
+  assert.equal((await resolveCompanionAgy(scheduledAgy(mainRoute), env)).isolated, false);
+  assert.equal((await resolveCompanionAgy(scheduledAgy(subRoute), env)).isolated, true);
+  for (const [wrong, correct] of [
+    [`rubato-agy-profile/main/${HYDROGEN}`, mainRoute],
+    [`rubato-agy-cli/sub/${HYDROGEN}`, subRoute],
+  ]) {
+    await assert.rejects(resolveCompanionAgy(scheduledAgy(wrong), env), error => {
+      assert.match(error.message, /route prefix/);
+      assert.ok(error.message.includes(correct));
+      assert.doesNotMatch(error.message, /no longer holds|expired|sign.?in/i);
+      return true;
+    });
+  }
+  // A genuinely different login remains a refusal, not a silent account switch.
+  await assert.rejects(resolveCompanionAgy(scheduledAgy(`rubato-agy-profile/alias/${HYDROGEN}`), env),
+    /no longer holds the scheduled login/);
+});
+
+test('an empty ACP completion is a visible failure, but text and tool-only replies remain valid', async () => {
+  for (const mode of ['empty', 'whitespace', 'text', 'tool']) {
+    let finish, executeTool, closed = false;
+    const result = new Promise(resolve => { finish = resolve; });
+    const events = [];
+    const route = createCompanionAgyProvider({
+      companionId: 'test', account: { model: HYDROGEN },
+      createAssistantMessageEventStream: () => ({
+        push: event => events.push(event), end: finish,
+      }),
+      getCurrentSystemPrompt: () => 'Test',
+      markResolved: () => {},
+      run: async ({ onUpdate }) => {
+        if (mode === 'text' || mode === 'whitespace') onUpdate({
+          sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: mode === 'text' ? 'Connected' : '  ' },
+        });
+        if (mode === 'tool') await executeTool('reply', { text: 'Connected' });
+      },
+    });
+    route.config.streamSimple(route.config.models[0], {
+      messages: [{ role: 'user', content: 'Check the connection' }],
+    }, {
+      providerExecCwd: '/tmp',
+      providerExecuteTool: async () => ({ content: [{ type: 'text', text: 'sent' }] }),
+      providerOpenSessionMcp: async options => {
+        executeTool = options.executeTool;
+        return { url: 'http://localhost/test', headers: [{ value: 'test' }], close: () => { closed = true; } };
+      },
+    });
+    const output = await result;
+    assert.equal(closed, true);
+    if (mode === 'empty' || mode === 'whitespace') {
+      assert.equal(output.stopReason, 'error');
+      assert.match(output.errorMessage, /without a response or a Rubato tool call/);
+      assert.equal(events.at(-1).type, 'error');
+    } else {
+      assert.equal(output.stopReason, 'stop');
+      assert.equal(events.at(-1).type, 'done');
+    }
+  }
 });
 
 test('ACP picks the requested Hydrogen model before prompting and rejects unavailable models', async t => {

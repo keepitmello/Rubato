@@ -60,6 +60,12 @@ function toolCwd(ctx) {
  */
 export function resolveModel(requested, ctx) {
   const wanted = requested.trim();
+  if (wanted.startsWith("agy/")) {
+    const slug = wanted.slice("agy/".length);
+    throw new Error(`invalid: "${wanted}" is an Agent model, not a session_create route. ` +
+      `For the official CLI account use rubato-agy-cli/<instanceId>/${slug}; ` +
+      `for an isolated account use rubato-agy-profile/<instanceId>/${slug}.`);
+  }
   // Scheduled/lead Antigravity routes (`rubato-agy-cli/<instanceId>/<slug>`) are mounted by the
   // host runtime from the session header rather than listed in pi's modelRegistry.
   if (/^rubato-agy-(cli|profile)\/[\w.:-]+\/gemini-(?:[4-9]|[1-9]\d+)(?:[.-][\w.-]+)?$/.test(wanted)) return wanted;
@@ -369,7 +375,9 @@ function sessionTools(getLink, { companion }) {
           cwd: { type: "string", minLength: 1, description: "Folder for the new conversation; defaults to this conversation's folder." },
           title: { type: "string", minLength: 1, description: "Optional title for the new conversation." },
           model: { type: "string", minLength: 1, description: "Optional model it runs on, as provider/model-id (anthropic/claude-opus-5-5) or just the model id " +
-            "(claude-opus-5-5). Omit for the user's default. An unavailable model is refused with the list of available ones." },
+            "(claude-opus-5-5). Official Antigravity uses rubato-agy-cli/<instanceId>/<model> for the CLI account or " +
+            "rubato-agy-profile/<instanceId>/<model> for an isolated account, not Agent's agy/<model>. " +
+            "Omit for the user's default. An unavailable model is refused with the list of available ones." },
           effort: { type: "string", enum: [...EFFORT_LEVELS], description: "Optional thinking effort it runs at. Omit for the default. " +
             "A level the model does not support drops to its nearest one; the result says which took effect." },
         },

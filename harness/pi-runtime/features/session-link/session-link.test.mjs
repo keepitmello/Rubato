@@ -296,6 +296,13 @@ test("session_create picks the model by full or bare id and passes the effort; a
   result = await execute(pi, "session_create", { text: "neon go", model: "rubato-agy-cli/agy-rubato-lead/gemini-4-neon", effort: "high" }, withModels);
   assert.deepEqual(calls.at(-1).args, { from: SELF, cwd: "/work/lead", text: "neon go", model: "rubato-agy-cli/agy-rubato-lead/gemini-4-neon", thinking: "high" });
   assert.match(result.content[0].text, /It runs on rubato-agy-cli\/agy-rubato-lead\/gemini-4-neon at high effort\./);
+  result = await execute(pi, "session_create", { text: "neon sub", model: "rubato-agy-profile/agy-rubato-lead-sub/gemini-4-neon", effort: "medium" }, withModels);
+  assert.equal(calls.at(-1).args.model, "rubato-agy-profile/agy-rubato-lead-sub/gemini-4-neon");
+
+  const beforeAgentRoute = calls.length;
+  await assert.rejects(execute(pi, "session_create", { text: "wrong surface", model: "agy/gemini-4-neon" }, withModels),
+    /Agent.*session_create.*rubato-agy-cli\/.*rubato-agy-profile\//);
+  assert.equal(calls.length, beforeAgentRoute);
 });
 
 test("session_create prints Quota line when the engine returns a quota summary", async () => {

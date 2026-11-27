@@ -27,8 +27,13 @@ export async function resolveCompanionAgy(selection, env = process.env) {
     throw new Error('The selected Antigravity account is not configured for official AGY.');
   }
   const isolated = /^(1|true)$/i.test(flags.get('RUBATO_LOCAL_AGY_ISOLATED') ?? '');
-  if (selection.isolated !== undefined && (isolated !== selection.isolated ||
-      (isolated && (flags.get('RUBATO_LOCAL_AGY_LOGIN') || selection.instanceId) !== selection.instanceId))) {
+  if (selection.isolated !== undefined && isolated !== selection.isolated) {
+    const provider = isolated ? 'rubato-agy-profile' : 'rubato-agy-cli';
+    throw new Error(`The Antigravity route prefix does not match account ${selection.instanceId}. ` +
+      `Use ${provider}/${selection.instanceId}/${selection.model}.`);
+  }
+  if (selection.isolated !== undefined && isolated &&
+      (flags.get('RUBATO_LOCAL_AGY_LOGIN') || selection.instanceId) !== selection.instanceId) {
     throw new Error('The selected Antigravity instance no longer holds the scheduled login.');
   }
   const profile = isolated ? path.join(state, 'providers', 'antigravity',
@@ -288,6 +293,9 @@ export function createCompanionAgyProvider({ account, companionId, scheduled, re
               stream.push({ type: 'text_delta', contentIndex: index, delta: update.content.text, partial: output });
             } });
             if (index !== undefined) stream.push({ type: 'text_end', contentIndex: index, content: output.content[index].text, partial: output });
+            if (!output.content.some(block => block.type === 'toolCall' || (block.type === 'text' && block.text.trim()))) {
+              throw new Error('Antigravity ended the turn without a response or a Rubato tool call.');
+            }
           } finally { endpoint.close(); }
           stream.push({ type: 'done', reason: 'stop', message: output });
           stream.end(output);

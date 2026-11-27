@@ -73,16 +73,33 @@ provider than the builder (picking the one with more quota left); when other
 providers are out, a fresh session from the builder's provider reviews.
 
 - **Fable**: with explicit approval.
-- **Neon** (`agy/*` / `rubato-agy-cli/<instanceId>/gemini-4-neon` with `effort: "high"` or `"medium"`): part of the default pool. Local `agy` runs one single `Agent` call at a time; never use it in teams, parallel fan-outs or automated loops, where team members are rejected.
+- **Neon**: part of the default pool, with `effort: "high"` or `"medium"`. Use the exact route for the tool below. Local `agy` runs one single `Agent` call at a time; never use it in teams, parallel fan-outs or automated loops, where team members are rejected.
 - **Grok**: when the user names it.
 
 The `Agent` catalog lists only models from providers this user has signed in to,
-and it is the source of exact ids. A family missing from it is one this user does
-not have, not a failure: choose among the rest, falling back to the lead's own
-model, and say which one ran.
+and it is the source of exact ids for `Agent`, not for `session_create`. Official
+Antigravity conversation routes are separate from that catalog. For other
+providers, choose among the listed models, falling back to the lead's own model,
+and say which one ran.
 
 A model registered on several accounts appears once per account, such as Opus 5.5
 and Opus 5.5 [sub]; spread work across them by the same usage reading.
+
+### Exact Neon routes
+
+For `session_create` (including leads started by Roo or Segno), use:
+
+- Main account: `rubato-agy-cli/agy-rubato-lead/gemini-4-neon`.
+- Sub account: `rubato-agy-profile/agy-rubato-lead-sub/gemini-4-neon`.
+
+For a single `Agent` subagent, use `agy/gemini-4-neon`. This route uses the local
+CLI login; it does not select the isolated sub account.
+
+These prefixes are not aliases. `rubato-agy-cli` selects the normal CLI profile;
+`rubato-agy-profile` selects an isolated account. Do not put the main instance
+behind the sub-account prefix, infer a route by changing only `-sub`, or pass
+`agy/gemini-4-neon` to `session_create`. A prefix mismatch is not evidence that
+the account needs a new login.
 
 ## Use the pool for real work
 
