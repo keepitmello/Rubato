@@ -748,11 +748,14 @@ export class RubatoRpcConnection {
       // An app built before that mark sends it unmarked; the person's own prompts always carry the
       // app original (`rubatoAppText`), so only an unmarked one without it still goes by its opening.
       const restart = rubatoOrigin === 'restart' || (rubatoOrigin === undefined && rubatoAppText === undefined
-        && typeof command.message === 'string' && command.message.trimStart().startsWith(T3_RESTART_CONTINUE_TEXT));
+        && typeof command.message === 'string' && command.message.includes(T3_RESTART_CONTINUE_TEXT));
       if (restart && typeof command.message === 'string') {
         if (!command.images?.length && await this.adoptRunningRun()) return { disposition: 'started' };
         command.message = `${RESTART_NOTICE}\n\n${command.message}`;
         command.rubatoOrigin = 'restart';
+      } else if (typeof rubatoAppText === 'string') {
+        // Typed by the person in the app: stored as theirs, so later readers need not guess by words.
+        command.rubatoOrigin = 'person';
       }
       if (this.bridge.engineRunShows?.delete(this.threadId) && command.message === ENGINE_RUN_TEXT && !command.images?.length) {
         // The engine's run, not a message for Pi. One that ended before the turn opened goes into the

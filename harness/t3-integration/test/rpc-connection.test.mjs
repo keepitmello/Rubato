@@ -40,7 +40,7 @@ test('the app original rides the companion prompt separately from provider text'
     const prompt = { type: 'prompt', message: 'edited for the provider', streamingBehavior: 'steer' };
     const original = ' 앞뒤 공백도 그대로.\n두 줄째. ';
     await conn.command({ ...prompt, rubatoAppText: original });
-    assert.deepEqual(client.commands.at(-1), { ...prompt, ...(companion ? { rubatoAppText: original } : {}) });
+    assert.deepEqual(client.commands.at(-1), { ...prompt, rubatoOrigin: 'person', ...(companion ? { rubatoAppText: original } : {}) });
     await conn.close();
   }
 });
@@ -588,7 +588,7 @@ for (const isStreaming of [true, false]) {
     await pause();
     const prompt = client.commands.find((command) => command.type === 'prompt');
     assert.equal(prompt?.message, 'Continue where you left off.', 'delivered as typed, not adopted or relabelled');
-    assert.equal(prompt.rubatoOrigin, undefined);
+    assert.equal(prompt.rubatoOrigin, 'person', 'stored as the person\'s, so readers of the session need not guess');
   });
 }
 
@@ -611,6 +611,10 @@ test('a run the app\'s restart continuation opened is not the person\'s; the sam
     'passed over to the person who asked before it');
   assert.equal(runOpener([said('Continue where you left off. Your last turn was cut short.', { rubatoAppText: null })]), null, 'an older unmarked one');
   assert.equal(runOpener([said('Continue where you left off.', { rubatoAppText: true })]).kind, 'person');
+  assert.equal(runOpener([said('Continue where you left off.', { rubatoOrigin: 'person', rubatoAppText: null })]).kind, 'person',
+    'a lead session stores no app original, only who typed it');
+  assert.equal(runOpener([said('T3 Code restarted and stopped background work: …\n\nContinue where you left off.', { rubatoAppText: null })]), null,
+    'an older one with the background-work note before the words');
 });
 
 // An engine that goes away without announcing a restart (killed, stopped without drain): T3 keeps

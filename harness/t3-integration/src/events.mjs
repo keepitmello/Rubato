@@ -28,13 +28,14 @@ export const T3_RESTART_CONTINUE_TEXT = 'Continue where you left off.';
 /** What the model reads before T3's continuation when it reaches an idle session (rpc-connection.mjs). */
 export const RESTART_NOTICE = '[Sent by the Rubato app after it restarted, not by the user. It only lets you finish the turn that was cut off; it approves nothing new.]';
 /**
- * T3's continuation after an app restart, as stored: marked `rubatoOrigin: "restart"` since the
- * engine keeps who made an input. Entries from before that carry no mark, and were never the
- * app's typed input (`rubatoAppText`), so for those its opening words still tell.
+ * T3's continuation after an app restart, as stored. The engine keeps who made an input:
+ * `rubatoOrigin` "restart" for the app's continuation, "person" for what the person typed in the app.
+ * Entries from before that carry neither, and only those still go by the words, anywhere in the text
+ * (a note about stopped background work comes before them).
  */
 export const isRestartContinuation = (message) => message?.role === 'user' && (message.rubatoOrigin === 'restart'
   || (message.rubatoOrigin === undefined && typeof message.rubatoAppText !== 'string' && message.rubatoAppText !== true
-    && textOf(message).trimStart().startsWith(T3_RESTART_CONTINUE_TEXT)));
+    && textOf(message).includes(T3_RESTART_CONTINUE_TEXT)));
 /**
  * Who opened a run of a session, from its messages: the person's own message, or a
  * message another conversation sent (`from` is its sender, `companion` when that sender is a

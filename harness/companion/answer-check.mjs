@@ -59,13 +59,14 @@ export const LEAD_IN_CHARS = 20;
  */
 export const RESTART_CONTINUE_TEXT = "Continue where you left off.";
 /**
- * The app's continuation as stored: marked `rubatoOrigin: "restart"` (the engine keeps who made an
- * input); older entries carry no mark and were never typed in the app (`rubatoAppText`), so their
- * opening words tell. The app adds a note after those words, so equality never matched one.
+ * The app's continuation as stored: the engine keeps who made an input (`rubatoOrigin` "restart" for
+ * it, "person" for what the person typed in the app). Older entries carry neither; only for those do
+ * the words tell, anywhere in the text: the app puts a note after them, or a background-work note
+ * before them, so equality never matched one.
  */
 export const isRestartContinuation = (message) => message?.rubatoOrigin === "restart"
   || (message?.rubatoOrigin === undefined && typeof message?.rubatoAppText !== "string" && message?.rubatoAppText !== true
-    && textOf(message?.content).trimStart().startsWith(RESTART_CONTINUE_TEXT));
+    && textOf(message?.content).includes(RESTART_CONTINUE_TEXT));
 
 const textOf = (content) => typeof content === "string" ? content
   : Array.isArray(content) ? content.map((part) => part?.type === "text" ? part.text ?? ""

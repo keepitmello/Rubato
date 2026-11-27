@@ -48,6 +48,9 @@ test('the app\'s restart line is told by its mark, or for old entries by its ope
     'the app sends a note after the words, which equality never matched');
   assert.deepEqual(lines([asked, said('[Sent by the Rubato app after it restarted] …', { rubatoOrigin: 'restart', rubatoAppText: null })]), ['배포 됐어?']);
   assert.deepEqual(lines([said(T3_RESTART_CONTINUE_TEXT, { rubatoAppText: true })]), [T3_RESTART_CONTINUE_TEXT], 'typed in the app: the user talking');
+  assert.deepEqual(lines([said(T3_RESTART_CONTINUE_TEXT, { rubatoOrigin: 'person', rubatoAppText: null })]), [T3_RESTART_CONTINUE_TEXT]);
+  assert.deepEqual(lines([asked, said(`T3 Code restarted and stopped background work: …\n\n${T3_RESTART_CONTINUE_TEXT}`, { rubatoAppText: null })]), ['배포 됐어?'],
+    'an older one with the background-work note first');
 });
 
 test('a reply that only promised to look leaves the question waiting, and the next reply sees what was already sent', () => {
